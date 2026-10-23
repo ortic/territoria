@@ -4,6 +4,7 @@
 //! Heavy data (geometry, tables, assignments) sits behind `Arc`s, so a
 //! [`Project`] clones cheaply; undo keeps whole snapshots.
 
+pub mod catchment;
 pub mod file;
 pub mod grid;
 pub mod history;
@@ -255,8 +256,8 @@ impl Project {
         self.links.retain(|l| l.layer != id);
         for map in &mut self.maps {
             map.layers.retain(|ml| {
-                let keep = ml.kind.layer() != Some(id)
-                    && !ml.kind.plan().is_some_and(|p| plans.contains(&p));
+                let keep =
+                    ml.kind.layer() != Some(id) && !plans.iter().any(|p| ml.kind.uses_plan(*p));
                 if !keep {
                     gone.push(format!("map layer “{}”", ml.name));
                 }
@@ -271,8 +272,22 @@ impl Project {
     pub fn remove_plan(&mut self, id: PlanId) {
         self.plans.retain(|p| p.id != id);
         for map in &mut self.maps {
-            map.layers.retain(|ml| ml.kind.plan() != Some(id));
+            map.layers.retain(|ml| !ml.kind.uses_plan(id));
         }
+    }
+
+    /// `base`, or `base 2`, … when a table has that name.
+    pub fn unique_table_name(&self, base: &str) -> String {
+        (1..)
+            .map(|i| {
+                if i == 1 {
+                    base.to_owned()
+                } else {
+                    format!("{base} {i}")
+                }
+            })
+            .find(|n| !self.tables.iter().any(|t| &t.name == n))
+            .unwrap_or_else(|| base.to_owned())
     }
 
     pub fn remove_table(&mut self, id: TableId) {

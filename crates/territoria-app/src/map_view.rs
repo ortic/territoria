@@ -922,6 +922,18 @@ pub fn draw_resolved(shapes: &mut Vec<Shape>, r: &Resolved, view: &View, ppp: f3
             });
         }
     }
+    // Catchment rings.
+    for ring in &r.rings {
+        let points: Vec<Pos2> = ring.points.iter().map(|d| view.to_screen(*d)).collect();
+        if points.len() > 2 && points.iter().any(|p| view.rect.expand(200.0).contains(*p)) {
+            shapes.push(Shape::Path(egui::epaint::PathShape {
+                points,
+                closed: true,
+                fill: ring.fill,
+                stroke: egui::epaint::PathStroke::new(ring.stroke.width, ring.stroke.color),
+            }));
+        }
+    }
     // Proportional circles, largest first so small ones stay on top.
     for &(f, radius) in &r.symbols {
         let Some(lp) = mesh.label_points.get(f).copied().flatten() else {
@@ -954,6 +966,34 @@ fn draw_labels(
     halo: Color32,
     occupied: &mut Vec<Rect>,
 ) {
+    // Ring radii at the top of each ring.
+    for ring in &r.rings {
+        let Some(top) = ring
+            .points
+            .iter()
+            .map(|d| view.to_screen(*d))
+            .min_by(|a, b| a.y.total_cmp(&b.y))
+        else {
+            continue;
+        };
+        if !view.rect.contains(top) {
+            continue;
+        }
+        let galley = painter.layout_no_wrap(
+            ring.label.clone(),
+            FontId::proportional(10.0),
+            ring.stroke.color.to_opaque(),
+        );
+        let rect = Align2::CENTER_CENTER
+            .anchor_size(top, galley.size())
+            .expand(2.0);
+        if occupied.iter().any(|o| o.intersects(rect)) {
+            continue;
+        }
+        occupied.push(rect);
+        painter.rect_filled(rect, 3.0, halo);
+        painter.galley(rect.min + vec2(2.0, 2.0), galley, text);
+    }
     match &r.labels {
         Labels::None => {}
         Labels::Features(texts) => {

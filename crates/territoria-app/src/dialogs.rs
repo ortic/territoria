@@ -2861,3 +2861,208 @@ impl SitesDialog {
         apply
     }
 }
+
+/// Rings around centres and what lies within them.
+pub struct CatchmentDialog {
+    pub centres: Option<territoria_model::catchment::Centres>,
+    pub radii: String,
+    pub points: Option<LayerId>,
+    pub areas: Option<LayerId>,
+    /// Index into the areas' numbers (`colorables`).
+    pub area_value: usize,
+}
+
+impl CatchmentDialog {
+    pub fn new(project: &Project) -> CatchmentDialog {
+        use territoria_model::catchment::Centres;
+        let point_layers: Vec<LayerId> = project
+            .layers
+            .iter()
+            .filter(|l| l.kind() == GeometryKind::Point)
+            .map(|l| l.id)
+            .collect();
+        // Centres: plan sites if any, else the last point layer.
+        let centres = project
+            .plans
+            .iter()
+            .find(|p| p.territories.iter().any(|t| t.site.is_some()))
+            .map(|p| Centres::Sites(p.id))
+            .or_else(|| point_layers.last().map(|l| Centres::Points(*l)));
+        let points = point_layers
+            .iter()
+            .copied()
+            .find(|l| centres != Some(Centres::Points(*l)));
+        CatchmentDialog {
+            centres,
+            radii: "5, 10, 20".into(),
+            points,
+            areas: None,
+            area_value: 0,
+        }
+    }
+
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        project: &Project,
+        open: &mut bool,
+    ) -> Option<territoria_model::catchment::CatchmentSpec> {
+        use territoria_model::catchment::{CatchmentSpec, Centres, parse_radii};
+        let mut outcome = None;
+        let mut cancel = false;
+        *open = modal(ctx, "catchment", "Catchment rings", 500.0, |ui| {
+            ui.label(RichText::new("Rings around branches, reps or sites, and what lies within them: customers, their sales, the areas' values.").weak());
+            ui.add_space(6.0);
+            egui::Grid::new("catchment-grid")
+                .num_columns(2)
+                .spacing([12.0, 8.0])
+                .show(ui, |ui| {
+                    ui.label("Around");
+                    let text = self
+                        .centres
+                        .map_or("Choose…".to_owned(), |c| c.label(project));
+                    ComboBox::from_id_salt("catch-centres")
+                        .width(260.0)
+                        .selected_text(text)
+                        .show_ui(ui, |ui| {
+                            for l in project
+                                .layers
+                                .iter()
+                                .filter(|l| l.kind() == GeometryKind::Point)
+                            {
+                                ui.selectable_value(
+                                    &mut self.centres,
+                                    Some(Centres::Points(l.id)),
+                                    &l.name,
+                                );
+                            }
+                            for p in project
+                                .plans
+                                .iter()
+                                .filter(|p| p.territories.iter().any(|t| t.site.is_some()))
+                            {
+                                ui.selectable_value(
+                                    &mut self.centres,
+                                    Some(Centres::Sites(p.id)),
+                                    format!("Sites of {}", p.name),
+                                );
+                            }
+                        });
+                    ui.end_row();
+                    ui.label("Radii");
+                    ui.horizontal(|ui| {
+                        ui.add(egui::TextEdit::singleline(&mut self.radii).desired_width(120.0));
+                        ui.label("km");
+                    });
+                    ui.end_row();
+                    ui.label("Count");
+                    let text = self
+                        .points
+                        .and_then(|l| project.layer(l))
+                        .map_or("Nothing".to_owned(), |l| l.name.clone());
+                    ComboBox::from_id_salt("catch-points")
+                        .width(260.0)
+                        .selected_text(text)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.points, None, "Nothing");
+                            for l in project
+                                .layers
+                                .iter()
+                                .filter(|l| l.kind() == GeometryKind::Point)
+                            {
+                                ui.selectable_value(&mut self.points, Some(l.id), &l.name);
+                            }
+                        })
+                        .response
+                        .on_hover_text("Points within each ring, and the sums of their numbers");
+                    ui.end_row();
+                    ui.label("Sum of areas");
+                    let text = self
+                        .areas
+                        .and_then(|l| project.layer(l))
+                        .map_or("Nothing".to_owned(), |l| l.name.clone());
+                    ComboBox::from_id_salt("catch-areas")
+                        .width(260.0)
+                        .selected_text(text)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.areas, None, "Nothing");
+                            for l in project
+                                .layers
+                                .iter()
+                                .filter(|l| l.kind() == GeometryKind::Area)
+                            {
+                                if ui
+                                    .selectable_label(self.areas == Some(l.id), &l.name)
+                                    .clicked()
+                                {
+                                    self.areas = Some(l.id);
+                                    self.area_value = 0;
+                                }
+                            }
+                        });
+                    ui.end_row();
+                    if let Some(l) = self.areas {
+                        let numbers: Vec<(String, ValueSource)> = colorables(project, l)
+                            .into_iter()
+                            .filter_map(|(label, c)| match c {
+                                Colorable::Number(s) => Some((label, s)),
+                                Colorable::Category(_) => None,
+                            })
+                            .collect();
+                        ui.label("Value");
+                        ComboBox::from_id_salt("catch-value")
+                            .width(260.0)
+                            .selected_text(
+                                numbers
+                                    .get(self.area_value)
+                                    .map_or("—", |(l, _)| l.as_str()),
+                            )
+                            .show_ui(ui, |ui| {
+                                for (i, (label, _)) in numbers.iter().enumerate() {
+                                    ui.selectable_value(&mut self.area_value, i, label);
+                                }
+                            })
+                            .response
+                            .on_hover_text(
+                                "Summed over the areas whose centre lies within the ring",
+                            );
+                        ui.end_row();
+                    }
+                });
+            let radii = parse_radii(&self.radii);
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                let ok = self.centres.is_some() && !radii.is_empty();
+                if ui
+                    .add_enabled(ok, egui::Button::new(RichText::new("Draw rings").strong()))
+                    .clicked()
+                    && let Some(centres) = self.centres
+                {
+                    let areas = self.areas.and_then(|l| {
+                        colorables(project, l)
+                            .into_iter()
+                            .filter_map(|(_, c)| match c {
+                                Colorable::Number(s) => Some(s),
+                                Colorable::Category(_) => None,
+                            })
+                            .nth(self.area_value)
+                            .map(|s| (l, s))
+                    });
+                    outcome = Some(CatchmentSpec {
+                        centres,
+                        radii_km: radii,
+                        points: self.points,
+                        areas,
+                    });
+                }
+                if ui.button("Cancel").clicked() {
+                    cancel = true;
+                }
+            });
+        });
+        if cancel || outcome.is_some() {
+            *open = false;
+        }
+        outcome
+    }
+}

@@ -39,6 +39,15 @@ pub struct Resolved {
     pub symbols: Vec<(usize, f32)>,
     pub symbol_fill: Color32,
     pub symbol_stroke: Stroke,
+    /// Closed lines in display coordinates (catchment rings) with a label.
+    pub rings: Vec<Ring>,
+}
+
+pub struct Ring {
+    pub points: Vec<[f64; 2]>,
+    pub stroke: Stroke,
+    pub fill: Color32,
+    pub label: String,
 }
 
 pub fn with_opacity(c: Color32, opacity: f32) -> Color32 {
@@ -85,6 +94,50 @@ fn resolve_one(
     let project = cx.project;
     let opacity = ml.opacity;
     match &ml.kind {
+        MapLayerKind::Rings {
+            centres,
+            radii_km,
+            color: c,
+        } => {
+            let to_display = Transformer::new(&Crs::wgs84(), crs).ok()?;
+            let base = color(*c);
+            let mut rings = Vec::new();
+            let mut sites = Vec::new();
+            let list = centres.list(project);
+            for (_, centre) in &list {
+                // Largest first: the smaller ones' fills lie on top.
+                for r in radii_km.iter().rev() {
+                    let points = territoria_model::catchment::ring(*centre, *r, 96)
+                        .into_iter()
+                        .filter_map(|p| to_display.convert(p))
+                        .map(|d| [d.x, d.y])
+                        .collect();
+                    rings.push(Ring {
+                        points,
+                        stroke: Stroke::new(1.2, with_opacity(base, opacity)),
+                        fill: with_opacity(base, 0.07 * opacity),
+                        label: format!("{} km", territoria_data::table::format_number(*r)),
+                    });
+                }
+                if let Some(d) = to_display.convert(*centre) {
+                    sites.push(([d.x, d.y], base.to_opaque()));
+                }
+            }
+            Some(vec![Resolved {
+                mesh: Arc::new(LayerMesh::empty()),
+                fills: Vec::new(),
+                arcs: Vec::new(),
+                line_width: 1.0,
+                point_radius: 0.0,
+                point_stroke: Stroke::NONE,
+                labels: Labels::None,
+                sites,
+                symbols: Vec::new(),
+                symbol_fill: Color32::TRANSPARENT,
+                symbol_stroke: Stroke::NONE,
+                rings,
+            }])
+        }
         MapLayerKind::Boundaries { layer, style }
         | MapLayerKind::Choropleth { layer, style, .. }
         | MapLayerKind::Categories { layer, style, .. } => {
@@ -145,6 +198,7 @@ fn resolve_one(
                 symbols: Vec::new(),
                 symbol_fill: Color32::TRANSPARENT,
                 symbol_stroke: Stroke::NONE,
+                rings: Vec::new(),
             }])
         }
         MapLayerKind::Territories { plan, style } => {
@@ -240,6 +294,7 @@ fn resolve_one(
                 symbols: Vec::new(),
                 symbol_fill: Color32::TRANSPARENT,
                 symbol_stroke: Stroke::NONE,
+                rings: Vec::new(),
             };
             if !points {
                 return Some(vec![area]);
@@ -271,6 +326,7 @@ fn resolve_one(
                 symbols: Vec::new(),
                 symbol_fill: Color32::TRANSPARENT,
                 symbol_stroke: Stroke::NONE,
+                rings: Vec::new(),
             };
             Some(vec![area, dot_layer])
         }
@@ -318,6 +374,7 @@ fn resolve_one(
                 symbols,
                 symbol_fill: with_opacity(color(symbol.color), opacity),
                 symbol_stroke: Stroke::new(0.8, with_opacity(color(symbol.outline), opacity)),
+                rings: Vec::new(),
             }])
         }
     }

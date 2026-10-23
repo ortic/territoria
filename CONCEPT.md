@@ -236,7 +236,7 @@ territoria/
 - [ ] Hatching for several values per area / overlapping territories
 - [ ] Lines: style a line layer by data
 - [ ] Flows: origin–destination lines with width/colour by data, curved, arrows
-- [ ] Radius/catchment circles around points, several rings; count and sum of what lies inside
+- [x] Radius/catchment circles around points, several rings; count and sum of what lies inside (around points or territory sites; points counted and summed, areas' values summed; a results table; labelled rings in exports)
 - [ ] Data-driven labels (text templates, font size/colour by data) (templates done, several lines also in exports; size/colour not yet)
 - [x] Tooltips: rich cards from a template; several analyses at one spot listed together (no templates)
 - [x] Legends generated from the analysis; a few templates (list, bar, histogram, size); edited labels stay in sync (list and gradient in Contents, histogram in Properties)

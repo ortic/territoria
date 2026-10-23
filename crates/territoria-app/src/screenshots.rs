@@ -1695,3 +1695,93 @@ fn sites_from_reps() {
     app.run_command_for_test(crate::commands::Command::Undo);
     assert_eq!(app.project.plan(plan).unwrap().territories[0].name, "Rep 0");
 }
+
+/// Catchment rings around territory sites with customers and revenue
+/// within them, on the map and in a table.
+#[test]
+fn catchment_rings() {
+    use crate::dialogs::Placement;
+    use territoria_model::ValueSource;
+    use territoria_model::catchment::{CatchmentSpec, Centres};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    h.state_mut()
+        .add_linked_table_now("Sales 2026", table, "Area", layer, None);
+    let customers = customers(h.state(), layer, 600);
+    let app = h.state_mut();
+    app.add_table(
+        "Customers".into(),
+        customers,
+        PathBuf::from("customers.csv"),
+        Placement::Points {
+            x: "Longitude".into(),
+            y: "Latitude".into(),
+        },
+        None,
+    );
+    let points = app.project.layers.last().unwrap().id;
+    let plan = app.add_balanced_plan_now(layer, 4);
+    let g = app.project.layer(layer).unwrap().geometry.clone();
+    app.project
+        .plan_mut(plan)
+        .unwrap()
+        .sites_at_centres(&g, true, None);
+    let b = g.bbox.unwrap();
+    let span = territoria_geo::haversine(b.min(), b.max()) / 1000.0;
+    let (r1, r2) = (
+        (span / 12.0).round().max(1.0),
+        (span / 5.0).round().max(2.0),
+    );
+    let link = app.project.links[0].id;
+    app.create_catchment(&CatchmentSpec {
+        centres: Centres::Sites(plan),
+        radii_km: vec![r1, r2],
+        points: Some(points),
+        areas: Some((
+            layer,
+            ValueSource::Linked {
+                link,
+                column: "Revenue".into(),
+                agg: territoria_data::Aggregate::Sum,
+            },
+        )),
+    });
+    let t = &app.project.tables.last().unwrap().table;
+    assert_eq!(t.rows(), 4, "a row per site");
+    let km = territoria_data::table::format_number;
+    let near = t
+        .column(&format!("Customers within {} km", km(r1)))
+        .unwrap();
+    let far = t
+        .column(&format!("Customers within {} km", km(r2)))
+        .unwrap();
+    for r in 0..4 {
+        assert!(far.f64(r).unwrap() >= near.f64(r).unwrap());
+    }
+    assert!(
+        t.column(&format!("Revenue (Sales 2026) within {} km", km(r2)))
+            .is_some(),
+        "{:?}",
+        t.columns.iter().map(|c| &c.name).collect::<Vec<_>>()
+    );
+    settle(&mut h);
+    // Back to the map for the picture.
+    let app = h.state_mut();
+    let map = app.project.maps[0].id;
+    app.apply_action_for_test(crate::app::Action::OpenTab(crate::app::Tab::Map(map)));
+    settle(&mut h);
+    save(&mut h, "catchment");
+    // Removing the plan removes its rings.
+    let app = h.state_mut();
+    app.project.remove_plan(plan);
+    assert!(
+        !app.project.maps[0]
+            .layers
+            .iter()
+            .any(|l| matches!(l.kind, territoria_model::MapLayerKind::Rings { .. }))
+    );
+}

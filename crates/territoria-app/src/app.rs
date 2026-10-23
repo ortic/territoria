@@ -208,6 +208,7 @@ pub struct TerritoriaApp {
     formula: Option<crate::dialogs::FormulaDialog>,
     hex_grid: Option<crate::dialogs::HexGridDialog>,
     sites: Option<crate::dialogs::SitesDialog>,
+    catchment: Option<crate::dialogs::CatchmentDialog>,
     settings_dialog: Option<crate::dialogs::SettingsDialog>,
     download: Option<DownloadDialog>,
     export_map: Option<crate::dialogs::ExportMapDialog>,
@@ -295,6 +296,7 @@ impl TerritoriaApp {
             formula: None,
             hex_grid: None,
             sites: None,
+            catchment: None,
             settings_dialog: None,
             download: None,
             export_map: None,
@@ -1305,6 +1307,22 @@ impl TerritoriaApp {
                 &mut rcx, &meshes, &cells, ml, &map.crs,
             ));
             match &ml.kind {
+                MapLayerKind::Rings {
+                    radii_km, color, ..
+                } => {
+                    let radii: Vec<String> = radii_km
+                        .iter()
+                        .map(|r| territoria_data::table::format_number(*r))
+                        .collect();
+                    legends.push((
+                        ml.name.clone(),
+                        vec![territoria_analysis::LegendEntry {
+                            color: *color,
+                            label: format!("Within {} km", radii.join(" / ")),
+                            count: 0,
+                        }],
+                    ));
+                }
                 MapLayerKind::Choropleth { .. } | MapLayerKind::Categories { .. } => {
                     if let Some(scaled) = rcx.analyses.get(rcx.project, rcx.values, ml.id, &ml.kind)
                     {
@@ -1402,6 +1420,43 @@ impl TerritoriaApp {
         self.add_boundaries_to_map(map, id);
         self.history.push("Merge areas", before);
         self.selection = Selection::Data(DataRef::Layer(id));
+    }
+
+    /// Rings on the map and a table of what lies within them.
+    pub(crate) fn create_catchment(&mut self, spec: &territoria_model::catchment::CatchmentSpec) {
+        let table =
+            territoria_model::catchment::catchment_table(&self.project, &mut self.values, spec);
+        let label = spec.centres.label(&self.project);
+        let before = self.project.clone();
+        let map = self.ensure_map();
+        let id = self.project.new_map_layer_id();
+        let radii: Vec<String> = spec
+            .radii_km
+            .iter()
+            .map(|r| territoria_data::table::format_number(*r))
+            .collect();
+        self.push_map_layer(
+            map,
+            MapLayer {
+                id,
+                name: format!("Rings {} km", radii.join(" / ")),
+                visible: true,
+                opacity: 1.0,
+                kind: MapLayerKind::Rings {
+                    centres: spec.centres,
+                    radii_km: spec.radii_km.clone(),
+                    color: territoria_analysis::Rgba::rgb(0x7c, 0x3a, 0xed),
+                },
+            },
+        );
+        let name = self
+            .project
+            .unique_table_name(&format!("Catchment of {label}"));
+        let t = self.project.add_table(&name, table, SourceInfo::default());
+        self.history.push("Catchment rings", before);
+        self.dock
+            .push_to_focused_leaf(Tab::Table(DataRef::Table(t)));
+        self.selection = Selection::MapLayer(map, id);
     }
 
     /// Sites for a plan from a point layer: matched to the territories, or
@@ -1576,7 +1631,10 @@ impl TerritoriaApp {
     fn push_map_layer(&mut self, map: MapId, layer: MapLayer) -> Option<MapLayerId> {
         let project = &self.project;
         let overlay = |kind: &MapLayerKind| {
-            if matches!(kind, MapLayerKind::Symbols { .. }) {
+            if matches!(
+                kind,
+                MapLayerKind::Symbols { .. } | MapLayerKind::Rings { .. }
+            ) {
                 return true;
             }
             let source = match kind {
@@ -2086,6 +2144,14 @@ impl TerritoriaApp {
             Command::DownloadBoundaries => {
                 self.download = Some(DownloadDialog::new());
                 self.load_catalog();
+            }
+            Command::Catchment => {
+                let d = crate::dialogs::CatchmentDialog::new(&self.project);
+                if d.centres.is_none() {
+                    self.toast("Add points (branches, reps) or place territory sites first.");
+                } else {
+                    self.catchment = Some(d);
+                }
             }
             Command::HexGrid => {
                 if self.project.layers.is_empty() {
@@ -2701,6 +2767,7 @@ impl TerritoriaApp {
                     Command::LinkData,
                     Command::MergeAreas,
                     Command::HexGrid,
+                    Command::Catchment,
                     Command::CalculatedColumn,
                     Command::ExportMap,
                     Command::NewMap,
@@ -3006,6 +3073,14 @@ impl TerritoriaApp {
                     name,
                 }) => self.merge_areas(layer, &column, prefix, &name),
                 None if open => self.merge = Some(d),
+                None => {}
+            }
+        }
+        if let Some(mut d) = self.catchment.take() {
+            let mut open = true;
+            match d.show(ctx, &self.project, &mut open) {
+                Some(spec) => self.create_catchment(&spec),
+                None if open => self.catchment = Some(d),
                 None => {}
             }
         }
@@ -3443,6 +3518,7 @@ impl eframe::App for TerritoriaApp {
             || self.formula.is_some()
             || self.hex_grid.is_some()
             || self.sites.is_some()
+            || self.catchment.is_some()
             || self.settings_dialog.is_some()
             || self.select_list.is_some()
             || self.download.is_some()

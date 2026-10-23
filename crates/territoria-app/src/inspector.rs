@@ -729,6 +729,52 @@ fn map_layer(
                 actions,
             );
         }
+        MapLayerKind::Rings {
+            centres,
+            radii_km,
+            color: c,
+        } => {
+            ui.label(RichText::new(format!("Around the {}", centres.label(project))).weak());
+            egui::Grid::new("rings")
+                .num_columns(2)
+                .spacing([10.0, 6.0])
+                .show(ui, |ui| {
+                    ui.label("Radii");
+                    let text: Vec<String> = radii_km
+                        .iter()
+                        .map(|r| territoria_data::table::format_number(*r))
+                        .collect();
+                    let mut t = text.join(", ");
+                    if ui
+                        .add(egui::TextEdit::singleline(&mut t).desired_width(160.0))
+                        .on_hover_text("Kilometres, e.g. 5, 10, 20")
+                        .changed()
+                    {
+                        let radii = territoria_model::catchment::parse_radii(&t);
+                        if !radii.is_empty() {
+                            actions.push(edit_layer(map, id, "Change radii", move |l| {
+                                if let MapLayerKind::Rings { radii_km, .. } = &mut l.kind {
+                                    *radii_km = radii;
+                                }
+                            }));
+                        }
+                    }
+                    ui.label("km");
+                    ui.end_row();
+                    ui.label("Colour");
+                    if let Some(nc) = rgba_button(ui, *c) {
+                        actions.push(edit_layer(map, id, "Change ring colour", move |l| {
+                            if let MapLayerKind::Rings { color, .. } = &mut l.kind {
+                                *color = nc;
+                            }
+                        }));
+                    }
+                    ui.end_row();
+                });
+            if ui.button("Figures within the rings…").clicked() {
+                actions.push(Action::Command(crate::commands::Command::Catchment));
+            }
+        }
         MapLayerKind::Symbols {
             layer,
             source,

@@ -306,6 +306,24 @@ fn layer(s: &mut String, r: &Resolved, view: &View) {
             }
         }
     }
+    // Catchment rings.
+    for ring in &r.rings {
+        let mut d = String::new();
+        for (k, p) in ring.points.iter().enumerate() {
+            let s = view.to_screen(*p);
+            let _ = write!(d, "{}{:.2} {:.2}", if k == 0 { "M" } else { "L" }, s.x, s.y);
+        }
+        if d.is_empty() {
+            continue;
+        }
+        let (fc, fa) = hex(ring.fill);
+        let (sc, sa) = hex(ring.stroke.color);
+        let _ = write!(
+            s,
+            r#"<path d="{d}Z" fill="{fc}" fill-opacity="{fa:.3}" stroke="{sc}" stroke-opacity="{sa:.3}" stroke-width="{:.2}"/>"#,
+            ring.stroke.width
+        );
+    }
     // Proportional circles, largest first.
     for &(i, radius) in &r.symbols {
         let Some(lp) = mesh.label_points.get(i).copied().flatten() else {
@@ -350,6 +368,29 @@ pub fn text_width(t: &str, size: f32) -> f32 {
 }
 
 fn labels(s: &mut String, r: &Resolved, view: &View, occupied: &mut Vec<Rect>) {
+    for ring in &r.rings {
+        let Some(top) = ring
+            .points
+            .iter()
+            .map(|d| view.to_screen(*d))
+            .min_by(|a, b| a.y.total_cmp(&b.y))
+        else {
+            continue;
+        };
+        let rect = Rect::from_center_size(top, vec2(text_width(&ring.label, 9.0) + 4.0, 13.0));
+        if !view.rect.contains(top) || occupied.iter().any(|o| o.intersects(rect)) {
+            continue;
+        }
+        occupied.push(rect);
+        let (c, _) = hex(ring.stroke.color);
+        let _ = write!(
+            s,
+            r##"<text x="{:.2}" y="{:.2}" font-size="9" text-anchor="middle" fill="{c}" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2.5" paint-order="stroke">{}</text>"##,
+            top.x,
+            top.y + 3.0,
+            escape(&ring.label)
+        );
+    }
     let mesh = &r.mesh;
     let f = Frame::new(mesh, view);
     match &r.labels {

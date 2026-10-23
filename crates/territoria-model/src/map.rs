@@ -84,6 +84,12 @@ pub enum MapLayerKind {
     },
     /// Territories of a plan: fills, borders, labels.
     Territories { plan: PlanId, style: TerritoryStyle },
+    /// Rings of given radii around centres (catchment).
+    Rings {
+        centres: crate::catchment::Centres,
+        radii_km: Vec<f64>,
+        color: Rgba,
+    },
     /// Circles sized by a number: at each area's centre, or each point.
     Symbols {
         layer: LayerId,
@@ -142,7 +148,11 @@ impl MapLayerKind {
             | MapLayerKind::Choropleth { layer, .. }
             | MapLayerKind::Categories { layer, .. }
             | MapLayerKind::Symbols { layer, .. } => Some(*layer),
-            MapLayerKind::Territories { .. } => None,
+            MapLayerKind::Rings {
+                centres: crate::catchment::Centres::Points(layer),
+                ..
+            } => Some(*layer),
+            MapLayerKind::Territories { .. } | MapLayerKind::Rings { .. } => None,
         }
     }
 
@@ -172,7 +182,7 @@ impl MapLayerKind {
             | MapLayerKind::Choropleth { style, .. }
             | MapLayerKind::Categories { style, .. }
             | MapLayerKind::Symbols { style, .. } => Some(style),
-            MapLayerKind::Territories { .. } => None,
+            MapLayerKind::Territories { .. } | MapLayerKind::Rings { .. } => None,
         }
     }
 
@@ -182,7 +192,7 @@ impl MapLayerKind {
             | MapLayerKind::Choropleth { style, .. }
             | MapLayerKind::Categories { style, .. }
             | MapLayerKind::Symbols { style, .. } => Some(style),
-            MapLayerKind::Territories { .. } => None,
+            MapLayerKind::Territories { .. } | MapLayerKind::Rings { .. } => None,
         }
     }
 
@@ -193,6 +203,19 @@ impl MapLayerKind {
             MapLayerKind::Categories { .. } => "Coloured by category",
             MapLayerKind::Territories { .. } => "Territories",
             MapLayerKind::Symbols { .. } => "Circles sized by value",
+            MapLayerKind::Rings { .. } => "Catchment rings",
+        }
+    }
+
+    /// Whether this layer shows something of `plan` (and goes with it).
+    pub fn uses_plan(&self, plan: PlanId) -> bool {
+        match self {
+            MapLayerKind::Territories { plan: p, .. } => *p == plan,
+            MapLayerKind::Rings {
+                centres: crate::catchment::Centres::Sites(p),
+                ..
+            } => *p == plan,
+            _ => false,
         }
     }
 }

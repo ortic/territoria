@@ -101,6 +101,23 @@ pub struct LayerMesh {
 }
 
 impl LayerMesh {
+    /// A mesh with nothing in it, for layers drawn without geometry
+    /// (rings around centres).
+    pub fn empty() -> LayerMesh {
+        LayerMesh {
+            kind: GeometryKind::Point,
+            crs: String::new(),
+            rev: 0,
+            origin: [0.0, 0.0],
+            bounds: Vec::new(),
+            extent: Bounds::EMPTY,
+            label_points: Vec::new(),
+            points: Vec::new(),
+            levels: vec![Level::default()],
+            geometry: Arc::new(LayerGeometry::default()),
+        }
+    }
+
     /// Projects and simplifies `geometry` for display in `crs`. Unknown
     /// (non-geographic) coordinates are used as they are.
     pub fn build(geometry: Arc<LayerGeometry>, crs: &Crs, rev: u64) -> LayerMesh {

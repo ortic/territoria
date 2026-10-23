@@ -79,6 +79,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                             MapLayerKind::Categories { .. } => "◧",
                             MapLayerKind::Territories { .. } => "⬣",
                             MapLayerKind::Symbols { .. } => "●",
+                            MapLayerKind::Rings { .. } => "◎",
                         };
                         let text = RichText::new(format!("{icon} {}", ml.name));
                         let text = if ml.visible { text } else { text.weak() };
@@ -202,6 +203,33 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                                         size_legend(ui, symbol, max);
                                     });
                                 }
+                            }
+                            MapLayerKind::Rings {
+                                radii_km, color: c, ..
+                            } => {
+                                ui.indent(("legend", ml.id.0), |ui| {
+                                    ui.horizontal(|ui| {
+                                        let (rect, _) = ui
+                                            .allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
+                                        ui.painter().circle(
+                                            rect.center(),
+                                            6.0,
+                                            color(*c).gamma_multiply(0.15),
+                                            egui::Stroke::new(1.2, color(*c)),
+                                        );
+                                        let radii: Vec<String> = radii_km
+                                            .iter()
+                                            .map(|r| territoria_data::table::format_number(*r))
+                                            .collect();
+                                        ui.label(
+                                            RichText::new(format!(
+                                                "within {} km",
+                                                radii.join(" / ")
+                                            ))
+                                            .small(),
+                                        );
+                                    });
+                                });
                             }
                             MapLayerKind::Boundaries { .. } => {}
                         }

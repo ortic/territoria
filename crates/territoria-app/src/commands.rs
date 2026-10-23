@@ -40,6 +40,7 @@ commands! {
     MergeAreas => "Data: New Layer by Merging Areas…",
     CalculatedColumn => "Data: Calculated Column…",
     HexGrid => "Data: New Hexagon Grid…",
+    Catchment => "Map: Catchment Rings Around Points…",
     ColorByValue => "Map: Colour Areas by Value…",
     NewMap => "Map: New Map",
     ExportMap => "Map: Export Map (PNG, SVG, PDF)…",
