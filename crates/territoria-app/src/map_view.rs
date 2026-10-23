@@ -113,6 +113,11 @@ pub enum MapEvent {
     Round,
     /// A table column dropped on the map.
     ShowColumn(crate::app::DataRef, String),
+    /// The measured line as a barrier for the areas of a layer.
+    AddBarrier {
+        layer: LayerId,
+        line: Vec<[f64; 2]>,
+    },
     /// Select the features of another layer related to the selection.
     TransferSelection {
         to: LayerId,
@@ -846,6 +851,81 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
         let rect = Rect::from_min_size(at, galley.size()).expand(4.0);
         painter.rect_filled(rect, 4.0, halo);
         painter.galley(at, galley, text_color);
+    }
+    // A measured line can become a barrier between areas.
+    if cx.tool == Tool::Measure && state.measure.len() >= 2 {
+        let areas: Vec<&territoria_model::Layer> = map
+            .layers
+            .iter()
+            .filter_map(|ml| match &ml.kind {
+                MapLayerKind::Territories { plan, .. } => project.plan(*plan).map(|p| p.layer),
+                k => k.layer(),
+            })
+            .filter_map(|l| project.layer(l))
+            .filter(|l| l.kind() == GeometryKind::Area)
+            .fold(Vec::new(), |mut v, l| {
+                if !v.iter().any(|x: &&territoria_model::Layer| x.id == l.id) {
+                    v.push(l);
+                }
+                v
+            });
+        if !areas.is_empty() {
+            egui::Area::new(egui::Id::new(("barrier-bar", map.id)))
+                .order(egui::Order::Foreground)
+                .fixed_pos(rect.left_top() + vec2(12.0, 12.0))
+                .show(ui.ctx(), |ui| {
+                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        ui.menu_button(crate::i18n::tr("⛔ Make this line a barrier"), |ui| {
+                            for l in areas {
+                                if ui.button(&l.name).clicked() {
+                                    events.push(MapEvent::AddBarrier {
+                                        layer: l.id,
+                                        line: state.measure.clone(),
+                                    });
+                                    ui.close();
+                                }
+                            }
+                        })
+                        .response
+                        .on_hover_text(crate::i18n::tr(
+                            "Areas aren't neighbours across this line (a ridge, a river without a bridge): balancing and contiguity follow it",
+                        ));
+                    });
+                });
+        }
+    }
+    // Barriers of the map's area layers, dashed.
+    if let (Ok(to_display), true) = (
+        Transformer::new(&Crs::wgs84(), &map.crs),
+        map.layers.iter().any(|ml| ml.visible),
+    ) {
+        let mut done: Vec<LayerId> = Vec::new();
+        for ml in map.layers.iter().filter(|ml| ml.visible) {
+            let Some(l) = (match &ml.kind {
+                MapLayerKind::Territories { plan, .. } => project.plan(*plan).map(|p| p.layer),
+                k => k.layer(),
+            })
+            .and_then(|l| project.layer(l)) else {
+                continue;
+            };
+            if done.contains(&l.id) {
+                continue;
+            }
+            done.push(l.id);
+            for b in &l.barriers {
+                let points: Vec<Pos2> = b
+                    .iter()
+                    .filter_map(|&[x, y]| to_display.convert(geo_types::Coord { x, y }))
+                    .map(|d| view.to_screen([d.x, d.y]))
+                    .collect();
+                painter.extend(Shape::dashed_line(
+                    &points,
+                    Stroke::new(2.5, Color32::from_rgb(0xc0, 0x26, 0x2d)),
+                    8.0,
+                    5.0,
+                ));
+            }
+        }
     }
     scale_bar(&painter, &view, &map.crs, cx.dark);
     attribution(&painter, &view, map, project, cx.dark);

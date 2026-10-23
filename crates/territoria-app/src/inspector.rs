@@ -226,6 +226,33 @@ pub fn show(
 fn layer(ui: &mut Ui, project: &Project, id: LayerId, actions: &mut Vec<Action>) {
     let Some(l) = project.layer(id) else { return };
     ui.heading(&l.name);
+    if !l.barriers.is_empty() {
+        ui.horizontal(|ui| {
+            let noun = if l.barriers.len() == 1 {
+                "barrier"
+            } else {
+                "barriers"
+            };
+            ui.label(format!("⛔ {} {}", l.barriers.len(), tr(noun)));
+            if ui
+                .small_button(tr("Remove all"))
+                .on_hover_text(tr("Areas along them are neighbours again"))
+                .clicked()
+            {
+                actions.push(Action::Edit(
+                    "Remove barriers".into(),
+                    Box::new(move |p| {
+                        let rev = p.bump();
+                        if let Some(l) = p.layer_mut(id) {
+                            l.barriers.clear();
+                            std::sync::Arc::make_mut(&mut l.geometry).derive();
+                            l.rev = rev;
+                        }
+                    }),
+                ));
+            }
+        });
+    }
     ui.label(
         RichText::new(format!(
             "{} {}",

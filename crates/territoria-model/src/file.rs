@@ -121,7 +121,10 @@ pub fn read_project<R: Read + Seek>(reader: R) -> Result<Project, FileError> {
         let mut buf = Vec::new();
         zip.by_name(&format!("layers/{}.geom", layer.id.0))?
             .read_to_end(&mut buf)?;
-        layer.geometry = Arc::new(read_geometry(&buf)?);
+        let mut geometry = read_geometry(&buf)?;
+        // Neighbours are derived again: barriers cut them as when saved.
+        geometry.cut_neighbors(&layer.barriers);
+        layer.geometry = Arc::new(geometry);
         let attributes: Table = serde_json::from_reader(
             zip.by_name(&format!("layers/{}.attributes.json", layer.id.0))?,
         )?;

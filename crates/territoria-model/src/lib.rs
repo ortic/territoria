@@ -194,6 +194,7 @@ impl Project {
             name_column,
             source,
             rev,
+            barriers: Vec::new(),
         });
         id
     }
@@ -385,6 +386,8 @@ impl Project {
             .name_column
             .clone()
             .filter(|c| attributes.column(c).is_some());
+        let mut geometry = geometry;
+        geometry.cut_neighbors(&layer.barriers);
         layer.geometry = Arc::new(geometry);
         layer.attributes = Arc::new(attributes);
         layer.key_column = key_column;

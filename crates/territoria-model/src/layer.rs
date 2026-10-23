@@ -28,6 +28,10 @@ pub struct Layer {
     pub source: SourceInfo,
     /// Changes whenever geometry or attributes change.
     pub rev: u64,
+    /// Lines (longitude/latitude) areas aren't neighbours across: a ridge,
+    /// a river without a bridge. Balancing and contiguity follow them.
+    #[serde(default)]
+    pub barriers: Vec<Vec<[f64; 2]>>,
 }
 
 /// Where data came from, for the user and for reloading.
@@ -310,6 +314,50 @@ impl LayerGeometry {
         }
         self.index = BoxIndex::new(&self.bboxes);
         self.bbox = territoria_geo::union_rect(self.bboxes.iter().flatten().copied());
+    }
+
+    /// Removes neighbours whose centres are joined across a barrier line;
+    /// returns how many pairs were cut.
+    pub fn cut_neighbors(&mut self, barriers: &[Vec<[f64; 2]>]) -> usize {
+        use geo::Intersects;
+        let segments: Vec<geo_types::Line<f64>> = barriers
+            .iter()
+            .flat_map(|b| {
+                b.windows(2).map(|w| {
+                    geo_types::Line::new(
+                        Coord {
+                            x: w[0][0],
+                            y: w[0][1],
+                        },
+                        Coord {
+                            x: w[1][0],
+                            y: w[1][1],
+                        },
+                    )
+                })
+            })
+            .collect();
+        if segments.is_empty() {
+            return 0;
+        }
+        let label = self.label_points.clone();
+        let crosses = |a: usize, b: usize| {
+            let (Some(p), Some(q)) = (
+                label.get(a).copied().flatten(),
+                label.get(b).copied().flatten(),
+            ) else {
+                return false;
+            };
+            let link = geo_types::Line::new(p, q);
+            segments.iter().any(|s| s.intersects(&link))
+        };
+        let mut cut = 0;
+        for a in 0..self.neighbors.len() {
+            let before = self.neighbors[a].len();
+            self.neighbors[a].retain(|&(b, _)| !crosses(a, b as usize));
+            cut += before - self.neighbors[a].len();
+        }
+        cut / 2
     }
 
     pub fn polygon(&self, feature: usize) -> MultiPolygon<f64> {

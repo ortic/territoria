@@ -302,6 +302,21 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
         ("Rows of", "Zeilen von"),
         // Panels: properties, territories, contents, tables.
         ("of", "von"),
+        (
+            "⛔ Make this line a barrier",
+            "⛔ Diese Linie zur Barriere machen",
+        ),
+        (
+            "Areas aren't neighbours across this line (a ridge, a river without a bridge): balancing and contiguity follow it",
+            "Gebiete sind über diese Linie hinweg keine Nachbarn (ein Grat, ein Fluss ohne Brücke): Ausgleich und Zusammenhang richten sich danach",
+        ),
+        ("barriers", "Barrieren"),
+        ("barrier", "Barriere"),
+        ("Remove all", "Alle entfernen"),
+        (
+            "Areas along them are neighbours again",
+            "Gebiete entlang davon sind wieder Nachbarn",
+        ),
         ("Search help", "Hilfe durchsuchen"),
         ("Overview map", "Übersichtskarte"),
         ("Coverage from the sites", "Abdeckung von den Standorten"),

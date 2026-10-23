@@ -4291,3 +4291,53 @@ fn coverage_from_sites() {
     let left = scenario.assignment.iter().filter(|a| a.is_none()).count();
     assert!(left as f64 >= target - 3.0, "{left} left over");
 }
+
+/// A line drawn with the measure tool becomes a barrier: areas across it
+/// are no longer neighbours, also after saving and opening.
+#[test]
+fn barriers_between_areas() {
+    use crate::map_view::MapEvent;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    settle(&mut h);
+    let app = h.state_mut();
+    let g = app.project.layer(layer).unwrap().geometry.clone();
+    let b = g.bbox.unwrap();
+    let x = b.min().x + b.width() / 2.0;
+    let line = vec![[x, b.min().y - 0.01], [x, b.max().y + 0.01]];
+    let crossing = |g: &territoria_model::LayerGeometry| {
+        (0..g.len())
+            .flat_map(|a| g.neighbors[a].iter().map(move |&(n, _)| (a, n as usize)))
+            .filter(|&(a, n)| {
+                let (p, q) = (g.label_points[a].unwrap(), g.label_points[n].unwrap());
+                (p.x < x) != (q.x < x)
+            })
+            .count()
+    };
+    assert!(crossing(&g) > 0);
+    app.measure_for_test(line.clone());
+    app.map_events_for_test(vec![MapEvent::AddBarrier {
+        layer,
+        line: line.clone(),
+    }]);
+    settle(&mut h);
+    save(&mut h, "barrier");
+    let app = h.state();
+    let l = app.project.layer(layer).unwrap();
+    assert_eq!(l.barriers.len(), 1);
+    assert_eq!(crossing(&l.geometry), 0, "no neighbours across");
+    // Kept in the file.
+    let path = std::env::temp_dir().join(format!(
+        "territoria-barrier-{}.territoria",
+        std::process::id()
+    ));
+    territoria_model::file::save(&app.project, &path).unwrap();
+    let back = territoria_model::file::load(&path).unwrap();
+    let _ = std::fs::remove_file(&path);
+    let l = back.layer(layer).unwrap();
+    assert_eq!(l.barriers.len(), 1);
+    assert_eq!(crossing(&l.geometry), 0, "still cut after opening");
+}

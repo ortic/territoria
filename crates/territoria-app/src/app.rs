@@ -4778,6 +4778,24 @@ impl TerritoriaApp {
                     self.focus = false;
                 }
                 MapEvent::ShowColumn(data, column) => self.show_column(data, &column),
+                MapEvent::AddBarrier { layer, line } => {
+                    let mut cut = 0;
+                    self.edit("Add barrier", |p| {
+                        let rev = p.bump();
+                        if let Some(l) = p.layer_mut(layer) {
+                            cut = std::sync::Arc::make_mut(&mut l.geometry)
+                                .cut_neighbors(std::slice::from_ref(&line));
+                            l.barriers.push(line);
+                            l.rev = rev;
+                        }
+                    });
+                    if let Some(s) = self.map_states.get_mut(&map) {
+                        s.measure.clear();
+                    }
+                    self.toast(format!(
+                        "Barrier added: {cut} pairs of areas are no longer neighbours."
+                    ));
+                }
                 MapEvent::Round => {
                     if let Some((layer, units)) = self.selected.clone() {
                         self.plan_round(layer, units);
