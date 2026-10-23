@@ -773,6 +773,16 @@ impl TerritoriesPanel {
                     actions.push(sites_at(true, cx.values));
                     ui.close();
                 }
+                let has_points = project.layers.iter().any(|l| l.kind() == territoria_io::GeometryKind::Point && l.id != plan.layer);
+                if ui
+                    .add_enabled(has_points, egui::Button::new("Sites from points…"))
+                    .on_hover_text("Rep homes or branches from a point layer, matched to the territories; or the best of many possible locations")
+                    .on_disabled_hover_text("Add points first (a table with coordinates or addresses)")
+                    .clicked()
+                {
+                    actions.push(Action::SitesFromPoints(plan_id));
+                    ui.close();
+                }
                 if ui.add_enabled(any_site, egui::Button::new("Remove all sites")).clicked() {
                     actions.push(Action::Edit(
                         "Remove sites".into(),

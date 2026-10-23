@@ -1627,3 +1627,71 @@ fn address_import_dialog() {
     h.run_steps(3);
     save(&mut h, "address-import");
 }
+
+/// Reps' homes become the territories' sites (and names); or the best of
+/// many locations are chosen.
+#[test]
+fn sites_from_reps() {
+    use crate::dialogs::{Placement, SitesDialog};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    let plan = app.add_balanced_plan_now(layer, 4);
+    let g = app.project.layer(layer).unwrap().geometry.clone();
+    // A rep near each territory's centre, listed in another order.
+    let centres = app.project.plan(plan).unwrap().centres(&g, None);
+    let order = [2, 0, 3, 1];
+    let reps = Table::new(vec![
+        Column::text(
+            "Rep",
+            ColumnKind::Key,
+            order.iter().map(|i| Some(format!("Rep {i}"))).collect(),
+        ),
+        Column::number(
+            "Lon",
+            order.iter().map(|&i| Some(centres[i].unwrap().x)).collect(),
+        ),
+        Column::number(
+            "Lat",
+            order.iter().map(|&i| Some(centres[i].unwrap().y)).collect(),
+        ),
+    ])
+    .unwrap();
+    app.add_table(
+        "Reps".into(),
+        reps,
+        PathBuf::from("reps.csv"),
+        Placement::Points {
+            x: "Lon".into(),
+            y: "Lat".into(),
+        },
+        None,
+    );
+    let reps = app.project.layers.last().unwrap().id;
+    let mut d = SitesDialog::new(&app.project, plan);
+    d.layer = Some(reps);
+    app.place_sites(&d);
+    let p = app.project.plan(plan).unwrap();
+    for (i, t) in p.territories.iter().enumerate() {
+        assert_eq!(t.name, format!("Rep {i}"), "the nearest rep");
+        let c = centres[i].unwrap();
+        assert_eq!(t.site, Some([c.x, c.y]));
+    }
+    // Choosing: the best four of the reps' places are all four.
+    d.best = true;
+    app.place_sites(&d);
+    assert!(
+        app.project
+            .plan(plan)
+            .unwrap()
+            .territories
+            .iter()
+            .all(|t| t.site.is_some())
+    );
+    // Undo goes back to the matched sites.
+    app.run_command_for_test(crate::commands::Command::Undo);
+    assert_eq!(app.project.plan(plan).unwrap().territories[0].name, "Rep 0");
+}

@@ -446,35 +446,20 @@ impl Plan {
         weights: Option<&[Option<f64>]>,
     ) -> usize {
         let members = self.members();
+        let centres = self.centres(geometry, weights);
         let mut placed = 0;
-        for (t, units) in self.territories.iter_mut().zip(&members) {
+        for ((t, units), centre) in self.territories.iter_mut().zip(&members).zip(centres) {
             if (t.site.is_some() && !replace) || units.is_empty() {
                 continue;
             }
-            let (mut sx, mut sy, mut sw) = (0.0, 0.0, 0.0);
-            for &u in units {
-                if let Some(p) = geometry.label_points.get(u as usize).copied().flatten() {
-                    // By the measure (where the revenue is), else by size.
-                    let w = match weights {
-                        Some(w) => w.get(u as usize).copied().flatten().unwrap_or(0.0),
-                        None => geometry.areas.get(u as usize).copied().unwrap_or(1.0),
-                    }
-                    .max(1e-9);
-                    sx += p.x * w;
-                    sy += p.y * w;
-                    sw += w;
-                }
-            }
-            if sw == 0.0 {
-                continue;
-            }
-            let (cx, cy) = (sx / sw, sy / sw);
+            let Some(c) = centre else { continue };
+            // The unit nearest the centre, so the site lies in the territory.
             let best = units
                 .iter()
                 .filter_map(|&u| geometry.label_points.get(u as usize).copied().flatten())
                 .min_by(|a, b| {
-                    let da = (a.x - cx).powi(2) + (a.y - cy).powi(2);
-                    let db = (b.x - cx).powi(2) + (b.y - cy).powi(2);
+                    let da = (a.x - c.x).powi(2) + (a.y - c.y).powi(2);
+                    let db = (b.x - c.x).powi(2) + (b.y - c.y).powi(2);
                     da.total_cmp(&db)
                 });
             if let Some(p) = best {
@@ -496,6 +481,104 @@ impl Plan {
                     .feature_at(geo_types::Coord { x, y }, 0.0)
                     .map(|u| u as u32)
             })
+            .collect()
+    }
+
+    /// Each territory's centre: the weighted mean of its units' label
+    /// points (by `weights`, else by area).
+    pub fn centres(
+        &self,
+        geometry: &LayerGeometry,
+        weights: Option<&[Option<f64>]>,
+    ) -> Vec<Option<geo_types::Coord<f64>>> {
+        self.members()
+            .iter()
+            .map(|units| {
+                let (mut sx, mut sy, mut sw) = (0.0, 0.0, 0.0);
+                for &u in units {
+                    let Some(p) = geometry.label_points.get(u as usize).copied().flatten() else {
+                        continue;
+                    };
+                    let w = match weights {
+                        Some(w) => w.get(u as usize).copied().flatten().unwrap_or(0.0),
+                        None => geometry.areas.get(u as usize).copied().unwrap_or(1.0),
+                    }
+                    .max(1e-9);
+                    sx += p.x * w;
+                    sy += p.y * w;
+                    sw += w;
+                }
+                (sw > 0.0).then(|| geo_types::Coord {
+                    x: sx / sw,
+                    y: sy / sw,
+                })
+            })
+            .collect()
+    }
+
+    /// Sites from given locations (rep homes, branches): each territory
+    /// gets one, with the least total distance from the territories'
+    /// centres. Returns per territory the index of its location.
+    pub fn sites_from(
+        &mut self,
+        geometry: &LayerGeometry,
+        locations: &[geo_types::Coord<f64>],
+        weights: Option<&[Option<f64>]>,
+    ) -> Vec<Option<usize>> {
+        let centres = self.centres(geometry, weights);
+        let cost: Vec<Vec<f64>> = centres
+            .iter()
+            .map(|c| {
+                locations
+                    .iter()
+                    .map(|l| c.map_or(1e12, |c| territoria_geo::topology::haversine(c, *l)))
+                    .collect()
+            })
+            .collect();
+        let matched = crate::location::assign(&cost);
+        for (t, m) in self.territories.iter_mut().zip(&matched) {
+            if let Some(j) = m {
+                t.site = Some([locations[*j].x, locations[*j].y]);
+            }
+        }
+        matched
+    }
+
+    /// Chooses as many of the candidate locations as there are territories,
+    /// where they serve the units best (by `weights`, e.g. revenue), and
+    /// gives them to the territories they are nearest to. Returns per
+    /// territory the index of its location.
+    pub fn best_sites(
+        &mut self,
+        geometry: &LayerGeometry,
+        candidates: &[geo_types::Coord<f64>],
+        weights: Option<&[Option<f64>]>,
+    ) -> Vec<Option<usize>> {
+        let units: Vec<(usize, geo_types::Coord<f64>)> = (0..geometry.len())
+            .filter_map(|u| {
+                geometry
+                    .label_points
+                    .get(u)
+                    .copied()
+                    .flatten()
+                    .map(|p| (u, p))
+            })
+            .collect();
+        let w: Vec<f64> = units
+            .iter()
+            .map(|(u, _)| weights.map_or(1.0, |w| w.get(*u).copied().flatten().unwrap_or(0.0)))
+            .collect();
+        let chosen = crate::location::p_median(
+            units.len(),
+            &w,
+            candidates.len(),
+            self.territories.len(),
+            &|i, j| territoria_geo::topology::haversine(units[i].1, candidates[j]),
+        );
+        let picked: Vec<geo_types::Coord<f64>> = chosen.iter().map(|&j| candidates[j]).collect();
+        self.sites_from(geometry, &picked, weights)
+            .into_iter()
+            .map(|m| m.map(|k| chosen[k]))
             .collect()
     }
 
@@ -1549,6 +1632,43 @@ mod tests {
         assert!((km - 111.2).abs() < 1.0, "{km} km for a degree");
         let stats = p.plan(plan).unwrap().stats(&p, &mut cache);
         assert!((stats.territories[0].site_reach.unwrap() - km).abs() < 1e-9);
+    }
+
+    #[test]
+    fn sites_from_locations() {
+        use crate::layer::LayerGeometry;
+        use geo_types::{Coord, MultiPolygon, polygon};
+        // Six squares in a row; territory 1 west, territory 2 east.
+        let areas: Vec<MultiPolygon<f64>> = (0..6)
+            .map(|i| {
+                let x = i as f64 * 0.1;
+                MultiPolygon(vec![polygon![(x: x, y: 0.0), (x: x + 0.1, y: 0.0), (x: x + 0.1, y: 0.1), (x: x, y: 0.1), (x: x, y: 0.0)]])
+            })
+            .collect();
+        let mut p = Project::new();
+        let g = LayerGeometry::from_imported(territoria_io::Geometries::Areas(areas), true);
+        let layer = p.add_layer("A", g, Table::with_rows(6), Default::default());
+        let plan = p.add_plan("Plan", layer, 2);
+        let g = p.layer(layer).unwrap().geometry.clone();
+        let pl = p.plan_mut(plan).unwrap();
+        let (west, east) = (pl.territories[0].id, pl.territories[1].id);
+        pl.assign(&[0, 1, 2], Some(west));
+        pl.assign(&[3, 4, 5], Some(east));
+        // Two rep homes: the eastern one listed first.
+        let homes = [Coord { x: 0.55, y: 0.05 }, Coord { x: 0.05, y: 0.05 }];
+        assert_eq!(pl.sites_from(&g, &homes, None), vec![Some(1), Some(0)]);
+        assert_eq!(pl.territories[1].site, Some([0.55, 0.05]));
+        // The best two of many candidates: one in each half.
+        let candidates: Vec<Coord<f64>> = (0..13)
+            .map(|i| Coord {
+                x: i as f64 * 0.05,
+                y: 0.05,
+            })
+            .collect();
+        let picked = pl.best_sites(&g, &candidates, None);
+        let west_x = candidates[picked[0].unwrap()].x;
+        let east_x = candidates[picked[1].unwrap()].x;
+        assert!(west_x < 0.3 && east_x > 0.3, "{west_x} {east_x}");
     }
 
     #[test]

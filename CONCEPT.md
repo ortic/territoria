@@ -285,7 +285,7 @@ territoria/
 - [x] Runs in the background with progress, live preview, cancel, deterministic seed (no live preview)
 - [x] Result as a proposal: KPI before/after, moved units listed, accept or discard (counts, not a list)
 - [x] Diagnostics instead of silent failure (a unit alone exceeds the target, too few units, negative values) (also areas without data and islands; each with a button that selects the areas)
-- [ ] Location optimization: place sites at (weighted) centroids or p-median over candidate points; match sites to territories (assignment problem) (sites at the centre of the measure, in the nearest area; no p-median or matching yet)
+- [x] Location optimization: place sites at (weighted) centroids or p-median over candidate points; match sites to territories (assignment problem) (sites at the centre of the measure, in the nearest area; sites from a point layer matched to territories with least total distance (Hungarian method); the best N of many candidate locations (p-median, greedy + swaps))
 - [x] Colour optimization: neighbours get different colours; palettes; hierarchical colours (children shades of the parent) (neighbours differ; one palette)
 
 ### 5.10 Output (M6)

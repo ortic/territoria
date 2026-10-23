@@ -2768,3 +2768,96 @@ impl HexGridDialog {
         outcome
     }
 }
+
+/// Sites for a plan's territories from a point layer.
+pub struct SitesDialog {
+    pub plan: territoria_model::PlanId,
+    pub layer: Option<LayerId>,
+    /// Choose the best ones (candidates) instead of using them all.
+    pub best: bool,
+    /// Name territories after their site.
+    pub rename: bool,
+}
+
+impl SitesDialog {
+    pub fn new(project: &Project, plan: territoria_model::PlanId) -> SitesDialog {
+        let layer = project
+            .layers
+            .iter()
+            .rev()
+            .find(|l| l.kind() == GeometryKind::Point)
+            .map(|l| l.id);
+        SitesDialog {
+            plan,
+            layer,
+            best: false,
+            rename: true,
+        }
+    }
+
+    pub fn show(&mut self, ctx: &egui::Context, project: &Project, open: &mut bool) -> bool {
+        let mut apply = false;
+        let mut cancel = false;
+        let territories = project.plan(self.plan).map_or(0, |p| p.territories.len());
+        *open = modal(ctx, "sites-from", "Sites from points", 480.0, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Points");
+                layer_combo(
+                    ui,
+                    "sites-layer",
+                    project,
+                    &mut self.layer,
+                    Some(GeometryKind::Point),
+                );
+            });
+            ui.add_space(4.0);
+            ui.radio_value(
+                &mut self.best,
+                false,
+                "Each territory gets one of them (rep homes, branches)",
+            )
+            .on_hover_text(
+                "Matched so the distances from the territories' centres are least overall",
+            );
+            ui.radio_value(&mut self.best, true, format!("Choose the best {territories} of them (possible locations)"))
+                .on_hover_text("Those that serve the areas best, weighted by the plan's measure; Balance → Start over then draws territories around them");
+            if !self.best {
+                ui.checkbox(&mut self.rename, "Name the territories after them");
+            }
+            let n = self
+                .layer
+                .and_then(|l| project.layer(l))
+                .map_or(0, |l| l.len());
+            ui.add_space(4.0);
+            if n > 0 && n < territories {
+                ui.label(
+                    RichText::new(format!(
+                        "{n} points for {territories} territories: some stay without a site."
+                    ))
+                    .color(theme::WARN),
+                );
+            } else if self.best && n > 2000 {
+                ui.label(RichText::new("Many candidates: choosing may take a moment.").weak());
+            }
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(
+                        n > 0,
+                        egui::Button::new(RichText::new("Place sites").strong()),
+                    )
+                    .clicked()
+                {
+                    apply = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    cancel = true;
+                }
+            });
+        });
+        if cancel || apply {
+            *open = false;
+        }
+        apply
+    }
+}

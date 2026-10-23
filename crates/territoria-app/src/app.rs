@@ -81,6 +81,8 @@ pub enum Action {
     DiscardProposal,
     /// Select features and zoom to them.
     SelectUnits(LayerId, Vec<u32>),
+    /// Open the dialog for sites from a point layer.
+    SitesFromPoints(PlanId),
     /// Select the features of table rows (adding to the selection: `true`).
     SelectRows(DataRef, Vec<usize>, bool),
     /// Open the formula editor for a new (`None`) or calculated column.
@@ -205,6 +207,7 @@ pub struct TerritoriaApp {
     merge: Option<MergeDialog>,
     formula: Option<crate::dialogs::FormulaDialog>,
     hex_grid: Option<crate::dialogs::HexGridDialog>,
+    sites: Option<crate::dialogs::SitesDialog>,
     settings_dialog: Option<crate::dialogs::SettingsDialog>,
     download: Option<DownloadDialog>,
     export_map: Option<crate::dialogs::ExportMapDialog>,
@@ -291,6 +294,7 @@ impl TerritoriaApp {
             merge: None,
             formula: None,
             hex_grid: None,
+            sites: None,
             settings_dialog: None,
             download: None,
             export_map: None,
@@ -1400,6 +1404,72 @@ impl TerritoriaApp {
         self.selection = Selection::Data(DataRef::Layer(id));
     }
 
+    /// Sites for a plan from a point layer: matched to the territories, or
+    /// the best of them chosen first.
+    pub(crate) fn place_sites(&mut self, d: &crate::dialogs::SitesDialog) {
+        let (Some(plan), Some(points)) = (
+            self.project.plan(d.plan),
+            d.layer.and_then(|l| self.project.layer(l)),
+        ) else {
+            return;
+        };
+        let Some(layer) = self.project.layer(plan.layer) else {
+            return;
+        };
+        let geometry = layer.geometry.clone();
+        let weights = plan
+            .measures
+            .first()
+            .filter(|m| m.source != territoria_model::ValueSource::Units)
+            .map(|m| self.values.values(&self.project, plan.layer, &m.source));
+        // Points with a location, and their names.
+        let located: Vec<(usize, geo_types::Coord<f64>)> = points
+            .geometry
+            .points
+            .iter()
+            .enumerate()
+            .filter_map(|(i, mp)| mp.0.first().map(|p| (i, p.0)))
+            .collect();
+        let coords: Vec<geo_types::Coord<f64>> = located.iter().map(|(_, c)| *c).collect();
+        let names: Vec<String> = located
+            .iter()
+            .map(|(i, _)| points.display_name(*i))
+            .collect();
+        let (plan_id, best, rename) = (d.plan, d.best, d.rename && !d.best);
+        let mut placed = 0;
+        self.edit(
+            if best {
+                "Choose sites"
+            } else {
+                "Sites from points"
+            },
+            |p| {
+                let rev = p.bump();
+                if let Some(pl) = p.plan_mut(plan_id) {
+                    let picked = if best {
+                        pl.best_sites(&geometry, &coords, weights.as_deref())
+                    } else {
+                        pl.sites_from(&geometry, &coords, weights.as_deref())
+                    };
+                    for (t, m) in pl.territories.iter_mut().zip(&picked) {
+                        if let Some(j) = m {
+                            placed += 1;
+                            if rename {
+                                t.name = names[*j].clone();
+                            }
+                        }
+                    }
+                    pl.rev = rev;
+                }
+            },
+        );
+        self.toast(if best {
+            format!("{placed} sites chosen. Balance → Start over draws territories around them.")
+        } else {
+            format!("{placed} territories got a site.")
+        });
+    }
+
     /// A new layer of hexagons; coloured by the count when points were
     /// counted.
     pub(crate) fn create_hex_grid(&mut self, spec: &territoria_model::grid::HexSpec, name: &str) {
@@ -2319,6 +2389,9 @@ impl TerritoriaApp {
                     s.zoom_to = Some((layer, units));
                 }
             }
+            Action::SitesFromPoints(plan) => {
+                self.sites = Some(crate::dialogs::SitesDialog::new(&self.project, plan));
+            }
             Action::SelectRows(data, rows, add) => {
                 let target = match data {
                     DataRef::Layer(l) => Some((l, rows.iter().map(|&r| r as u32).collect())),
@@ -2936,6 +3009,14 @@ impl TerritoriaApp {
                 None => {}
             }
         }
+        if let Some(mut d) = self.sites.take() {
+            let mut open = true;
+            if d.show(ctx, &self.project, &mut open) {
+                self.place_sites(&d);
+            } else if open {
+                self.sites = Some(d);
+            }
+        }
         if let Some(mut d) = self.hex_grid.take() {
             let mut open = true;
             match d.show(ctx, &self.project, &mut open) {
@@ -3361,6 +3442,7 @@ impl eframe::App for TerritoriaApp {
             || self.merge.is_some()
             || self.formula.is_some()
             || self.hex_grid.is_some()
+            || self.sites.is_some()
             || self.settings_dialog.is_some()
             || self.select_list.is_some()
             || self.download.is_some()
