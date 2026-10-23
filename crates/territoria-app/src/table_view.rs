@@ -18,6 +18,8 @@ struct TableState {
     key: Option<OrderKey>,
     /// Show only the rows of the map's selection.
     only_selected: bool,
+    /// The cell being edited: row, column, text.
+    editing: Option<(usize, usize, String)>,
 }
 
 /// What the row order depends on: revision, sort, filter, plan revisions,
@@ -103,6 +105,11 @@ pub fn show(
             })
             .response
             .on_hover_text("This table with each row's territories");
+            if matches!(data, DataRef::Table(_))
+                && ui.button("➕ Row").on_hover_text("An empty row at the end; double-click cells to fill them").clicked()
+            {
+                actions.push(Action::AddRow(data));
+            }
             if ui
                 .button("⊕ Columns from…")
                 .on_hover_text("Values from the map (the area a point lies in, points in an area, the nearest point) or another table by key")
@@ -265,26 +272,37 @@ pub fn show(
                 body.rows(text_height, state.order.len(), |mut row| {
                     let r = state.order[row.index()];
                     row.set_selected(in_selection(r));
-                    for c in &table.columns {
+                    for (ci, c) in table.columns.iter().enumerate() {
                         row.col(|ui| {
+                            // Editing this cell: Enter keeps, Esc drops.
+                            if let Some((er, ec, text)) = &mut state.editing
+                                && *er == r
+                                && *ec == ci
+                            {
+                                let resp = ui.add(egui::TextEdit::singleline(text).desired_width(f32::INFINITY));
+                                resp.request_focus();
+                                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                                    state.editing = None;
+                                } else if resp.lost_focus() {
+                                    actions.push(Action::EditCell(data, r, c.name.clone(), text.clone()));
+                                    state.editing = None;
+                                }
+                                return;
+                            }
                             let text = c.display(r);
-                            if c.kind.is_numeric() {
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        ui.label(match c.f64(r) {
-                                            Some(v)
-                                                if c.kind
-                                                    == territoria_data::ColumnKind::Number =>
-                                            {
-                                                format_value(v)
-                                            }
-                                            _ => text,
-                                        });
-                                    },
-                                );
+                            let shown = match c.f64(r) {
+                                Some(v) if c.kind == territoria_data::ColumnKind::Number => format_value(v),
+                                _ => text.clone(),
+                            };
+                            let label = egui::Label::new(shown).sense(Sense::click());
+                            let resp = if c.kind.is_numeric() {
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| ui.add(label))
+                                    .inner
                             } else {
-                                ui.label(text);
+                                ui.add(label)
+                            };
+                            if resp.double_clicked() && c.formula.is_none() {
+                                state.editing = Some((r, ci, text));
                             }
                         });
                     }
@@ -302,9 +320,18 @@ pub fn show(
                             }
                         });
                     }
-                    if row.response().clicked() {
+                    let resp = row.response();
+                    if resp.clicked() {
                         let add = ui_modifiers.shift || ui_modifiers.command;
                         actions.push(Action::SelectRows(data, vec![r], add));
+                    }
+                    if matches!(data, DataRef::Table(_)) {
+                        resp.context_menu(|ui| {
+                            if ui.button("🗑 Delete row").clicked() {
+                                actions.push(Action::DeleteRows(data, vec![r]));
+                                ui.close();
+                            }
+                        });
                     }
                 });
             });

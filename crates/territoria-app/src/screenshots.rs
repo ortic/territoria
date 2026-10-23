@@ -2365,3 +2365,59 @@ fn columns_from_the_map() {
     );
     assert!(a.column("Sales (Customers)").is_some());
 }
+
+/// Editing a table: a cell, a new row, a deleted row; wrong text refused.
+#[test]
+fn edit_table_cells() {
+    use crate::app::{Action, DataRef};
+    use crate::dialogs::Placement;
+    let (mut h, _lock) = harness(false);
+    let table = Table::new(vec![
+        Column::text(
+            "Code",
+            ColumnKind::Key,
+            vec![Some("01".into()), Some("02".into())],
+        ),
+        Column::number("Sales", vec![Some(1.0), Some(2.0)]),
+    ])
+    .unwrap();
+    let app = h.state_mut();
+    app.add_table(
+        "Sales".into(),
+        table,
+        PathBuf::from("sales.csv"),
+        Placement::None,
+        None,
+    );
+    let data = DataRef::Table(app.project.tables[0].id);
+    app.apply_formula_for_test(data, "Double", "[Sales] * 2");
+    app.apply_action_for_test(Action::EditCell(data, 1, "Sales".into(), "2'500".into()));
+    let t = &app.project.tables[0].table;
+    assert_eq!(t.column("Sales").unwrap().f64(1), Some(2500.0));
+    assert_eq!(
+        t.column("Double").unwrap().f64(1),
+        Some(5000.0),
+        "recomputed"
+    );
+    app.apply_action_for_test(Action::EditCell(data, 0, "Sales".into(), "many".into()));
+    assert_eq!(
+        app.project.tables[0].table.column("Sales").unwrap().f64(0),
+        Some(1.0),
+        "refused"
+    );
+    assert!(
+        app.toasts_for_test()
+            .iter()
+            .any(|t| t.contains("isn't a number"))
+    );
+    app.apply_action_for_test(Action::AddRow(data));
+    app.apply_action_for_test(Action::EditCell(data, 2, "Code".into(), "03".into()));
+    assert_eq!(app.project.tables[0].table.rows(), 3);
+    app.apply_action_for_test(Action::DeleteRows(data, vec![0]));
+    let t = &app.project.tables[0].table;
+    assert_eq!(t.rows(), 2);
+    assert_eq!(t.column("Code").unwrap().display(1), "03");
+    // Each a step of its own.
+    app.run_command_for_test(crate::commands::Command::Undo);
+    assert_eq!(app.project.tables[0].table.rows(), 3);
+}

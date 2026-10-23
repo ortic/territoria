@@ -89,6 +89,10 @@ pub enum Action {
     ReloadTable(TableId),
     /// Open the dialog for columns from the map or another table.
     Join(DataRef),
+    /// Set a cell from text: row, column name, text.
+    EditCell(DataRef, usize, String, String),
+    AddRow(DataRef),
+    DeleteRows(DataRef, Vec<usize>),
     /// Draw a map in another projection.
     SetMapCrs(MapId, territoria_geo::Crs),
     /// Show a message.
@@ -2988,6 +2992,45 @@ impl TerritoriaApp {
             Action::Join(data) => {
                 self.join = Some(crate::dialogs::JoinDialog::new(&self.project, data))
             }
+            Action::EditCell(data, row, column, text) => {
+                let Some(col) = crate::dialogs::data_table(&self.project, data)
+                    .and_then(|(t, _)| t.column(&column))
+                    .cloned()
+                else {
+                    return;
+                };
+                if col.display(row) != text.trim() {
+                    // Check on a copy first: only fitting text becomes a step.
+                    if col.clone().set_text(row, &text) {
+                        self.edit("Edit cell", |p| {
+                            if let Some(t) = data_table_mut(p, data) {
+                                if let Some(c) = t.columns.iter_mut().find(|c| c.name == column) {
+                                    c.set_text(row, &text);
+                                }
+                                territoria_expr::recalculate(t);
+                            }
+                        });
+                    } else {
+                        self.error(format!(
+                            "“{}” isn't a {} for {column}.",
+                            text.trim(),
+                            col.kind.label().to_lowercase()
+                        ));
+                    }
+                }
+            }
+            Action::AddRow(data) => self.edit("Add row", |p| {
+                if let Some(t) = data_table_mut(p, data) {
+                    t.push_row();
+                    territoria_expr::recalculate(t);
+                }
+            }),
+            Action::DeleteRows(data, rows) => self.edit("Delete row", |p| {
+                if let Some(t) = data_table_mut(p, data) {
+                    t.remove_rows(&rows);
+                    territoria_expr::recalculate(t);
+                }
+            }),
             Action::Notify(text) => self.toast(text),
             Action::SetMapCrs(map, crs) => {
                 self.edit("Change projection", |p| {

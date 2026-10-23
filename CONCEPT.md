@@ -188,7 +188,7 @@ territoria/
 - [x] Change a column's type after import
 - [x] Linked tables: re-read from the source file on demand or on open; schema changes reported (on demand: Reload keeps links, column kinds and calculated columns; added/removed columns and broken links reported; not on open)
 - [x] Data grid: virtualized, sort, filter, column statistics, sum row, search, copy (sort and search)
-- [ ] Edit cells of imported tables; add/delete rows
+- [x] Edit cells of imported tables; add/delete rows (double-click a cell; rows added and deleted in data tables, cells only in layer tables)
 - [x] Calculated columns with one expression language (see 5.5) (on tables and layer attributes; the formula is kept and dependent columns recalculate)
 - [x] Lookup columns (value from another table by key, with aggregation for several matches) (Columns from… → Another table by key; the best key matching is chosen)
 - [x] Spatial columns: "lies in" (area key/territory of a point), "count of points in", distance between coordinates or to nearest site (Columns from…: area a point lies in, points in an area, nearest point of a layer with distance; distance between coordinates by formula)

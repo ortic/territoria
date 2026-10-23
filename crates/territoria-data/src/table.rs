@@ -202,6 +202,38 @@ impl Column {
         }
     }
 
+    /// Sets a cell from text as it would be read for the column's kind;
+    /// empty text empties it. `false` when the text doesn't fit the kind.
+    pub fn set_text(&mut self, row: usize, text: &str) -> bool {
+        if row >= self.len() {
+            return false;
+        }
+        let t = text.trim();
+        let value = (!t.is_empty()).then(|| t.to_owned());
+        let converted = crate::infer::convert_texts(std::slice::from_ref(&value), self.kind);
+        let ok = value.is_none() || converted.null_count_data() == 0;
+        if !ok {
+            return false;
+        }
+        match (&mut self.data, converted) {
+            (ColumnData::Text(v), ColumnData::Text(c)) => v[row] = c[0].clone(),
+            (ColumnData::Number(v), ColumnData::Number(c)) => v[row] = c[0],
+            (ColumnData::Bool(v), ColumnData::Bool(c)) => v[row] = c[0],
+            (ColumnData::Date(v), ColumnData::Date(c)) => v[row] = c[0],
+            _ => return false,
+        }
+        true
+    }
+
+    fn push_empty(&mut self) {
+        match &mut self.data {
+            ColumnData::Text(v) => v.push(None),
+            ColumnData::Number(v) => v.push(None),
+            ColumnData::Bool(v) => v.push(None),
+            ColumnData::Date(v) => v.push(None),
+        }
+    }
+
     pub fn null_count(&self) -> usize {
         (0..self.len()).filter(|&r| self.get(r).is_null()).count()
     }
@@ -311,6 +343,27 @@ impl Table {
         }
         self.columns.push(column);
         Ok(())
+    }
+
+    /// Adds an empty row at the end; returns its index.
+    pub fn push_row(&mut self) -> usize {
+        for c in &mut self.columns {
+            c.push_empty();
+        }
+        self.rows += 1;
+        self.rows - 1
+    }
+
+    /// Removes rows (any order, duplicates ignored).
+    pub fn remove_rows(&mut self, rows: &[usize]) {
+        let drop: std::collections::HashSet<usize> = rows.iter().copied().collect();
+        let keep: Vec<usize> = (0..self.rows).filter(|r| !drop.contains(r)).collect();
+        let formulas: Vec<Option<String>> =
+            self.columns.iter().map(|c| c.formula.clone()).collect();
+        *self = self.take_rows(&keep);
+        for (c, f) in self.columns.iter_mut().zip(formulas) {
+            c.formula = f;
+        }
     }
 
     /// A table of the given rows, in that order.
@@ -444,5 +497,29 @@ mod tests {
         assert_eq!(t.convert(ColumnKind::Number), 1);
         assert_eq!(t.get(0), Value::Number(1.5));
         assert_eq!(t.get(1), Value::Null);
+    }
+
+    #[test]
+    fn edit_cells_and_rows() {
+        let mut t = Table::new(vec![
+            Column::text(
+                "Code",
+                ColumnKind::Key,
+                vec![Some("01".into()), Some("02".into())],
+            ),
+            Column::number("Sales", vec![Some(1.0), Some(2.0)]),
+        ])
+        .unwrap();
+        assert!(t.columns[1].set_text(0, "1'500.5"));
+        assert_eq!(t.columns[1].f64(0), Some(1500.5));
+        assert!(!t.columns[1].set_text(0, "lots"), "not a number");
+        assert!(t.columns[0].set_text(1, "007"));
+        assert_eq!(t.columns[0].display(1), "007", "keys stay text");
+        let r = t.push_row();
+        assert_eq!((r, t.rows()), (2, 3));
+        assert!(t.columns[1].set_text(2, ""));
+        t.remove_rows(&[0]);
+        assert_eq!(t.rows(), 2);
+        assert_eq!(t.columns[0].display(0), "007");
     }
 }
