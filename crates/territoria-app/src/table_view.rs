@@ -1,7 +1,7 @@
 //! A table tab: a layer's attributes or a dataset, sortable and searchable,
 //! with each row's territory in the plans it relates to.
 
-use crate::i18n::tr;
+use crate::i18n::{tr, trf};
 use egui::{RichText, Sense, Ui, vec2};
 use egui_extras::{Column as TableColumn, TableBuilder};
 use territoria_analysis::format::format_value;
@@ -120,15 +120,15 @@ pub fn show(
                 ui.separator();
                 if ui
                     .button(tr("New segment…"))
-                    .on_hover_text("A yes/no calculated column, e.g. [Sales] > 10000: it filters tables and analyses")
+                    .on_hover_text(tr("A yes/no calculated column, e.g. [Sales] > 10000: it filters tables and analyses"))
                     .clicked()
                 {
                     actions.push(Action::Formula(data, None));
                 }
             })
             .response
-            .on_hover_text("Only the rows of a segment: a yes/no column");
-        ui.label(RichText::new(format!("{} rows", format_value(state.order.len() as f64))).weak());
+            .on_hover_text(tr("Only the rows of a segment: a yes/no column"));
+        ui.label(RichText::new(trf("{n} rows", &[("n", &format_value(state.order.len() as f64))])).weak());
         if selection.is_some() {
             ui.checkbox(&mut state.only_selected, tr("Only the selection"))
                 .on_hover_text(tr("Rows of the areas selected on the map"));
@@ -145,27 +145,27 @@ pub fn show(
             }
             if ui
                 .button(tr("⊕ Columns from…"))
-                .on_hover_text("Values from the map (the area a point lies in, points in an area, the nearest point) or another table by key")
+                .on_hover_text(tr("Values from the map (the area a point lies in, points in an area, the nearest point) or another table by key"))
                 .clicked()
             {
                 actions.push(Action::Join(data));
             }
             if ui
                 .button(tr("Σ Summarise…"))
-                .on_hover_text("A new table with one row per group, e.g. sales per rep")
+                .on_hover_text(tr("A new table with one row per group, e.g. sales per rep"))
                 .clicked()
             {
                 actions.push(Action::Summarise(data));
             }
             if ui
                 .button(tr("⚖ Score…"))
-                .on_hover_text("A weighted mix of several figures, as a calculated column")
+                .on_hover_text(tr("A weighted mix of several figures, as a calculated column"))
                 .clicked()
             {
                 actions.push(Action::Score(data));
             }
             if matches!(data, DataRef::Table(_))
-                && ui.button(tr("➕ Row")).on_hover_text("An empty row at the end; double-click cells to fill them").clicked()
+                && ui.button(tr("➕ Row")).on_hover_text(tr("An empty row at the end; double-click cells to fill them")).clicked()
             {
                 actions.push(Action::AddRow(data));
             }
@@ -178,7 +178,7 @@ pub fn show(
                 }
             })
             .response
-            .on_hover_text("This table with each row's territories (only the segment's rows when one is chosen)");
+            .on_hover_text(tr("This table with each row's territories (only the segment's rows when one is chosen)"));
     });
 
     let plan_revs = plans.iter().map(|(p, _)| p.rev).collect();
@@ -276,12 +276,14 @@ pub fn show(
                             )
                             .on_hover_text(match &c.formula {
                                 Some(f) => format!(
-                                    "{} · = {f}\nClick to sort, right-click to edit",
-                                    c.kind.label()
+                                    "{} · = {f}\n{}",
+                                    c.kind.label(),
+                                    tr("Click to sort, right-click to edit")
                                 ),
                                 None => format!(
-                                    "{} · click to sort, drag onto the map to show it",
-                                    c.kind.label()
+                                    "{} · {}",
+                                    c.kind.label(),
+                                    tr("click to sort, drag onto the map to show it")
                                 ),
                             });
                         r.dnd_set_drag_payload(crate::app::ColumnDrag {
@@ -322,9 +324,9 @@ pub fn show(
                                 )
                                 .frame(false),
                             )
-                            .on_hover_text(format!(
-                                "Territory in “{}”: follows the plan as you change it · click to sort",
-                                plan.name
+                            .on_hover_text(trf(
+                                "Territory in “{plan}”: follows the plan as you change it · click to sort",
+                                &[("plan", &plan.name)],
                             ));
                         if r.clicked() {
                             state.sort = match state.sort {

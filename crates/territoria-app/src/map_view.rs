@@ -984,7 +984,7 @@ fn selection_bar(
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     let count = territoria_analysis::format::format_value(units.len() as f64);
-                    ui.label(egui::RichText::new(format!("{count} {noun} selected")).strong());
+                    ui.label(egui::RichText::new(crate::i18n::trf("{n} {noun} selected", &[("n", &count), ("noun", &tr(noun))])).strong());
                     if let Some((sum, label)) = &total {
                         ui.label(
                             egui::RichText::new(format!(
@@ -997,8 +997,8 @@ fn selection_bar(
                     if let Some(p) = plan {
                         ui.separator();
                         if let Some(t) = cx.active_territory.and_then(|t| p.territory(t)) {
-                            let r = ui.button(format!("Assign to {}", t.name)).on_hover_text(
-                                "The selected areas join the active territory (locked ones stay)",
+                            let r = ui.button(crate::i18n::trf("Assign to {name}", &[("name", &t.name)])).on_hover_text(
+                                tr("The selected areas join the active territory (locked ones stay)"),
                             );
                             let swatch = Rect::from_center_size(
                                 r.rect.left_center() + vec2(-6.0, 0.0),
@@ -1045,7 +1045,7 @@ fn selection_bar(
                         && (2..=100).contains(&units.len())
                         && ui
                             .button(tr("Round"))
-                            .on_hover_text("The quickest round by road visiting the selected points, from the routing service")
+                            .on_hover_text(tr("The quickest round by road visiting the selected points, from the routing service"))
                             .clicked()
                     {
                         events.push(MapEvent::Round);
@@ -1155,7 +1155,7 @@ fn transfer_menu(
         }
     })
     .response
-    .on_hover_text("Select what lies in the selection on another layer, e.g. the postcodes of selected districts");
+    .on_hover_text(tr("Select what lies in the selection on another layer, e.g. the postcodes of selected districts"));
 }
 
 /// Title and (label, value) rows for the hover card: the area, then what

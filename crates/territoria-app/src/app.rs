@@ -1,6 +1,6 @@
 //! The application: project, undo history, panels, tabs and dialogs.
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_str, trf};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -463,8 +463,10 @@ impl TerritoriaApp {
         }
     }
 
+    /// Shows a message; fixed texts are translated here, texts with
+    /// values come translated from [`trf`].
     pub fn toast(&mut self, text: impl Into<String>) {
-        let text = text.into();
+        let text = crate::i18n::tr_str(&text.into()).to_owned();
         info!("{text}");
         self.toasts.push(Toast {
             text,
@@ -474,7 +476,7 @@ impl TerritoriaApp {
     }
 
     pub fn error(&mut self, text: impl Into<String>) {
-        let text = text.into();
+        let text = crate::i18n::tr_str(&text.into()).to_owned();
         error!("{text}");
         self.toasts.push(Toast {
             text,
@@ -640,9 +642,9 @@ impl TerritoriaApp {
                     self.settings.logo = Some(path);
                     self.save_settings();
                 } else {
-                    self.error(format!(
-                        "{} isn't a PNG, JPEG or SVG image.",
-                        file_name(&path)
+                    self.error(trf(
+                        "{file} isn't a PNG, JPEG or SVG image.",
+                        &[("file", &file_name(&path))],
                     ));
                 }
             }
@@ -938,7 +940,10 @@ impl TerritoriaApp {
         } else if territoria_io::TABLE_EXTENSIONS.contains(&ext.as_str()) {
             self.import_table_file(path.to_owned(), TableOptions::default());
         } else {
-            self.error(format!("Territoria can't open “{}” files.", ext));
+            self.error(trf(
+                "Territoria can't open “{ext}” files.",
+                &[("ext", &ext)],
+            ));
         }
     }
 
@@ -997,7 +1002,10 @@ impl TerritoriaApp {
             return;
         };
         if !path.exists() {
-            self.error(format!("{} is no longer there.", path.display()));
+            self.error(trf(
+                "{file} is no longer there.",
+                &[("file", &path.display())],
+            ));
             return;
         }
         let label = format!("Reading {}", file_name(&path));
@@ -1022,10 +1030,9 @@ impl TerritoriaApp {
             .position(|p| p.geometry.kind == kind && p.imported.name.to_lowercase() == name)
             .or_else(|| prepared.iter().position(|p| p.geometry.kind == kind));
         let Some(i) = pick else {
-            self.error(format!(
-                "The file has no {} to replace “{}” with.",
-                kind.label(),
-                old.name
+            self.error(trf(
+                "The file has no {kind} to replace “{name}” with.",
+                &[("kind", &tr(kind.label())), ("name", &old.name)],
             ));
             return;
         };
@@ -1071,7 +1078,7 @@ impl TerritoriaApp {
         if r.gone > 0 {
             text.push_str(&format!("; {} old areas are gone", fmt(r.gone as f64)));
         }
-        self.toast(format!("{text}. Undo brings the old ones back."));
+        self.toast(format!("{text}. {}", tr("Undo brings the old ones back.")));
     }
 
     pub fn import_table_file(&mut self, path: PathBuf, options: TableOptions) {
@@ -1260,7 +1267,10 @@ impl TerritoriaApp {
                     }
                     self.import_layers = Some(dialog);
                 }
-                Err(e) => self.error(format!("Couldn't read {}: {e}", file_name(&path))),
+                Err(e) => self.error(trf(
+                    "Couldn't read {file}: {e}",
+                    &[("file", &file_name(&path)), ("e", &e)],
+                )),
             },
             JobResult::Table {
                 path,
@@ -1274,7 +1284,10 @@ impl TerritoriaApp {
                         .unwrap_or_default();
                     self.import_table = Some(ImportTable::new(path, name, table, info, options));
                 }
-                Err(e) => self.error(format!("Couldn't read {}: {e}", file_name(&path))),
+                Err(e) => self.error(trf(
+                    "Couldn't read {file}: {e}",
+                    &[("file", &file_name(&path)), ("e", &e)],
+                )),
             },
             JobResult::Mesh {
                 layer,
@@ -1288,30 +1301,45 @@ impl TerritoriaApp {
                     // A new project: untitled and not saved anywhere yet.
                     project.title = "Untitled".into();
                     self.set_project(project, None);
-                    self.toast(format!("New project from the template {name}."));
+                    self.toast(trf(
+                        "New project from the template {name}.",
+                        &[("name", &name)],
+                    ));
                 }
-                Err(e) => self.error(format!("Couldn't open the template {name}: {e}")),
+                Err(e) => self.error(trf(
+                    "Couldn't open the template {name}: {e}",
+                    &[("name", &name), ("e", &e)],
+                )),
             },
             JobResult::TemplateSaved { name, result } => match result {
-                Ok(()) => self.toast(format!("Kept as the template {name}.")),
-                Err(e) => self.error(format!("Couldn't keep the template {name}: {e}")),
+                Ok(()) => self.toast(trf("Kept as the template {name}.", &[("name", &name)])),
+                Err(e) => self.error(trf(
+                    "Couldn't keep the template {name}: {e}",
+                    &[("name", &name), ("e", &e)],
+                )),
             },
             JobResult::Loaded { path, result } => match result {
                 Ok(project) => self.set_project(project, Some(path)),
-                Err(e) => self.error(format!("Couldn't open {}: {e}", file_name(&path))),
+                Err(e) => self.error(trf(
+                    "Couldn't open {file}: {e}",
+                    &[("file", &file_name(&path)), ("e", &e)],
+                )),
             },
             JobResult::Saved { path, result } => match result {
                 Ok(()) => {
                     self.settings.add_recent(&path);
                     self.save_settings();
-                    self.toast(format!("Saved {}", file_name(&path)));
+                    self.toast(trf("Saved {file}", &[("file", &file_name(&path))]));
                     self.path = Some(path);
                 }
                 // Autosaves report themselves as an error to stay quiet.
                 Err(e) if e == "autosave" => {}
                 Err(e) => {
                     self.history.dirty = true;
-                    self.error(format!("Couldn't save {}: {e}", file_name(&path)));
+                    self.error(trf(
+                        "Couldn't save {file}: {e}",
+                        &[("file", &file_name(&path)), ("e", &e)],
+                    ));
                 }
             },
             JobResult::Catalog(result) => {
@@ -1325,9 +1353,9 @@ impl TerritoriaApp {
                         .insert(path.clone(), (set.attribution(), set.title()));
                     self.import_boundaries(path, VectorOptions::default());
                 }
-                Err(e) => self.error(format!(
-                    "Couldn't download {} {}: {e}",
-                    set.country, set.level
+                Err(e) => self.error(trf(
+                    "Couldn't download {country} {level}: {e}",
+                    &[("country", &set.country), ("level", &set.level), ("e", &e)],
                 )),
             },
             JobResult::Rounds {
@@ -1343,7 +1371,7 @@ impl TerritoriaApp {
                 result,
             } => match result {
                 Ok(found) => self.add_drive_zones(layer, &label, &limits, outlines, found),
-                Err(e) => self.error(format!("Couldn't get the travel times: {e}")),
+                Err(e) => self.error(trf("Couldn't get the travel times: {e}", &[("e", &e)])),
             },
             JobResult::Round {
                 layer,
@@ -1351,7 +1379,7 @@ impl TerritoriaApp {
                 result,
             } => match result {
                 Ok(trip) => self.add_round(layer, &units, trip),
-                Err(e) => self.error(format!("Couldn't plan the round: {e}")),
+                Err(e) => self.error(trf("Couldn't plan the round: {e}", &[("e", &e)])),
             },
             JobResult::Columns { target, result } => match result {
                 Ok(columns) => {
@@ -1364,13 +1392,16 @@ impl TerritoriaApp {
                             }
                         }
                     });
-                    self.toast(format!("{n} columns added."));
+                    self.toast(trf("{n} columns added.", &[("n", &n)]));
                 }
-                Err(e) => self.error(format!("Couldn't add the columns: {e}")),
+                Err(e) => self.error(trf("Couldn't add the columns: {e}", &[("e", &e)])),
             },
             JobResult::Exported { path, result } => match result {
-                Ok(()) => self.toast(format!("Wrote {}", file_name(&path))),
-                Err(e) => self.error(format!("Couldn't write {}: {e}", file_name(&path))),
+                Ok(()) => self.toast(trf("Wrote {file}", &[("file", &file_name(&path))])),
+                Err(e) => self.error(trf(
+                    "Couldn't write {file}: {e}",
+                    &[("file", &file_name(&path)), ("e", &e)],
+                )),
             },
             JobResult::Geocoded {
                 name,
@@ -1418,15 +1449,15 @@ impl TerritoriaApp {
                         None,
                     );
                     self.toast(if found.stopped {
-                        format!("Stopped: {found_n} of {rows} addresses found so far. Add the table again to go on; found ones are remembered.")
+                        trf("Stopped: {found} of {rows} addresses found so far. Add the table again to go on; found ones are remembered.", &[("found", &found_n), ("rows", &rows)])
                     } else {
-                        format!(
-                            "{found_n} of {rows} addresses found ({} remembered from before). The Geocoding column tells how precisely.",
-                            found.cached
+                        trf(
+                            "{found} of {rows} addresses found ({cached} remembered from before). The Geocoding column tells how precisely.",
+                            &[("found", &found_n), ("rows", &rows), ("cached", &found.cached)],
                         )
                     });
                 }
-                Err(e) => self.error(format!("Couldn't find the addresses: {e}")),
+                Err(e) => self.error(trf("Couldn't find the addresses: {e}", &[("e", &e)])),
             },
             JobResult::Replacement {
                 layer,
@@ -1434,7 +1465,10 @@ impl TerritoriaApp {
                 result,
             } => match result {
                 Ok(prepared) => self.apply_replacement(layer, path, prepared),
-                Err(e) => self.error(format!("Couldn't read {}: {e}", file_name(&path))),
+                Err(e) => self.error(trf(
+                    "Couldn't read {file}: {e}",
+                    &[("file", &file_name(&path)), ("e", &e)],
+                )),
             },
             JobResult::Reloaded { table, result } => match result {
                 Ok(rows) => {
@@ -1455,26 +1489,29 @@ impl TerritoriaApp {
                         }
                         if c.broken_links > 0 {
                             self.error(format!(
-                                "{text}. {} links lost their key column: link the table again.",
-                                c.broken_links
+                                "{text}. {}",
+                                trf(
+                                    "{n} links lost their key column: link the table again.",
+                                    &[("n", &c.broken_links)]
+                                )
                             ));
                         } else {
                             self.toast(format!("{text}."));
                         }
                     }
                 }
-                Err(e) => self.error(format!("Couldn't reload the table: {e}")),
+                Err(e) => self.error(trf("Couldn't reload the table: {e}", &[("e", &e)])),
             },
             JobResult::Copied(result) => match result {
                 Ok(image) => {
                     self.to_clipboard = Some(image);
                     self.toast("The map is on the clipboard: paste it into a mail or slide.");
                 }
-                Err(e) => self.error(format!("Couldn't copy the map: {e}")),
+                Err(e) => self.error(trf("Couldn't copy the map: {e}", &[("e", &e)])),
             },
             JobResult::Optimized { plan, result } => match result {
                 Ok(proposal) => self.territories_panel.proposal = Some((plan, proposal)),
-                Err(e) => self.error(format!("Balancing failed: {e}")),
+                Err(e) => self.error(trf("Balancing failed: {e}", &[("e", &e)])),
             },
         }
     }
@@ -2482,7 +2519,7 @@ impl TerritoriaApp {
                 }
             }
         });
-        self.toast(format!("{n} columns added."));
+        self.toast(trf("{n} columns added.", &[("n", &n)]));
     }
 
     /// Asks the routing service for the quickest round through `units`
@@ -2716,8 +2753,9 @@ impl TerritoriaApp {
             work.push((i, units, site.is_some(), stops));
         }
         if too_many > 0 {
-            self.toast(format!(
-                "{too_many} territories have more than 100 stops and get no round."
+            self.toast(trf(
+                "{n} territories have more than 100 stops and get no round.",
+                &[("n", &too_many)],
             ));
         }
         if work.is_empty() {
@@ -2870,16 +2908,27 @@ impl TerritoriaApp {
         );
         self.history.push("Plan rounds", before);
         let h = (total_minutes / 60.0).floor();
-        self.toast(format!(
-            "Rounds planned: {} km, {} h {:02} min in all{}",
-            territoria_analysis::format::format_value(total_km.round()),
-            h,
-            (total_minutes - h * 60.0).round() as u32,
-            if failed > 0 {
-                format!("; {failed} territories failed")
-            } else {
-                String::new()
-            }
+        self.toast(trf(
+            "Rounds planned: {km} km, {h} h {min} min in all{failed}",
+            &[
+                (
+                    "km",
+                    &territoria_analysis::format::format_value(total_km.round()),
+                ),
+                ("h", &h),
+                (
+                    "min",
+                    &format!("{:02}", (total_minutes - h * 60.0).round() as u32),
+                ),
+                (
+                    "failed",
+                    &if failed > 0 {
+                        trf("; {n} territories failed", &[("n", &failed)])
+                    } else {
+                        String::new()
+                    },
+                ),
+            ],
         ));
     }
 
@@ -2953,7 +3002,7 @@ impl TerritoriaApp {
             },
         );
         self.history.push("Plan a round", before);
-        self.toast(format!("Round planned: {summary}."));
+        self.toast(trf("Round planned: {summary}.", &[("summary", &summary)]));
     }
 
     /// Travel time and distance by road from each feature of `from` to the
@@ -2976,7 +3025,10 @@ impl TerritoriaApp {
             .filter_map(|f| Some((b.display_name(f), place(b, f)?)))
             .collect();
         if dests.is_empty() {
-            self.error(format!("{} has no points to travel to.", b.name));
+            self.error(trf(
+                "{name} has no points to travel to.",
+                &[("name", &b.name)],
+            ));
             return;
         }
         let settings = self.settings.routing.clone();
@@ -3136,9 +3188,12 @@ impl TerritoriaApp {
             },
         );
         self.toast(if best {
-            format!("{placed} sites chosen. Balance → Start over draws territories around them.")
+            trf(
+                "{n} sites chosen. Balance → Start over draws territories around them.",
+                &[("n", &placed)],
+            )
         } else {
-            format!("{placed} territories got a site.")
+            trf("{n} territories got a site.", &[("n", &placed)])
         });
     }
 
@@ -3364,7 +3419,7 @@ impl TerritoriaApp {
                 match territoria_model::points_from_table(&table, xi, yi, crs.as_ref()) {
                     Ok(g) => g,
                     Err(e) => {
-                        self.error(format!("Couldn't convert the coordinates: {e}"));
+                        self.error(trf("Couldn't convert the coordinates: {e}", &[("e", &e)]));
                         return;
                     }
                 };
@@ -3385,8 +3440,9 @@ impl TerritoriaApp {
                 s.fit_requested = self.project.layers.len() == 1;
             }
             if missing > 0 {
-                self.toast(format!(
-                    "{missing} of {rows} rows have no usable coordinates and aren't on the map."
+                self.toast(trf(
+                    "{missing} of {rows} rows have no usable coordinates and aren't on the map.",
+                    &[("missing", &missing), ("rows", &rows)],
                 ));
             }
             return;
@@ -3402,7 +3458,10 @@ impl TerritoriaApp {
             if !self.project.layers.is_empty() {
                 self.link = Some(LinkDialog::new(&self.project, id));
             } else {
-                self.toast(format!("Added {name}. Add boundaries to put it on a map."));
+                self.toast(trf(
+                    "Added {name}. Add boundaries to put it on a map.",
+                    &[("name", &name)],
+                ));
             }
         }
     }
@@ -3581,10 +3640,14 @@ impl TerritoriaApp {
         };
         let Some((layer, (name, what))) = found else {
             self.toast(match data {
-                DataRef::Table(_) => {
-                    format!("Link the table to boundaries first to show {column} on the map.")
-                }
-                DataRef::Layer(_) => format!("{column} can't be shown on the map."),
+                DataRef::Table(_) => trf(
+                    "Link the table to boundaries first to show {column} on the map.",
+                    &[("column", &column)],
+                ),
+                DataRef::Layer(_) => trf(
+                    "{column} can't be shown on the map.",
+                    &[("column", &column)],
+                ),
             });
             return;
         };
@@ -3860,9 +3923,9 @@ impl TerritoriaApp {
 
     fn report_broken(&mut self, broken: &[String]) {
         if !broken.is_empty() {
-            self.error(format!(
-                "These calculated columns no longer work and keep their last values: {}. Edit their formulas to fix them.",
-                broken.join(", ")
+            self.error(trf(
+                "These calculated columns no longer work and keep their last values: {columns}. Edit their formulas to fix them.",
+                &[("columns", &broken.join(", "))],
             ));
         }
     }
@@ -4084,12 +4147,15 @@ impl TerritoriaApp {
         self.history.push("Coverage from sites", before);
         self.territories_panel.compare_with(plan_id);
         self.toast(if left == 0 {
-            format!("“{name}”: the sites cover every area.")
+            trf("“{name}”: the sites cover every area.", &[("name", &name)])
         } else {
-            format!(
-                "“{name}”: {} areas are beyond what the sites can take (their target +{:.0} %).",
-                territoria_analysis::format::format_value(left as f64),
-                tolerance * 100.0
+            trf(
+                "“{name}”: {n} areas are beyond what the sites can take (their target +{pct} %).",
+                &[
+                    ("name", &name),
+                    ("n", &territoria_analysis::format::format_value(left as f64)),
+                    ("pct", &format!("{:.0}", tolerance * 100.0)),
+                ],
             )
         });
     }
@@ -4116,8 +4182,9 @@ impl TerritoriaApp {
         self.show_plan(copy);
         self.history.push("Duplicate plan", before);
         self.territories_panel.compare_with(plan);
-        self.toast(format!(
-            "“{name}” is a copy to try changes on. The Territories panel compares it with the original."
+        self.toast(trf(
+            "“{name}” is a copy to try changes on. The Territories panel compares it with the original.",
+            &[("name", &name)],
         ));
     }
 
@@ -4189,11 +4256,11 @@ impl TerritoriaApp {
             Command::AddData => self.ask_file(FileAction::AddData),
             Command::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             Command::Undo => match self.history.undo(&mut self.project) {
-                Some(label) => self.toast(format!("Undid: {label}")),
+                Some(label) => self.toast(trf("Undid: {label}", &[("label", &tr_str(&label))])),
                 None => self.toast("Nothing to undo"),
             },
             Command::Redo => match self.history.redo(&mut self.project) {
-                Some(label) => self.toast(format!("Redid: {label}")),
+                Some(label) => self.toast(trf("Redid: {label}", &[("label", &tr_str(&label))])),
                 None => self.toast("Nothing to redo"),
             },
             Command::LinkData => match self.project.tables.last() {
@@ -4454,8 +4521,9 @@ impl TerritoriaApp {
                             pl.rev = rev;
                         }
                     });
-                    self.toast(format!(
-                        "Assigned {changed} areas to their neighbours' territories."
+                    self.toast(trf(
+                        "Assigned {n} areas to their neighbours' territories.",
+                        &[("n", &changed)],
                     ));
                 }
             }
@@ -4580,7 +4648,7 @@ impl TerritoriaApp {
             Action::Coverage(plan) => self.coverage_scenario(plan),
             Action::SaveClassSet(name, scale) => {
                 self.settings.class_sets.retain(|s| s.name != name);
-                self.toast(format!("Kept the classes as {name}."));
+                self.toast(trf("Kept the classes as {name}.", &[("name", &name)]));
                 self.settings
                     .class_sets
                     .push(territoria_config::ClassSet { name, scale });
@@ -4645,7 +4713,7 @@ impl TerritoriaApp {
                             pl.rev = rev;
                         }
                     });
-                    self.toast(format!("Moved {moves} areas."));
+                    self.toast(trf("Moved {n} areas.", &[("n", &moves)]));
                 }
             }
             Action::DiscardProposal => self.territories_panel.proposal = None,
@@ -4684,10 +4752,13 @@ impl TerritoriaApp {
                             }
                         });
                     } else {
-                        self.error(format!(
-                            "“{}” isn't a {} for {column}.",
-                            text.trim(),
-                            col.kind.label().to_lowercase()
+                        self.error(trf(
+                            "“{text}” isn't a {kind} for {column}.",
+                            &[
+                                ("text", &text.trim()),
+                                ("kind", &tr(col.kind.label()).to_lowercase()),
+                                ("column", &column),
+                            ],
                         ));
                     }
                 }
@@ -4876,10 +4947,9 @@ impl TerritoriaApp {
                             }
                         });
                         if changed < units.len() {
-                            self.toast(format!(
-                                "{} of {} areas changed; the others are locked or already there.",
-                                changed,
-                                units.len()
+                            self.toast(trf(
+                                "{changed} of {n} areas changed; the others are locked or already there.",
+                                &[("changed", &changed), ("n", &units.len())],
                             ));
                         }
                     }
@@ -4910,8 +4980,9 @@ impl TerritoriaApp {
                     if let Some(s) = self.map_states.get_mut(&map) {
                         s.measure.clear();
                     }
-                    self.toast(format!(
-                        "Barrier added: {cut} pairs of areas are no longer neighbours."
+                    self.toast(trf(
+                        "Barrier added: {n} pairs of areas are no longer neighbours.",
+                        &[("n", &cut)],
                     ));
                 }
                 MapEvent::Share { plan, with } => {
@@ -4945,12 +5016,22 @@ impl TerritoriaApp {
                     {
                         let found = territoria_model::transfer::transfer(a, &units, b, relation);
                         if found.is_empty() {
-                            self.toast(format!("Nothing in {} is {}.", b.name, relation.label()));
+                            self.toast(trf(
+                                "Nothing in {layer} is {relation}.",
+                                &[("layer", &b.name), ("relation", &tr(relation.label()))],
+                            ));
                         } else {
-                            self.toast(format!(
-                                "{} of {} selected",
-                                territoria_analysis::format::format_value(found.len() as f64),
-                                b.name
+                            self.toast(trf(
+                                "{n} of {layer} selected",
+                                &[
+                                    (
+                                        "n",
+                                        &territoria_analysis::format::format_value(
+                                            found.len() as f64
+                                        ),
+                                    ),
+                                    ("layer", &b.name),
+                                ],
                             ));
                             self.selected = Some((to, found));
                         }
@@ -5028,20 +5109,20 @@ impl TerritoriaApp {
                         ui.label(RichText::new(&p.name).strong());
                         if ui
                             .button("Territories and assignment (Excel)…")
-                            .on_hover_text("Also has a sheet for each linked table and point layer, with each row's territory")
+                            .on_hover_text(tr("Also has a sheet for each linked table and point layer, with each row's territory"))
                             .clicked()
                         {
                             exports.push(Export::PlanExcel(p.id));
                         }
-                        if ui.button("Assignment (CSV)…").clicked() {
+                        if ui.button(tr("Assignment (CSV)…")).clicked() {
                             exports.push(Export::PlanCsv(p.id));
                         }
-                        if ui.button("Territory outlines (GeoJSON)…").clicked() {
+                        if ui.button(tr("Territory outlines (GeoJSON)…")).clicked() {
                             exports.push(Export::PlanGeoJson(p.id));
                         }
                         if ui
                             .button("Report per territory (PDF)…")
-                            .on_hover_text("An overview and a page per territory with its map, figures and largest areas")
+                            .on_hover_text(tr("An overview and a page per territory with its map, figures and largest areas"))
                             .clicked()
                         {
                             exports.push(Export::Report(p.id));
@@ -5072,7 +5153,7 @@ impl TerritoriaApp {
                                 exports.push(Export::Data(d, false, None));
                             }
                             if let DataRef::Layer(l) = d
-                                && ui.button("GeoJSON (with shapes)…").clicked()
+                                && ui.button(tr("GeoJSON (with shapes)…")).clicked()
                             {
                                 exports.push(Export::LayerGeoJson(l));
                             }
@@ -5197,14 +5278,14 @@ impl TerritoriaApp {
             ui.separator();
             let has_plan = self.active_plan.is_some();
             ui.selectable_value(&mut self.tool, Tool::Navigate, tr("✋ Navigate"))
-                .on_hover_text("Drag to move, scroll to zoom, click an area to inspect it (V)");
+                .on_hover_text(tr("Drag to move, scroll to zoom, click an area to inspect it (V)"));
             ui.selectable_value(&mut self.tool, Tool::Measure, tr("📏 Measure"))
-                .on_hover_text("Click points to measure the distance along them; right-click takes the last one back, Esc starts over");
+                .on_hover_text(tr("Click points to measure the distance along them; right-click takes the last one back, Esc starts over"));
             ui.selectable_value(&mut self.tool, Tool::Select, tr("⬚ Select"))
-                .on_hover_text("Click or drag a rectangle over areas, Alt+drag for a lasso, Shift adds. Then assign them in one go (S)");
+                .on_hover_text(tr("Click or drag a rectangle over areas, Alt+drag for a lasso, Shift adds. Then assign them in one go (S)"));
             ui.add_enabled_ui(has_plan, |ui| {
                 ui.selectable_value(&mut self.tool, Tool::Paint, tr("✏ Paint"))
-                    .on_hover_text("Drag over areas to assign them to the active territory. Shift+click picks a territory, Alt+drag erases, right-drag moves the map (B)")
+                    .on_hover_text(tr("Drag over areas to assign them to the active territory. Shift+click picks a territory, Alt+drag erases, right-drag moves the map (B)"))
                     .on_disabled_hover_text("Create a territory plan first");
             });
             if self.tool == Tool::Paint
@@ -5274,7 +5355,7 @@ impl TerritoriaApp {
                     });
                 });
         } else if r.has_focus() && !self.search.trim().is_empty() {
-            r.clone().on_hover_text("Nothing found");
+            r.clone().on_hover_text(tr("Nothing found"));
         }
         if let Some(h) = pick {
             self.go_to(&h.target);
@@ -5412,7 +5493,7 @@ impl TerritoriaApp {
                 commands.push(Command::DownloadBoundaries);
             }
             ui.add_space(20.0);
-            if ui.button("📂 Open a project…").clicked() {
+            if ui.button(tr("📂 Open a project…")).clicked() {
                 commands.push(Command::OpenProject);
             }
             if !self.settings.recent_projects.is_empty() {
@@ -5776,9 +5857,12 @@ impl TerritoriaApp {
             egui::Modal::new(egui::Id::new("about")).show(ctx, |ui| {
                 ui.set_width(380.0);
                 ui.heading("Territoria");
-                ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+                ui.label(trf(
+                    "Version {version}",
+                    &[("version", &env!("CARGO_PKG_VERSION"))],
+                ));
                 ui.add_space(6.0);
-                ui.label("Geomarketing and territory planning.");
+                ui.label(tr("Geomarketing and territory planning."));
                 ui.label(
                     RichText::new("Colour ramps: ColorBrewer (Brewer, Harrower, Penn State).")
                         .weak()
@@ -5929,7 +6013,7 @@ impl TerritoriaApp {
             .unwrap_or_else(|| dir.join("Pasted table.txt"));
         match std::fs::write(&path, text) {
             Ok(()) => self.import_table_file(path, TableOptions::default()),
-            Err(e) => self.error(format!("Couldn't keep the pasted table: {e}")),
+            Err(e) => self.error(trf("Couldn't keep the pasted table: {e}", &[("e", &e)])),
         }
     }
 
@@ -6012,7 +6096,7 @@ impl TabViewer for Viewer<'_> {
             Tab::Map(id) => {
                 let app = &mut *self.app;
                 let Some(map) = app.project.map(id) else {
-                    ui.label("This map was removed.");
+                    ui.label(tr("This map was removed."));
                     return;
                 };
                 if ui.ui_contains_pointer() || app.current_map.is_none() {
@@ -6292,9 +6376,9 @@ impl eframe::App for TerritoriaApp {
                 .interactable(false)
                 .show(&ctx, |ui| {
                     egui::Frame::popup(ui.style()).show(ui, |ui| {
-                        ui.label(format!(
-                            "{}: drop on the map or its layer list",
-                            drag.column
+                        ui.label(trf(
+                            "{column}: drop on the map or its layer list",
+                            &[("column", &drag.column)],
                         ));
                     });
                 });

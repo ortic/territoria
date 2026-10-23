@@ -4293,6 +4293,17 @@ fn german_interface() {
         .run_command_for_test(crate::commands::Command::Help);
     h.run_steps(3);
     h.get_by_label("Erste Schritte");
+    // Messages and their values too.
+    h.state_mut()
+        .run_command_for_test(crate::commands::Command::Undo);
+    assert!(
+        h.state()
+            .toasts_for_test()
+            .iter()
+            .any(|t| t.starts_with("Rückgängig: ") || t == "Nichts rückgängig zu machen"),
+        "{:?}",
+        h.state().toasts_for_test()
+    );
     crate::i18n::set_language(territoria_config::Language::English);
 }
 

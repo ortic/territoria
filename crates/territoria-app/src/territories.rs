@@ -1,7 +1,7 @@
 //! The Territories panel: the active plan's territories with their figures,
 //! editing, and balancing.
 
-use crate::i18n::tr;
+use crate::i18n::{tr, trf};
 use std::collections::HashMap;
 
 use egui::{Color32, ComboBox, RichText, Sense, Ui, vec2};
@@ -645,7 +645,7 @@ impl TerritoriesPanel {
             ui.menu_button("⋯", |ui| {
                 if ui
                     .button(tr("⧉ Duplicate as scenario"))
-                    .on_hover_text("A copy to try changes on. The copy is compared with this plan.")
+                    .on_hover_text(tr("A copy to try changes on. The copy is compared with this plan."))
                     .clicked()
                 {
                     actions.push(Action::DuplicatePlan(plan_id));
@@ -656,7 +656,7 @@ impl TerritoriesPanel {
                 if on_points
                     && ui
                         .button(tr("🚗 Rounds for all territories"))
-                        .on_hover_text("Each territory's quickest round by road through its customers, from its site: km and hours per territory and each customer's visit order")
+                        .on_hover_text(tr("Each territory's quickest round by road through its customers, from its site: km and hours per territory and each customer's visit order"))
                         .clicked()
                 {
                     actions.push(Action::PlanRounds(plan_id));
@@ -685,7 +685,7 @@ impl TerritoriesPanel {
                 }
                 if ui
                     .button(tr("▦ Open as table"))
-                    .on_hover_text("All territories in a table: edit codes, names, regions, sizes; sort by any figure")
+                    .on_hover_text(tr("All territories in a table: edit codes, names, regions, sizes; sort by any figure"))
                     .clicked()
                 {
                     actions.push(Action::OpenTab(crate::app::Tab::Plan(plan_id)));
@@ -695,7 +695,7 @@ impl TerritoriesPanel {
                 }
                 if ui
                     .button(tr("Excel, a sheet per territory…"))
-                    .on_hover_text("The territories, and each territory's areas with their figures on a sheet of its own, e.g. to hand to each rep")
+                    .on_hover_text(tr("The territories, and each territory's areas with their figures on a sheet of its own, e.g. to hand to each rep"))
                     .clicked()
                 {
                     actions.push(Action::Export(Export::PlanSheets(plan_id)));
@@ -729,7 +729,7 @@ impl TerritoriesPanel {
             target: None,
         });
         ui.horizontal(|ui| {
-            ui.label(tr("Balance by")).on_hover_text("The figure territories should have about equally of (weighted by each territory's size).");
+            ui.label(tr("Balance by")).on_hover_text(tr("The figure territories should have about equally of (weighted by each territory's size)."));
             let current = numbers.iter().find(|(_, s)| *s == measure.source).map_or_else(|| measure.source.label(project), |(l, _)| l.clone());
             egui::ComboBox::from_id_salt("measure").width(170.0).selected_text(current).show_ui(ui, |ui| {
                 for (label, source) in &numbers {
@@ -852,7 +852,7 @@ impl TerritoriesPanel {
                                 } else {
                                     let name = ui
                                         .add(egui::Label::new(RichText::new(&t.name).strong()).truncate().sense(Sense::click()))
-                                        .on_hover_text(format!("{} · code {}\nClick: paint with it · double-click: rename · right-click: more", t.name, t.code));
+                                        .on_hover_text(trf("{name} · code {code}\nClick: paint with it · double-click: rename · right-click: more", &[("name", &t.name), ("code", &t.code)]));
                                     if name.double_clicked() {
                                         *editing = Some((t.id, t.name.clone()));
                                     } else if name.clicked() {
@@ -862,28 +862,31 @@ impl TerritoriesPanel {
                                 });
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                     if t.locked {
-                                        ui.label("🔒").on_hover_text("Locked: keeps its areas when painting and balancing");
+                                        ui.label("🔒").on_hover_text(tr("Locked: keeps its areas when painting and balancing"));
                                     }
                                     if let (Some(d), Some(_)) = (s.deviations.first(), s.values.first()) {
                                         deviation_bar(ui, *d, measure.tolerance);
                                         let txt = if d.abs() < 0.0005 { "±0 %".to_owned() } else { format!("{:+.1} %", d * 100.0) };
                                         let c = if d.abs() <= measure.tolerance { ui.visuals().text_color() } else { theme::WARN };
                                         ui.label(RichText::new(txt).color(c).monospace());
-                                        let reach = s.site_reach.map_or(String::new(), |r| format!("\nfarthest area {} km from the site", format_value(r)));
-                                        ui.label(RichText::new(format_value(s.values[0])).monospace()).on_hover_text(format!(
-                                            "{} areas · {} km²\ntarget {}{reach}",
-                                            s.units,
-                                            format_value(s.area),
-                                            format_value(s.targets[0])
+                                        let reach = s.site_reach.map_or(String::new(), |r| trf("\nfarthest area {km} km from the site", &[("km", &format_value(r))]));
+                                        ui.label(RichText::new(format_value(s.values[0])).monospace()).on_hover_text(trf(
+                                            "{areas} areas · {km2} km²\ntarget {target}{reach}",
+                                            &[
+                                                ("areas", &s.units),
+                                                ("km2", &format_value(s.area)),
+                                                ("target", &format_value(s.targets[0])),
+                                                ("reach", &reach),
+                                            ],
                                         ));
                                     }
                                     if site_units.get(i).copied().flatten().is_some_and(|u| plan.assignment.get(u as usize).copied().flatten() != Some(t.id)) {
                                         ui.label(RichText::new("📍").color(theme::WARN))
-                                            .on_hover_text("The site lies outside the territory");
+                                            .on_hover_text(tr("The site lies outside the territory"));
                                     }
                                     if s.parts > 1 {
                                         ui.label(RichText::new(format!("⚠{}", s.parts)).color(theme::WARN))
-                                            .on_hover_text(format!("In {} separate pieces", s.parts));
+                                            .on_hover_text(trf("In {n} separate pieces", &[("n", &s.parts)]));
                                     }
                                 });
                             });
@@ -946,7 +949,7 @@ impl TerritoriesPanel {
                             for k in 2..=5 {
                                 if ui
                                     .button(format!("{k} territories"))
-                                    .on_hover_text("Its areas become contiguous parts of about equal size by the measure")
+                                    .on_hover_text(tr("Its areas become contiguous parts of about equal size by the measure"))
                                     .clicked()
                                 {
                                     if let Some(parts) = split_territory(project, cx.values, plan_id, id, k) {
@@ -1041,7 +1044,7 @@ impl TerritoriesPanel {
             ui.menu_button(tr("Names"), |ui| {
                 if ui
                     .button(tr("Name after the largest place"))
-                    .on_hover_text("Each territory takes the name of its largest area by the measure (or by size). Locked territories keep theirs.")
+                    .on_hover_text(tr("Each territory takes the name of its largest area by the measure (or by size). Locked territories keep theirs."))
                     .clicked()
                 {
                     let weights = (measure.source != ValueSource::Units)
@@ -1060,7 +1063,7 @@ impl TerritoriesPanel {
                 }
                 if ui
                     .button(tr("Renumber north to south"))
-                    .on_hover_text("Codes 01, 02, … in reading order on the map; default names follow")
+                    .on_hover_text(tr("Codes 01, 02, … in reading order on the map; default names follow"))
                     .clicked()
                 {
                     actions.push(Action::Edit(
@@ -1080,7 +1083,7 @@ impl TerritoriesPanel {
             let any_site = missing < plan.territories.len();
             // Centres weighted by the measure: where the revenue is.
             let by_measure = measure.source != ValueSource::Units;
-            let what = if by_measure { measure.source.label(project) } else { "area".to_owned() };
+            let what = if by_measure { measure.source.label(project) } else { tr("area").to_owned() };
             let sites_at = |replace: bool, values: &mut Cache| {
                 let weights = by_measure.then(|| values.values(project, plan.layer, &measure.source));
                 Action::Edit(
@@ -1097,7 +1100,7 @@ impl TerritoriesPanel {
             ui.menu_button(tr("📍 Sites"), |ui| {
                 if ui
                     .add_enabled(missing > 0, egui::Button::new(tr("Sites at centres")))
-                    .on_hover_text(format!("A site (rep home, branch) for each territory without one, in the area nearest the centre of its {what}. Start over then builds territories around the sites."))
+                    .on_hover_text(trf("A site (rep home, branch) for each territory without one, in the area nearest the centre of its {what}. Start over then builds territories around the sites.", &[("what", &what)]))
                     .clicked()
                 {
                     actions.push(sites_at(false, cx.values));
@@ -1105,7 +1108,7 @@ impl TerritoriesPanel {
                 }
                 if ui
                     .add_enabled(any_site, egui::Button::new(tr("Move all sites to the centres")))
-                    .on_hover_text(format!("Every site goes to the area nearest the centre of its territory's {what}"))
+                    .on_hover_text(trf("Every site goes to the area nearest the centre of its territory's {what}", &[("what", &what)]))
                     .clicked()
                 {
                     actions.push(sites_at(true, cx.values));
@@ -1114,7 +1117,7 @@ impl TerritoriesPanel {
                 let has_points = project.layers.iter().any(|l| l.kind() == territoria_io::GeometryKind::Point && l.id != plan.layer);
                 if ui
                     .add_enabled(any_site, egui::Button::new(tr("Coverage from the sites")))
-                    .on_hover_text("A scenario where each site takes its nearest areas until its territory holds its target plus the tolerance: what the sites can cover, and what is left over")
+                    .on_hover_text(tr("A scenario where each site takes its nearest areas until its territory holds its target plus the tolerance: what the sites can cover, and what is left over"))
                     .clicked()
                 {
                     actions.push(Action::Coverage(plan_id));
@@ -1122,7 +1125,7 @@ impl TerritoriesPanel {
                 }
                 if ui
                     .add_enabled(has_points, egui::Button::new(tr("Sites from points…")))
-                    .on_hover_text("Rep homes or branches from a point layer, matched to the territories; or the best of many possible locations")
+                    .on_hover_text(tr("Rep homes or branches from a point layer, matched to the territories; or the best of many possible locations"))
                     .on_disabled_hover_text("Add points first (a table with coordinates or addresses)")
                     .clicked()
                 {
@@ -1169,9 +1172,9 @@ impl TerritoriesPanel {
         ui.horizontal_wrapped(|ui| {
             if stats.unassigned > 0 {
                 ui.label(
-                    RichText::new(format!(
-                        "{} areas unassigned",
-                        format_value(stats.unassigned as f64)
+                    RichText::new(trf(
+                        "{n} areas unassigned",
+                        &[("n", &format_value(stats.unassigned as f64))],
                     ))
                     .color(theme::WARN),
                 );
@@ -1194,7 +1197,7 @@ impl TerritoriesPanel {
             );
             if split > 0 {
                 ui.label("·");
-                ui.label(RichText::new(format!("{split} in pieces")).color(theme::WARN));
+                ui.label(RichText::new(trf("{n} in pieces", &[("n", &split)])).color(theme::WARN));
             }
         });
 
@@ -1299,10 +1302,9 @@ impl TerritoriesPanel {
                             .copied()
                             .unwrap_or(0.0);
                         let a = proposal.after.max_deviation.first().copied().unwrap_or(0.0);
-                        ui.label(format!(
-                            "Largest deviation {} → {}",
-                            format_percent(b),
-                            format_percent(a)
+                        ui.label(trf(
+                            "Largest deviation {before} → {after}",
+                            &[("before", &format_percent(b)), ("after", &format_percent(a))],
                         ));
                         let ob = proposal
                             .before
@@ -1316,11 +1318,13 @@ impl TerritoriesPanel {
                             .first()
                             .copied()
                             .unwrap_or(0);
-                        ui.label(format!("Outside tolerance {ob} → {oa}"));
-                        ui.label(format!(
-                            "Border length {} → {} km",
-                            format_value(proposal.before.border_length),
-                            format_value(proposal.after.border_length)
+                        ui.label(trf("Outside tolerance {before} → {after}", &[("before", &ob), ("after", &oa)]));
+                        ui.label(trf(
+                            "Border length {before} → {after} km",
+                            &[
+                                ("before", &format_value(proposal.before.border_length)),
+                                ("after", &format_value(proposal.after.border_length)),
+                            ],
                         ));
                         ui.label(format!(
                             "{} areas change territory",
@@ -1405,7 +1409,7 @@ impl TerritoriesPanel {
                                 }),
                             ));
                         }
-                        ui.label(RichText::new(format!("{} territories", rs.territories)).weak().small());
+                        ui.label(RichText::new(trf("{n} territories", &[("n", &rs.territories)])).weak().small());
                         if let (Some(v), Some(d)) = (rs.values.first(), rs.deviations.first()) {
                             ui.label(RichText::new(format_value(*v)).monospace());
                             deviation_bar(ui, *d, tolerance);
@@ -1431,7 +1435,7 @@ impl TerritoriesPanel {
                 let unassigned = plan.territories.iter().filter(|t| t.region.is_none()).count();
                 if !plan.regions.is_empty() && (unassigned > 0 || egui::DragAndDrop::has_payload_of_type::<TerritoryDrag>(ui.ctx())) {
                     let (_, dropped) = ui.dnd_drop_zone::<TerritoryDrag, ()>(egui::Frame::default().inner_margin(2.0), |ui| {
-                        ui.label(RichText::new(format!("{unassigned} territories in no region")).color(theme::WARN).small());
+                        ui.label(RichText::new(trf("{n} territories in no region", &[("n", &unassigned)])).color(theme::WARN).small());
                         territory_chips(ui, plan, None);
                     });
                     if let Some(d) = dropped {
@@ -1457,7 +1461,7 @@ impl TerritoriesPanel {
                     ui.add(egui::DragValue::new(&mut self.region_count).range(1..=n.max(1)));
                     if ui
                         .add_enabled(n > 1, egui::Button::new(tr("regions")))
-                        .on_hover_text("Neighbouring territories become regions of about equal size by the measure; existing regions are replaced")
+                        .on_hover_text(tr("Neighbouring territories become regions of about equal size by the measure; existing regions are replaced"))
                         .clicked()
                         && let Some(groups) = group_regions(project, stats, plan_id, self.region_count)
                     {
@@ -1561,13 +1565,13 @@ impl TerritoriesPanel {
                             actions.push(edit("Rename territory", Box::new(move |t| t.name = name)));
                         }
                         ui.end_row();
-                        ui.label(tr("Code")).on_hover_text("What people call it: T01, a rep number, a region code");
+                        ui.label(tr("Code")).on_hover_text(tr("What people call it: T01, a rep number, a region code"));
                         let mut code = t.code.clone();
                         if ui.add(egui::TextEdit::singleline(&mut code).desired_width(120.0)).changed() {
                             actions.push(edit("Change code", Box::new(move |t| t.code = code)));
                         }
                         ui.end_row();
-                        ui.label(tr("Size")).on_hover_text("Its share of the total: 1 is a normal territory, 0.5 one for a part-time rep, 2 a double one");
+                        ui.label(tr("Size")).on_hover_text(tr("Its share of the total: 1 is a normal territory, 0.5 one for a part-time rep, 2 a double one"));
                         let mut weight = t.weight;
                         if ui
                             .add(egui::DragValue::new(&mut weight).range(0.0..=10.0).speed(0.05).fixed_decimals(2))
@@ -1595,7 +1599,7 @@ impl TerritoriesPanel {
                         let mut locked = t.locked;
                         if ui
                             .checkbox(&mut locked, tr("keeps its areas"))
-                            .on_hover_text("Painting and balancing leave it as it is")
+                            .on_hover_text(tr("Painting and balancing leave it as it is"))
                             .changed()
                         {
                             actions.push(edit(
@@ -1683,15 +1687,15 @@ impl TerritoriesPanel {
                 return;
             }
             ui.horizontal_wrapped(|ui| {
-                ui.label(format!(
-                    "{} areas change territory",
-                    format_value(r.moves.len() as f64)
+                ui.label(trf(
+                    "{n} areas change territory",
+                    &[("n", &format_value(r.moves.len() as f64))],
                 ));
                 for (layer, n) in &r.points {
                     if let Some(l) = project.layer(*layer) {
                         ui.label("·");
                         ui.label(format!("{} {}", format_value(*n as f64), l.name))
-                            .on_hover_text("Points in the areas that change territory");
+                            .on_hover_text(tr("Points in the areas that change territory"));
                     }
                 }
             });
@@ -1751,12 +1755,14 @@ impl TerritoriesPanel {
                 });
             let same = r.territories.len() - changed.len();
             if same > 0 {
-                ui.label(RichText::new(format!("{same} territories unchanged")).weak());
+                ui.label(RichText::new(trf("{n} territories unchanged", &[("n", &same)])).weak());
             }
             ui.horizontal_wrapped(|ui| {
                 if ui
-                    .button(format!("Adopt in “{}”", base_plan.name))
-                    .on_hover_text("The original plan takes over this scenario's territories")
+                    .button(trf("Adopt in “{plan}”", &[("plan", &base_plan.name)]))
+                    .on_hover_text(tr(
+                        "The original plan takes over this scenario's territories",
+                    ))
                     .clicked()
                 {
                     actions.push(Action::Edit(
@@ -1835,7 +1841,9 @@ fn palette_menu(ui: &mut egui::Ui, plan: &territoria_model::Plan, actions: &mut 
         }
     })
     .response
-    .on_hover_text("The colours territories take; Recolour then keeps neighbours apart");
+    .on_hover_text(tr(
+        "The colours territories take; Recolour then keeps neighbours apart",
+    ));
 }
 
 /// A territory being dragged to another region.

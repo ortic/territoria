@@ -7,6 +7,7 @@ use territoria_analysis::format::{format_percent, format_value};
 use territoria_model::{Cache, PlanId, Project, Territory, TerritoryId};
 
 use crate::app::Action;
+use crate::i18n::{tr, trf};
 use crate::map_view::color;
 use crate::territories::StatsCache;
 
@@ -34,7 +35,7 @@ pub fn show(
 ) -> Vec<Action> {
     let mut actions = Vec::new();
     let Some(plan) = project.plan(plan_id) else {
-        ui.label("This plan was removed.");
+        ui.label(tr("This plan was removed."));
         return actions;
     };
     let Some(stats) = stats.get(project, values, plan_id) else {
@@ -101,7 +102,13 @@ pub fn show(
     }
     ui.horizontal(|ui| {
         ui.label(RichText::new(&plan.name).strong());
-        ui.label(RichText::new(format!("{n} territories · click a heading to sort")).weak());
+        ui.label(
+            RichText::new(trf(
+                "{n} territories · click a heading to sort",
+                &[("n", &n)],
+            ))
+            .weak(),
+        );
     });
     let row_h = ui.text_style_height(&egui::TextStyle::Body) + 8.0;
     egui::ScrollArea::horizontal().show(ui, |ui| {

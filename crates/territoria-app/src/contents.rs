@@ -1,7 +1,7 @@
 //! The Contents panel: what the map shows (with legends), the data in the
 //! project and the territory plans.
 
-use crate::i18n::tr;
+use crate::i18n::{tr, trf};
 use egui::{Color32, RichText, Sense, Ui, vec2};
 use territoria_analysis::format::format_value;
 use territoria_model::{Cache, MapId, MapLayerKind, PlanId, Project};
@@ -106,7 +106,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                         let r = ui
                             .selectable_label(selected, text)
                             .on_hover_text(if ml.visible && zoomed {
-                                format!("{} · not shown at this zoom", ml.kind.type_label())
+                                format!("{} · {}", ml.kind.type_label(), tr("not shown at this zoom"))
                             } else {
                                 ml.kind.type_label().to_owned()
                             });
@@ -202,10 +202,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                                         }
                                         if p.territories.len() > 12 {
                                             ui.label(
-                                                RichText::new(format!(
-                                                    "… {} more",
-                                                    p.territories.len() - 12
-                                                ))
+                                                RichText::new(trf("… {n} more", &[("n", &(p.territories.len() - 12))]))
                                                 .small()
                                                 .weak(),
                                             );
@@ -337,10 +334,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                                             .map(|r| territoria_data::table::format_number(*r))
                                             .collect();
                                         ui.label(
-                                            RichText::new(format!(
-                                                "within {} km",
-                                                radii.join(" / ")
-                                            ))
+                                            RichText::new(trf("within {km} km", &[("km", &radii.join(" / "))]))
                                             .small(),
                                         );
                                     });
@@ -358,7 +352,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                     let (_, dropped) = ui.dnd_drop_zone::<crate::app::ColumnDrag, ()>(
                         egui::Frame::default().inner_margin(8.0),
                         |ui| {
-                            ui.label(format!("⤵ Drop here to show {} on the map", drag.column));
+                            ui.label(trf("⤵ Drop here to show {column} on the map", &[("column", &drag.column)]));
                         },
                     );
                     if let Some(d) = dropped {
@@ -394,9 +388,11 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                 let r = ui
                     .selectable_label(selected, format!("🗺 {}  ", l.name))
                     .on_hover_text(format!(
-                        "{} {kind} · key: {}",
+                        "{} {} · {}: {}",
                         format_value(l.len() as f64),
-                        l.key_column.as_deref().unwrap_or("row number")
+                        tr(kind),
+                        tr("key"),
+                        l.key_column.as_deref().unwrap_or(tr("row number"))
                     ));
                 if r.clicked() {
                     actions.push(Action::Select(Selection::Data(DataRef::Layer(l.id))));
@@ -425,7 +421,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                     }
                     if ui
                         .button(tr("Replace with a newer version…"))
-                        .on_hover_text("New boundaries from a file; data, colourings and territories carry over by key or by position")
+                        .on_hover_text(tr("New boundaries from a file; data, colourings and territories carry over by key or by position"))
                         .clicked()
                     {
                         actions.push(Action::Select(Selection::Data(DataRef::Layer(id))));
@@ -466,7 +462,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                     if t.source.path.is_some()
                         && ui
                             .button(tr("↻ Reload from file"))
-                            .on_hover_text("Read the file again (e.g. this month's figures); links and colourings stay")
+                            .on_hover_text(tr("Read the file again (e.g. this month's figures); links and colourings stay"))
                             .clicked()
                     {
                         actions.push(Action::ReloadTable(id));
@@ -517,11 +513,13 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                 let assigned = p.assignment.iter().filter(|a| a.is_some()).count();
                 let r = ui
                     .selectable_label(active, format!("⬣ {}", p.name))
-                    .on_hover_text(format!(
-                        "{} territories · {} of {} areas assigned",
-                        p.territories.len(),
-                        format_value(assigned as f64),
-                        format_value(p.assignment.len() as f64)
+                    .on_hover_text(trf(
+                        "{territories} territories · {assigned} of {areas} areas assigned",
+                        &[
+                            ("territories", &p.territories.len()),
+                            ("assigned", &format_value(assigned as f64)),
+                            ("areas", &format_value(p.assignment.len() as f64)),
+                        ],
                     ));
                 if r.clicked() {
                     actions.push(Action::ShowPlan(p.id));
@@ -596,9 +594,9 @@ fn background_ui(ui: &mut Ui, map: &territoria_model::Map, actions: &mut Vec<Act
                 }
                 if ui
                     .selectable_label(current == tr("Custom"), "Custom tile server…")
-                    .on_hover_text(
+                    .on_hover_text(tr(
                         "Any XYZ tile server in Web Mercator: a URL with {z}, {x} and {y}",
-                    )
+                    ))
                     .clicked()
                     && current != "Custom"
                 {
@@ -690,10 +688,11 @@ fn grid_legend(ui: &mut Ui, grid: &territoria_analysis::BivariateGrid, x: &str, 
             for col in 0..k {
                 if at(row, col).contains(p) {
                     response.clone().on_hover_text(format!(
-                        "{x}: {}\n{y}: {}\n{} areas",
+                        "{x}: {}\n{y}: {}\n{} {}",
                         range(&grid.x_edges, col),
                         range(&grid.y_edges, row),
-                        grid.counts[row * k + col]
+                        grid.counts[row * k + col],
+                        tr("areas")
                     ));
                 }
             }
@@ -872,7 +871,7 @@ fn projection_ui(
             .show_ui(ui, |ui| {
                 if ui
                     .selectable_label(map.crs.is_web_mercator(), "Web Mercator")
-                    .on_hover_text("As web maps: needed for background maps; areas far from the equator look bigger")
+                    .on_hover_text(tr("As web maps: needed for background maps; areas far from the equator look bigger"))
                     .clicked()
                 {
                     actions.push(Action::SetMapCrs(map_id, Crs::web_mercator()));
@@ -880,7 +879,7 @@ fn projection_ui(
                 if let Some(c) = centre
                     && ui
                         .selectable_label(local, tr("Equal area (local)"))
-                        .on_hover_text("Lambert equal-area around your data: true sizes, for print and comparisons")
+                        .on_hover_text(tr("Lambert equal-area around your data: true sizes, for print and comparisons"))
                         .clicked()
                     && let Ok(crs) = Crs::from_proj(&format!(
                         "+proj=laea +lat_0={:.4} +lon_0={:.4} +x_0=0 +y_0=0 +ellps=WGS84 +units=m +no_defs",
@@ -894,7 +893,7 @@ fn projection_ui(
         let mut text: String = ui.data_mut(|d| d.get_temp(id)).unwrap_or_default();
         let r = ui
             .add(egui::TextEdit::singleline(&mut text).hint_text("EPSG").desired_width(46.0))
-            .on_hover_text("Any EPSG code, e.g. 2056 (Switzerland), 25832 (Germany), 2154 (France); Enter applies");
+            .on_hover_text(tr("Any EPSG code, e.g. 2056 (Switzerland), 25832 (Germany), 2154 (France); Enter applies"));
         if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && !text.trim().is_empty() {
             match Crs::parse(&text) {
                 Ok(crs) => actions.push(Action::SetMapCrs(map_id, crs)),

@@ -4,7 +4,7 @@
 //! Each dialog shows itself and returns an outcome; the app applies it
 //! (with undo) so dialogs never mutate the project directly.
 
-use crate::i18n::tr;
+use crate::i18n::{tr, trf};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -33,7 +33,11 @@ fn modal(
         ui.horizontal(|ui| {
             ui.heading(crate::i18n::tr_str(title));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.small_button("✖").on_hover_text("Close (Esc)").clicked() {
+                if ui
+                    .small_button("✖")
+                    .on_hover_text(tr("Close (Esc)"))
+                    .clicked()
+                {
                     open = false;
                 }
             });
@@ -87,18 +91,21 @@ pub fn match_report(ui: &mut Ui, stats: &MatchStats, rows: &str, targets: &str) 
     );
     if stats.rows_empty > 0 {
         ui.label(
-            RichText::new(format!(
-                "{} rows have no key and were skipped.",
-                stats.rows_empty
+            RichText::new(trf(
+                "{n} rows have no key and were skipped.",
+                &[("n", &stats.rows_empty)],
             ))
             .weak(),
         );
     }
     if !stats.unmatched_samples.is_empty() {
         ui.label(
-            RichText::new(format!("Not found: {}", stats.unmatched_samples.join(", ")))
-                .weak()
-                .small(),
+            RichText::new(trf(
+                "Not found: {keys}",
+                &[("keys", &stats.unmatched_samples.join(", "))],
+            ))
+            .weak()
+            .small(),
         );
     }
 }
@@ -261,10 +268,10 @@ impl ImportLayers {
                             let color = if imported.source_crs.is_some() { ui.visuals().text_color() } else { theme::WARN };
                             ui.label(RichText::new(&imported.crs_note).color(color));
                             ui.end_row();
-                            ui.label(tr("Key")).on_hover_text("The column that identifies each area: what your data's codes are matched against (postcode, municipality number, …).");
+                            ui.label(tr("Key")).on_hover_text(tr("The column that identifies each area: what your data's codes are matched against (postcode, municipality number, …)."));
                             column_combo(ui, &format!("key{i}"), &imported.attributes, &mut l.key_column, |_| true, Some("Row number"));
                             ui.end_row();
-                            ui.label(tr("Name")).on_hover_text("A readable name for lists, labels and tooltips.");
+                            ui.label(tr("Name")).on_hover_text(tr("A readable name for lists, labels and tooltips."));
                             column_combo(ui, &format!("name{i}"), &imported.attributes, &mut l.name_column, |k| k == ColumnKind::Text || k == ColumnKind::Key, Some("None"));
                             ui.end_row();
                         });
@@ -275,7 +282,7 @@ impl ImportLayers {
                                     &mut l.merge,
                                     format!("Merge areas that share a key ({} keys are on several areas)", format_value(dups as f64)),
                                 )
-                                .on_hover_text("One area per key: data for a key then colours all its parts. Without merging, data for such a key goes to the first area only.");
+                                .on_hover_text(tr("One area per key: data for a key then colours all its parts. Without merging, data for such a key goes to the first area only."));
                             }
                         }
                         for w in &imported.warnings {
@@ -305,7 +312,7 @@ impl ImportLayers {
                             .hint_text("EPSG code, e.g. 2056, 25832, 27700")
                             .desired_width(200.0),
                     );
-                    if ui.button("Read again").clicked() {
+                    if ui.button(tr("Read again")).clicked() {
                         match territoria_geo::Crs::parse(&self.crs_text) {
                             Ok(crs) => {
                                 outcome = Some(ImportLayersOutcome::Reread(self.path.clone(), crs))
@@ -534,8 +541,11 @@ impl ImportTable {
                 ui.label(tr("Name"));
                 ui.add(egui::TextEdit::singleline(&mut self.name).desired_width(260.0));
                 ui.label(
-                    RichText::new(format!("{} rows", format_value(self.table.rows() as f64)))
-                        .weak(),
+                    RichText::new(trf(
+                        "{n} rows",
+                        &[("n", &format_value(self.table.rows() as f64))],
+                    ))
+                    .weak(),
                 );
             });
             // Reading options.
@@ -702,10 +712,12 @@ impl ImportTable {
                             })
                             .count();
                         ui.label(
-                            RichText::new(format!(
-                                "{} of {} rows have coordinates",
-                                format_value(n as f64),
-                                format_value(c.len() as f64)
+                            RichText::new(trf(
+                                "{n} of {rows} rows have coordinates",
+                                &[
+                                    ("n", &format_value(n as f64)),
+                                    ("rows", &format_value(c.len() as f64)),
+                                ],
                             ))
                             .weak(),
                         );
@@ -764,7 +776,7 @@ impl ImportTable {
                     as_address,
                     tr("Rows have addresses: find their coordinates (geocoding)"),
                 )
-                .on_hover_text("Each address is looked up with the geocoding service set in the settings; results are kept, so repeated addresses cost nothing")
+                .on_hover_text(tr("Each address is looked up with the geocoding service set in the settings; results are kept, so repeated addresses cost nothing"))
                 .clicked()
                 && !as_address
             {
@@ -796,7 +808,7 @@ impl ImportTable {
                                         .hint_text("e.g. Switzerland")
                                         .desired_width(140.0),
                                 )
-                                .on_hover_text("For all rows: helps the service where the table has no country");
+                                .on_hover_text(tr("For all rows: helps the service where the table has no country"));
                             }
                             ui.end_row();
                         });
@@ -1418,7 +1430,7 @@ impl ColorByDialog {
                         ui.horizontal_wrapped(|ui| {
                             if ui
                                 .radio(single && !circles && !self.heat, tr("Colours"))
-                                .on_hover_text("Each area coloured by its class")
+                                .on_hover_text(tr("Each area coloured by its class"))
                                 .clicked()
                             {
                                 circles = false;
@@ -1429,7 +1441,7 @@ impl ColorByDialog {
                             if ui
                                 .radio(single && circles && !self.heat, tr("Circles sized by value"))
                                 .on_hover_text(
-                                    "A circle on each area or point; its area grows with the value",
+                                    tr("A circle on each area or point; its area grows with the value"),
                                 )
                                 .clicked()
                             {
@@ -1442,7 +1454,7 @@ impl ColorByDialog {
                                 && ui
                                     .radio(single && self.heat, tr("Heat map"))
                                     .on_hover_text(
-                                        "Where the points are dense, weighted by the value",
+                                        tr("Where the points are dense, weighted by the value"),
                                     )
                                     .clicked()
                             {
@@ -1453,7 +1465,7 @@ impl ColorByDialog {
                             if ui
                                 .radio(self.second.is_some(), "Two values at once")
                                 .on_hover_text(
-                                    "Colours that mix two values: see where both are high, or one but not the other",
+                                    tr("Colours that mix two values: see where both are high, or one but not the other"),
                                 )
                                 .clicked()
                                 && self.second.is_none()
@@ -1675,9 +1687,9 @@ impl NewPlanDialog {
                     ui.label(tr("Name"));
                     ui.add(egui::TextEdit::singleline(&mut self.name).desired_width(260.0));
                     ui.end_row();
-                    ui.label(tr("Built from")).on_hover_text(
+                    ui.label(tr("Built from")).on_hover_text(tr(
                         "The areas territories consist of: postcodes, municipalities, …",
-                    );
+                    ));
                     changed |= layer_combo(ui, "np-layer", project, &mut self.layer, None);
                     ui.end_row();
                     ui.label(tr("Start"));
@@ -1789,12 +1801,12 @@ impl NewPlanDialog {
                 if let Some(p) = &self.preview {
                     ui.add_space(4.0);
                     match_report(ui, &p.stats, "rows", "areas");
-                    ui.label(format!("{} territories", p.names.len()));
+                    ui.label(trf("{n} territories", &[("n", &p.names.len())]));
                     if p.conflicts > 0 {
                         ui.label(
-                            RichText::new(format!(
-                                "{} areas are listed for more than one territory; the first wins.",
-                                p.conflicts
+                            RichText::new(trf(
+                                "{n} areas are listed for more than one territory; the first wins.",
+                                &[("n", &p.conflicts)],
                             ))
                             .color(theme::WARN),
                         );
@@ -1922,7 +1934,7 @@ impl MergeDialog {
                         ui.end_row();
                         ui.label("");
                         ui.horizontal(|ui| {
-                            ui.checkbox(&mut self.use_prefix, "Only the first");
+                            ui.checkbox(&mut self.use_prefix, tr("Only the first"));
                             ui.add_enabled(
                                 self.use_prefix,
                                 egui::DragValue::new(&mut self.prefix).range(1..=12),
@@ -1938,10 +1950,12 @@ impl MergeDialog {
                             let prefix = self.use_prefix.then_some(self.prefix);
                             let groups = l.attributes.groups_by(c, prefix).len();
                             ui.label(tr("Result"));
-                            ui.label(format!(
-                                "{} areas become {}",
-                                format_value(l.len() as f64),
-                                format_value(groups as f64)
+                            ui.label(trf(
+                                "{areas} areas become {groups}",
+                                &[
+                                    ("areas", &format_value(l.len() as f64)),
+                                    ("groups", &format_value(groups as f64)),
+                                ],
                             ));
                             ui.end_row();
                             if self.name.is_empty() {
@@ -2037,10 +2051,10 @@ impl DownloadDialog {
                 }
                 Some(Err(e)) => {
                     ui.label(
-                        RichText::new(format!("The list couldn't be loaded: {e}"))
+                        RichText::new(trf("The list couldn't be loaded: {e}", &[("e", &e)]))
                             .color(theme::DANGER),
                     );
-                    if ui.button("Try again").clicked() {
+                    if ui.button(tr("Try again")).clicked() {
                         outcome = Some(DownloadOutcome::Retry);
                     }
                     return;
@@ -2143,9 +2157,9 @@ impl DownloadDialog {
                                 &mut self.simplified,
                                 "Simplified outlines (smaller download)",
                             )
-                            .on_hover_text(
+                            .on_hover_text(tr(
                                 "Fine for overview maps; neighbouring borders may not fit exactly.",
-                            );
+                            ));
                         }
                     }
                 }
@@ -2267,7 +2281,7 @@ impl ExportMapDialog {
                             }
                         })
                         .response
-                        .on_hover_text("A printed page puts the legend beside the map, with a north arrow and a footer");
+                        .on_hover_text(tr("A printed page puts the legend beside the map, with a north arrow and a footer"));
                     ui.end_row();
                     ui.label(tr("Title"));
                     ui.add(egui::TextEdit::singleline(&mut s.title).desired_width(260.0));
@@ -2275,11 +2289,11 @@ impl ExportMapDialog {
                     if s.page != crate::export_map::PageSize::Screen {
                         ui.label("");
                         ui.checkbox(&mut s.overview, tr("Overview map"))
-                            .on_hover_text("A small map of everything in the corner, with the page's part marked");
+                            .on_hover_text(tr("A small map of everything in the corner, with the page's part marked"));
                         ui.end_row();
                         ui.label("");
                         ui.checkbox(&mut s.figures, tr("Territory figures"))
-                            .on_hover_text("A table of the territories on the map with their measure and deviation, beside the legend");
+                            .on_hover_text(tr("A table of the territories on the map with their measure and deviation, beside the legend"));
                         ui.end_row();
                         ui.label(tr("Footer"));
                         ui.add(
@@ -2287,7 +2301,7 @@ impl ExportMapDialog {
                                 .desired_width(260.0)
                                 .hint_text("{project}, {map} and {date} are filled in"),
                         )
-                        .on_hover_text("{project}, {map} and {date} are filled in");
+                        .on_hover_text(tr("{project}, {map} and {date} are filled in"));
                         ui.end_row();
                     }
                     ui.label("");
@@ -2626,7 +2640,10 @@ impl FormulaDialog {
                 }
                 Some((_, _, Ok(p))) => {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(format!("→ {} column", p.ty.label())).strong());
+                        ui.label(
+                            RichText::new(trf("→ {kind} column", &[("kind", &tr(p.ty.label()))]))
+                                .strong(),
+                        );
                         ui.label(RichText::new(&p.summary).weak());
                     });
                     egui::Frame::group(ui.style()).show(ui, |ui| {
@@ -2656,7 +2673,7 @@ impl FormulaDialog {
                             ui.label(RichText::new(group).strong());
                         }
                         ui.horizontal_wrapped(|ui| {
-                            if ui.small_button(f.signature).on_hover_text("Insert at the cursor").clicked() {
+                            if ui.small_button(f.signature).on_hover_text(tr("Insert at the cursor")).clicked() {
                                 let at = self.cursor.min(self.source.len());
                                 self.insert(ui.ctx(), editor, at..at, &format!("{}(", f.name));
                             }
@@ -2673,8 +2690,11 @@ impl FormulaDialog {
             let taken = table.column(name).is_some() && self.editing.as_deref() != Some(name);
             if taken {
                 ui.label(
-                    RichText::new(format!("There is already a column “{name}”."))
-                        .color(theme::WARN),
+                    RichText::new(trf(
+                        "There is already a column “{name}”.",
+                        &[("name", &name)],
+                    ))
+                    .color(theme::WARN),
                 );
             }
             let ok = !name.is_empty() && !taken && matches!(self.preview, Some((_, _, Ok(_))));
@@ -2752,7 +2772,7 @@ impl SelectListDialog {
             } else if n == 0 {
                 RichText::new("No area matches.").color(theme::WARN)
             } else {
-                RichText::new(format!("{} areas match.", format_value(n as f64)))
+                RichText::new(trf("{n} areas match.", &[("n", &format_value(n as f64))]))
             });
             ui.add_space(6.0);
             ui.horizontal(|ui| {
@@ -2855,7 +2875,7 @@ impl SettingsDialog {
                     let mut pct = (settings.ui_scale * 100.0).round();
                     if ui
                         .add(egui::Slider::new(&mut pct, 60.0..=250.0).step_by(10.0).suffix(" %"))
-                        .on_hover_text("Ctrl + and Ctrl − change it too")
+                        .on_hover_text(tr("Ctrl + and Ctrl − change it too"))
                         .changed()
                     {
                         settings.ui_scale = pct / 100.0;
@@ -2868,7 +2888,7 @@ impl SettingsDialog {
                         ui.label(if settings.autosave_minutes == 0 { "minutes (off)" } else { "minutes" });
                     })
                     .response
-                    .on_hover_text("Unsaved changes are kept in a recovery copy, in case something goes wrong");
+                    .on_hover_text(tr("Unsaved changes are kept in a recovery copy, in case something goes wrong"));
                     ui.end_row();
                     ui.label(tr("New maps"));
                     let current = settings.background.clone().unwrap_or_else(|| "No background".into());
@@ -2913,14 +2933,14 @@ impl SettingsDialog {
                             }
                         });
                         ui.add(egui::TextEdit::singleline(&mut g.url).hint_text("Service address").desired_width(260.0))
-                            .on_hover_text("The public service or your own installation");
+                            .on_hover_text(tr("The public service or your own installation"));
                         ui.add(egui::TextEdit::singleline(&mut g.email).hint_text("Your e-mail (public services ask for it)").desired_width(260.0));
                         ui.horizontal(|ui| {
                             ui.label(tr("Pause"));
                             ui.add(egui::DragValue::new(&mut g.interval_ms).range(0..=5000).suffix(" ms"));
                         })
                         .response
-                        .on_hover_text("Between requests: the public Nominatim allows one per second; your own server may allow 0");
+                        .on_hover_text(tr("Between requests: the public Nominatim allows one per second; your own server may allow 0"));
                     });
                     ui.end_row();
                     ui.label(tr("Company"));
@@ -2933,7 +2953,7 @@ impl SettingsDialog {
                                 .and_then(|p| p.file_name())
                                 .map_or("No logo".to_owned(), |n| n.to_string_lossy().into_owned());
                             ui.label(RichText::new(logo).weak());
-                            if ui.button("Choose…").on_hover_text("A PNG, JPEG or SVG image for exported maps and reports").clicked() {
+                            if ui.button(tr("Choose…")).on_hover_text(tr("A PNG, JPEG or SVG image for exported maps and reports")).clicked() {
                                 outcome = Some(SettingsOutcome::ChooseLogo);
                             }
                             if settings.logo.is_some() && ui.button(tr("Remove")).clicked() {
@@ -2957,13 +2977,13 @@ impl SettingsDialog {
                             }
                         })
                         .response
-                        .on_hover_text("For new territory plans; a plan's Colours menu changes its own");
+                        .on_hover_text(tr("For new territory plans; a plan's Colours menu changes its own"));
                     ui.end_row();
                     ui.label(tr("Routing"));
                     ui.vertical(|ui| {
                         let r = &mut settings.routing;
                         ui.add(egui::TextEdit::singleline(&mut r.url).hint_text("OSRM server address").desired_width(260.0))
-                            .on_hover_text("An OSRM server for travel times by road: the public demo is for trying only; your own server has no limits");
+                            .on_hover_text(tr("An OSRM server for travel times by road: the public demo is for trying only; your own server has no limits"));
                         ui.horizontal(|ui| {
                             ComboBox::from_id_salt("routing-profile")
                                 .selected_text(match r.profile.as_str() {
@@ -2988,7 +3008,7 @@ impl SettingsDialog {
                         ui.label(format!("{:.1} MB stored", self.tile_bytes as f64 / 1_048_576.0));
                         if ui
                             .add_enabled(self.tile_bytes > 0, egui::Button::new("Clear"))
-                            .on_hover_text("Background map tiles are kept on disk: maps load fast and also show offline")
+                            .on_hover_text(tr("Background map tiles are kept on disk: maps load fast and also show offline"))
                             .clicked()
                         {
                             outcome = Some(SettingsOutcome::ClearTiles);
@@ -3116,7 +3136,7 @@ impl SettingsDialog {
                             };
                             if ui
                                 .selectable_label(self.recording == Some(*c), text)
-                                .on_hover_text("Click, then press the new keys")
+                                .on_hover_text(tr("Click, then press the new keys"))
                                 .clicked()
                             {
                                 self.recording = Some(*c);
@@ -3236,7 +3256,7 @@ impl HexGridDialog {
                     ComboBox::from_id_salt("hex-count")
                         .selected_text(text)
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut self.count, None, "Nothing");
+                            ui.selectable_value(&mut self.count, None, tr("Nothing"));
                             for l in project
                                 .layers
                                 .iter()
@@ -3246,7 +3266,7 @@ impl HexGridDialog {
                             }
                         })
                         .response
-                        .on_hover_text("Points counted per cell, their numbers summed");
+                        .on_hover_text(tr("Points counted per cell, their numbers summed"));
                     ui.end_row();
                 });
             let spec = self.spec(project);
@@ -3345,11 +3365,11 @@ impl SitesDialog {
                 false,
                 "Each territory gets one of them (rep homes, branches)",
             )
-            .on_hover_text(
+            .on_hover_text(tr(
                 "Matched so the distances from the territories' centres are least overall",
-            );
+            ));
             ui.radio_value(&mut self.best, true, format!("Choose the best {territories} of them (possible locations)"))
-                .on_hover_text("Those that serve the areas best, weighted by the plan's measure; Balance → Start over then draws territories around them");
+                .on_hover_text(tr("Those that serve the areas best, weighted by the plan's measure; Balance → Start over then draws territories around them"));
             if !self.best {
                 ui.checkbox(&mut self.rename, tr("Name the territories after them"));
             }
@@ -3493,7 +3513,7 @@ impl CatchmentDialog {
                         .width(260.0)
                         .selected_text(text)
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut self.points, None, "Nothing");
+                            ui.selectable_value(&mut self.points, None, tr("Nothing"));
                             for l in project
                                 .layers
                                 .iter()
@@ -3503,7 +3523,9 @@ impl CatchmentDialog {
                             }
                         })
                         .response
-                        .on_hover_text("Points within each ring, and the sums of their numbers");
+                        .on_hover_text(tr(
+                            "Points within each ring, and the sums of their numbers",
+                        ));
                     ui.end_row();
                     ui.label(tr("Sum of areas"));
                     let text = self
@@ -3514,7 +3536,7 @@ impl CatchmentDialog {
                         .width(260.0)
                         .selected_text(text)
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut self.areas, None, "Nothing");
+                            ui.selectable_value(&mut self.areas, None, tr("Nothing"));
                             for l in project
                                 .layers
                                 .iter()
@@ -3552,9 +3574,9 @@ impl CatchmentDialog {
                                 }
                             })
                             .response
-                            .on_hover_text(
+                            .on_hover_text(tr(
                                 "Summed over the areas whose centre lies within the ring",
-                            );
+                            ));
                         ui.end_row();
                     }
                 });
@@ -3759,7 +3781,7 @@ impl JoinDialog {
                     JoinMode::ByRoad,
                     "Travel time by road to the nearest point of another layer (branch, rep)",
                 )
-                .on_hover_text("Minutes and km by road from each area's centre or point, from the routing service in Settings");
+                .on_hover_text(tr("Minutes and km by road from each area's centre or point, from the routing service in Settings"));
             }
             ui.radio_value(
                 &mut self.mode,
@@ -3842,7 +3864,7 @@ impl JoinDialog {
                                 }
                             })
                             .response
-                            .on_hover_text("When several rows have the same key: numbers are combined this way, texts come from the first");
+                            .on_hover_text(tr("When several rows have the same key: numbers are combined this way, texts come from the first"));
                             ui.end_row();
                         }
                     }
@@ -4178,9 +4200,9 @@ impl ScoreDialog {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 ui.label(tr("Each as"));
-                ui.radio_value(&mut self.scale, ScoreScale::Share, "share of the total");
-                ui.radio_value(&mut self.scale, ScoreScale::Percentile, "rank (0–1)");
-                ui.radio_value(&mut self.scale, ScoreScale::Raw, "as it is");
+                ui.radio_value(&mut self.scale, ScoreScale::Share, tr("share of the total"));
+                ui.radio_value(&mut self.scale, ScoreScale::Percentile, tr("rank (0–1)"));
+                ui.radio_value(&mut self.scale, ScoreScale::Raw, tr("as it is"));
             });
             ui.add_space(4.0);
             ui.label(RichText::new(self.formula()).monospace().weak());
@@ -4397,7 +4419,7 @@ impl FlowDialog {
                                     }
                                 });
                             if let FlowEnd::Column { layer, .. } = end {
-                                ui.label("names a feature of");
+                                ui.label(tr("names a feature of"));
                                 ComboBox::from_id_salt(("flow-dlg-layer", which))
                                     .width(110.0)
                                     .selected_text(
@@ -4421,7 +4443,7 @@ impl FlowDialog {
                                 .unwrap_or_else(|| "Number of rows".into()),
                         )
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut self.value, None, "Number of rows");
+                            ui.selectable_value(&mut self.value, None, tr("Number of rows"));
                             if let Some(t) = table {
                                 for c in t.columns.iter().filter(|c| c.kind.is_numeric()) {
                                     ui.selectable_value(
@@ -4561,7 +4583,7 @@ impl AtlasDialog {
                             .width(220.0)
                             .selected_text(self.column.clone().unwrap_or_else(|| "area".into()))
                             .show_ui(ui, |ui| {
-                                ui.selectable_value(&mut self.column, None, "area");
+                                ui.selectable_value(&mut self.column, None, tr("area"));
                                 for c in l.attributes.columns.iter().filter(|c| {
                                     !c.kind.is_numeric() || c.kind == ColumnKind::Integer
                                 }) {
@@ -4659,14 +4681,14 @@ impl TemplatesDialog {
                 ui.horizontal(|ui| {
                     if ui
                         .button(name)
-                        .on_hover_text("A new, untitled project like this template")
+                        .on_hover_text(tr("A new, untitled project like this template"))
                         .clicked()
                     {
                         outcome = Some(TemplatesOutcome::Use(name.clone(), path.clone()));
                     }
                     if ui
                         .small_button("🗑")
-                        .on_hover_text("Delete this template")
+                        .on_hover_text(tr("Delete this template"))
                         .clicked()
                     {
                         outcome = Some(TemplatesOutcome::Delete(path.clone()));

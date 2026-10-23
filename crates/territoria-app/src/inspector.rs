@@ -1,6 +1,6 @@
 //! The Properties panel: settings of what is selected.
 
-use crate::i18n::tr;
+use crate::i18n::{tr, trf};
 use egui::{ComboBox, RichText, Sense, Ui, vec2};
 use territoria_analysis::format::format_value;
 use territoria_analysis::{ColorScale, Method, RAMPS, RampKind, RampSpec, ScaleMode};
@@ -101,10 +101,12 @@ pub fn show(
                 if let Some(t) = project.table(id) {
                     ui.heading(&t.name);
                     ui.label(
-                        RichText::new(format!(
-                            "{} rows · {} columns",
-                            format_value(t.table.rows() as f64),
-                            t.table.columns.len()
+                        RichText::new(trf(
+                            "{rows} rows · {columns} columns",
+                            &[
+                                ("rows", &format_value(t.table.rows() as f64)),
+                                ("columns", &t.table.columns.len()),
+                            ],
                         ))
                         .weak(),
                     );
@@ -123,11 +125,13 @@ pub fn show(
                         let Some(layer) = project.layer(link.layer) else {
                             continue;
                         };
-                        ui.label(format!(
-                            "{} by “{}” ({})",
-                            layer.name,
-                            link.column,
-                            link.mode.label()
+                        ui.label(trf(
+                            "{layer} by “{column}” ({mode})",
+                            &[
+                                ("layer", &layer.name),
+                                ("column", &link.column),
+                                ("mode", &crate::i18n::tr_str(&link.mode.label())),
+                            ],
                         ));
                         if let Some(m) = values.matching(project, link.id) {
                             match_report(ui, &m.stats, "rows", "areas");
@@ -171,7 +175,10 @@ pub fn show(
                                 Some(f) => {
                                     if ui
                                         .link(format!("ƒ {}", c.name))
-                                        .on_hover_text(format!("= {f}\nClick to edit the formula"))
+                                        .on_hover_text(format!(
+                                            "= {f}\n{}",
+                                            tr("Click to edit the formula")
+                                        ))
                                         .clicked()
                                     {
                                         actions.push(Action::Formula(
@@ -408,7 +415,9 @@ fn template_editor(
                     });
             })
             .response
-            .on_hover_text("Columns of the layer, of linked tables and of points inside");
+            .on_hover_text(tr(
+                "Columns of the layer, of linked tables and of points inside",
+            ));
             match territoria_expr::Template::compile(&edited, table) {
                 Ok(_) => {
                     ui.label(
@@ -830,9 +839,9 @@ fn scale_ui(
             ui.data_mut(|d| d.insert_temp(name_id, name));
         })
         .response
-        .on_hover_text(
+        .on_hover_text(tr(
             "Classes and colours kept by name, to use on other maps and in other projects",
-        );
+        ));
     });
     if scale.mode == ScaleMode::Classified {
         egui::Grid::new("classes")
@@ -877,7 +886,7 @@ fn scale_ui(
                         .join(", ");
                     if ui
                         .add(egui::TextEdit::singleline(&mut text).desired_width(190.0))
-                        .on_hover_text("Between the classes, e.g. 1000, 5000, 20000; or drag them in the histogram")
+                        .on_hover_text(tr("Between the classes, e.g. 1000, 5000, 20000; or drag them in the histogram"))
                         .changed()
                     {
                         let mut limits: Vec<f64> = text
@@ -924,9 +933,9 @@ fn scale_ui(
         let mut shown = scale.no_data.is_some();
         if ui
             .checkbox(&mut shown, tr("Areas without data"))
-            .on_hover_text(
+            .on_hover_text(tr(
                 "Fill areas that have no data in a colour of their own (otherwise they stay empty)",
-            )
+            ))
             .changed()
         {
             let c = shown.then_some(territoria_analysis::Rgba::rgb(0xee, 0xee, 0xee));
@@ -1097,9 +1106,9 @@ fn zoom_ui(
             let here = crate::map_view::scale_text(now.0, &now);
             if ui
                 .button(format!("Only when zoomed in closer than now ({here})"))
-                .on_hover_text(
+                .on_hover_text(tr(
                     "Hide it when zoomed out farther, e.g. postcode labels on a country map",
-                )
+                ))
                 .clicked()
             {
                 let s = now.0;
@@ -1113,9 +1122,9 @@ fn zoom_ui(
             }
             if ui
                 .button(format!("Only when zoomed out farther than now ({here})"))
-                .on_hover_text(
+                .on_hover_text(tr(
                     "Hide it when zoomed in closer, e.g. a summary layer that gives way to details",
-                )
+                ))
                 .clicked()
             {
                 let s = now.0;
@@ -1210,10 +1219,12 @@ fn map_layer(
                 .unwrap_or_default();
             let lines = analyses.flows(project, id, &ml.kind);
             ui.label(
-                RichText::new(format!(
-                    "Rows of {} · {} lines",
-                    rows.name(project),
-                    lines.as_ref().map_or(0, |l| l.len())
+                RichText::new(trf(
+                    "Rows of {table} · {n} lines",
+                    &[
+                        ("table", &rows.name(project)),
+                        ("n", &lines.as_ref().map_or(0, |l| l.len())),
+                    ],
                 ))
                 .weak(),
             );
@@ -1375,11 +1386,11 @@ fn map_layer(
                 .spacing([10.0, 6.0])
                 .show(ui, |ui| {
                     for (axis, current, label) in [(0, x, "Across →"), (1, y, "Up ↑")] {
-                        ui.label(label).on_hover_text(if axis == 0 {
+                        ui.label(label).on_hover_text(tr(if axis == 0 {
                             "Rises from left to right in the legend"
                         } else {
                             "Rises from bottom to top in the legend"
-                        });
+                        }));
                         let mut chosen = current.clone();
                         ComboBox::from_id_salt(("bivariate-axis", axis))
                             .width(180.0)
@@ -1416,7 +1427,7 @@ fn map_layer(
                         for k in [2usize, 3] {
                             if ui
                                 .selectable_label(scale.classes == k, format!("{k} × {k}"))
-                                .on_hover_text("Each value in equal-count classes (quantiles)")
+                                .on_hover_text(tr("Each value in equal-count classes (quantiles)"))
                                 .clicked()
                                 && scale.classes != k
                             {
@@ -1695,11 +1706,11 @@ fn map_layer(
                     });
                     ui.end_row();
                     let bars = chart.shape.is_bars();
-                    ui.label(if bars { tr("Tallest") } else { "Largest" }).on_hover_text(if bars {
+                    ui.label(tr(if bars { "Tallest" } else { "Largest" })).on_hover_text(tr(if bars {
                         "Height of the bar for the largest value"
                     } else {
                         "Radius of the largest pie"
-                    });
+                    }));
                     let mut r = chart.max_size;
                     if ui
                         .add(egui::Slider::new(&mut r, 4.0..=80.0).suffix(" pt"))
@@ -1715,7 +1726,7 @@ fn map_layer(
                         let mut sized = chart.sized;
                         if ui
                             .checkbox(&mut sized, tr("Sized by the total"))
-                            .on_hover_text("Pie areas grow with the sum of the values; else all pies are alike")
+                            .on_hover_text(tr("Pie areas grow with the sum of the values; else all pies are alike"))
                             .changed()
                         {
                             actions.push(edit_chart("Change chart sizes", Box::new(move |_, c| {
@@ -1750,7 +1761,13 @@ fn map_layer(
             radii_km,
             color: c,
         } => {
-            ui.label(RichText::new(format!("Around the {}", centres.label(project))).weak());
+            ui.label(
+                RichText::new(trf(
+                    "Around the {centres}",
+                    &[("centres", &centres.label(project))],
+                ))
+                .weak(),
+            );
             egui::Grid::new("rings")
                 .num_columns(2)
                 .spacing([10.0, 6.0])
@@ -1763,7 +1780,7 @@ fn map_layer(
                     let mut t = text.join(", ");
                     if ui
                         .add(egui::TextEdit::singleline(&mut t).desired_width(160.0))
-                        .on_hover_text("Kilometres, e.g. 5, 10, 20")
+                        .on_hover_text(tr("Kilometres, e.g. 5, 10, 20"))
                         .changed()
                     {
                         let radii = territoria_model::catchment::parse_radii(&t);
@@ -1871,7 +1888,7 @@ fn map_layer(
                     }
                     ui.end_row();
                     ui.label(tr("Largest"))
-                        .on_hover_text("Radius of the circle for the largest value; circle areas grow with the value");
+                        .on_hover_text(tr("Radius of the circle for the largest value; circle areas grow with the value"));
                     let mut r = symbol.max_radius;
                     if ui
                         .add(egui::Slider::new(&mut r, 4.0..=80.0).suffix(" pt"))
@@ -1912,7 +1929,7 @@ fn map_layer(
                             }
                         })
                         .response
-                        .on_hover_text("By area is true to the data; by width makes differences look bigger; logarithmic suits values over many magnitudes");
+                        .on_hover_text(tr("By area is true to the data; by width makes differences look bigger; logarithmic suits values over many magnitudes"));
                     if scaling != symbol.scaling {
                         actions.push(edit_layer(map, id, "Change symbol sizes", move |l| {
                             if let MapLayerKind::Symbols { symbol, .. } = &mut l.kind {
@@ -2150,7 +2167,7 @@ fn histogram(
                 [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
                 egui::Stroke::new(if hot { 2.5 } else { 1.0 }, ui.visuals().text_color()),
             );
-            let r = r.on_hover_text(format!("{} · drag to move", format_value(*e)));
+            let r = r.on_hover_text(format!("{} · {}", format_value(*e), tr("drag to move")));
             if r.dragged()
                 && let Some(p) = r.interact_pointer_pos()
             {
@@ -2197,7 +2214,9 @@ fn histogram(
                             .hint_text(auto)
                             .desired_width(150.0),
                     )
-                    .on_hover_text("A label of your own for the legend; empty shows the limits")
+                    .on_hover_text(tr(
+                        "A label of your own for the legend; empty shows the limits",
+                    ))
                     .changed()
                 {
                     actions.push(edit(
@@ -2213,7 +2232,7 @@ fn histogram(
             } else {
                 ui.label(&e.label);
             }
-            ui.label(RichText::new(format!("{} areas", e.count)).weak());
+            ui.label(RichText::new(trf("{n} areas", &[("n", &e.count)])).weak());
         });
     }
 }
@@ -2296,7 +2315,9 @@ fn segments_menu(
         }
     })
     .response
-    .on_hover_text("Named filters (yes/no columns) to reuse in tables, analyses and exports");
+    .on_hover_text(tr(
+        "Named filters (yes/no columns) to reuse in tables, analyses and exports",
+    ));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2412,9 +2433,9 @@ fn value_ui(
             })
         };
         ui.horizontal(|ui| {
-            ui.label(tr("Only where")).on_hover_text(
+            ui.label(tr("Only where")).on_hover_text(tr(
                 "Count or add up only some rows, e.g. [Segment] = \"Retail\" or [Orders] > 10",
-            );
+            ));
             let changed = ui
                 .add(
                     egui::TextEdit::singleline(&mut text)
@@ -2437,10 +2458,12 @@ fn value_ui(
                         .filter(|v| matches!(v, territoria_expr::Val::Bool(true)))
                         .count();
                     ui.label(
-                        RichText::new(format!(
-                            "{} of {} rows",
-                            format_value(n as f64),
-                            format_value(table.rows() as f64)
+                        RichText::new(trf(
+                            "{n} of {rows} rows",
+                            &[
+                                ("n", &format_value(n as f64)),
+                                ("rows", &format_value(table.rows() as f64)),
+                            ],
                         ))
                         .weak()
                         .small(),
@@ -2466,7 +2489,7 @@ fn value_ui(
 
     // Relative to: area, another value, the total.
     ui.horizontal(|ui| {
-            ui.label(tr("Relative to")).on_hover_text("Sums grow with the size of areas: per km² or per another value (customers, population) makes areas comparable");
+            ui.label(tr("Relative to")).on_hover_text(tr("Sums grow with the size of areas: per km² or per another value (customers, population) makes areas comparable"));
             let base = options
                 .iter()
                 .find(|(_, c)| matches!(c, Colorable::Number(s) if same_source(s, source)))
