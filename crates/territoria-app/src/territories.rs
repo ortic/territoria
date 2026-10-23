@@ -602,6 +602,13 @@ impl TerritoriesPanel {
                 if ui.button("✏ Rename").clicked() {
                     self.renaming = Some(plan.name.clone());
                 }
+                if ui
+                    .button("▦ Open as table")
+                    .on_hover_text("All territories in a table: edit codes, names, regions, sizes; sort by any figure")
+                    .clicked()
+                {
+                    actions.push(Action::OpenTab(crate::app::Tab::Plan(plan_id)));
+                }
                 if ui.button("Export (Excel)…").clicked() {
                     actions.push(Action::Export(Export::PlanExcel(plan_id)));
                 }

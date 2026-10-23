@@ -258,7 +258,7 @@ territoria/
 - [x] KPI panel: per territory sums of chosen measures, target (mean or set), deviation in % with bars, unit count, area, parts (contiguity), compactness; totals; updates live while painting (no compactness figure)
 - [x] Measures: any numeric column of linked tables (sum/mean/count per territory), unit count, area, customer count; several at once (one in the panel; the model and optimizer take several)
 - [x] Tolerance band per measure (e.g. ±10 %); out-of-band territories flagged on map and in the panel (in the panel)
-- [ ] Territory table: editable code/name/colour/weight/locks; per-unit assignment table
+- [x] Territory table: editable code/name/colour/weight/locks; per-unit assignment table (plan ⋯ → Open as table: code, name, region, size, lock editable, figures sortable; the layer's table shows each area's territory; colour in the panel)
 - [ ] Multiple assignment (a unit shared by territories, with shares) shown hatched (optional per plan)
 - [x] Locks: pin a unit's assignment, freeze a territory, freeze a territory's outer border (children may move); shown on the map; respected by every tool and the optimizer (territory locks and unit pins; no border freeze, no map display)
 - [x] Sites (rep homes, branches): place by coordinates, address or unit centroid; link to territories (1:1 or many); capacity (one site per territory, placed on the map or at the centre; no capacity yet)

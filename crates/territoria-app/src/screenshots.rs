@@ -2204,3 +2204,33 @@ fn split_territory() {
         );
     }
 }
+
+/// A plan's territories as a table.
+#[test]
+fn territory_table_tab() {
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    let plan = app.add_balanced_plan_now(layer, 6);
+    {
+        let p = app.project.plan_mut(plan).unwrap();
+        let north = p.add_region(Some("North".into()));
+        let south = p.add_region(Some("South".into()));
+        for (i, t) in p.territories.iter_mut().enumerate() {
+            t.region = Some(if i < 3 { north } else { south });
+        }
+        p.territories[5].weight = 0.5;
+        p.rev += 1;
+    }
+    app.apply_action_for_test(crate::app::Action::OpenTab(crate::app::Tab::Plan(plan)));
+    settle(&mut h);
+    save(&mut h, "territory-table");
+    assert!(
+        h.state()
+            .open_tabs_for_test()
+            .contains(&crate::app::Tab::Plan(plan))
+    );
+}

@@ -12,6 +12,7 @@ mod inspector;
 mod jobs;
 mod map_view;
 mod meshes;
+mod plan_table;
 mod report;
 mod resolve;
 #[cfg(test)]

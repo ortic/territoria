@@ -38,6 +38,8 @@ pub enum DataRef {
 pub enum Tab {
     Map(MapId),
     Table(DataRef),
+    /// A plan's territories as a table.
+    Plan(PlanId),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -896,6 +898,7 @@ impl TerritoriaApp {
             Tab::Map(m) => p.map(*m).is_some(),
             Tab::Table(DataRef::Layer(l)) => p.layer(*l).is_some(),
             Tab::Table(DataRef::Table(t)) => p.table(*t).is_some(),
+            Tab::Plan(id) => p.plan(*id).is_some(),
         };
         let mut dock = w.dock;
         dock.retain_tabs(|t| exists(t));
@@ -3978,6 +3981,10 @@ impl TabViewer for Viewer<'_> {
                 .table(*id)
                 .map_or("Table".into(), |t| format!("▦ {}", t.name))
                 .into(),
+            Tab::Plan(id) => p
+                .plan(*id)
+                .map_or("Territories".into(), |p| format!("⬣ {}", p.name))
+                .into(),
         }
     }
 
@@ -4021,6 +4028,17 @@ impl TabViewer for Viewer<'_> {
                     &mut self.app.values,
                     data,
                     selected,
+                );
+                self.actions.extend(actions);
+            }
+            Tab::Plan(plan) => {
+                let app = &mut *self.app;
+                let actions = crate::plan_table::show(
+                    ui,
+                    &app.project,
+                    &mut app.values,
+                    &mut app.stats,
+                    plan,
                 );
                 self.actions.extend(actions);
             }
