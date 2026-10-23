@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-territoria">
+    <comment>Territoria project</comment>
+    <comment xml:lang="de">Territoria-Projekt</comment>
+    <glob pattern="*.territoria"/>
+  </mime-type>
+</mime-info>

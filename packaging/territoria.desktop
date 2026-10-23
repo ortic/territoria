@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Territoria
+GenericName=Territory planning
+GenericName[de]=Gebietsplanung
+Comment=Put your data on the map and plan territories that are fair and compact
+Comment[de]=Daten auf die Karte bringen und faire, kompakte Gebiete planen
+Exec=territoria %f
+Icon=territoria
+Terminal=false
+Categories=Office;Geography;Science;
+MimeType=application/x-territoria;
+StartupWMClass=territoria

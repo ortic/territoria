@@ -90,7 +90,8 @@ fn run(
             .with_title("Territoria")
             .with_app_id("territoria")
             .with_inner_size([1360.0, 860.0])
-            .with_min_inner_size([720.0, 480.0]),
+            .with_min_inner_size([720.0, 480.0])
+            .with_icon(icon()),
         // Smooth area edges and borders on the map.
         multisampling: 4,
         persistence_path: paths.as_ref().map(|p| p.data_dir.join("workspace.ron")),
@@ -101,6 +102,40 @@ fn run(
         options,
         Box::new(move |cc| Ok(Box::new(app::TerritoriaApp::new(cc, paths, open)))),
     )
+}
+
+/// The window icon, drawn from the packaged SVG.
+fn icon() -> egui::IconData {
+    const SVG: &str = include_str!("../../../packaging/territoria.svg");
+    const SIZE: u32 = 128;
+    let rgba = resvg::usvg::Tree::from_str(SVG, &Default::default())
+        .ok()
+        .and_then(|tree| {
+            let mut pixmap = resvg::tiny_skia::Pixmap::new(SIZE, SIZE)?;
+            let k = SIZE as f32 / tree.size().width();
+            resvg::render(
+                &tree,
+                resvg::tiny_skia::Transform::from_scale(k, k),
+                &mut pixmap.as_mut(),
+            );
+            // Premultiplied to straight alpha.
+            Some(
+                pixmap
+                    .pixels()
+                    .iter()
+                    .flat_map(|p| {
+                        let c = p.demultiply();
+                        [c.red(), c.green(), c.blue(), c.alpha()]
+                    })
+                    .collect(),
+            )
+        })
+        .unwrap_or_default();
+    egui::IconData {
+        rgba,
+        width: SIZE,
+        height: SIZE,
+    }
 }
 
 /// Logs to stderr and to `<data dir>/logs/territoria.log`. `RUST_LOG` overrides the filter.
@@ -148,4 +183,14 @@ fn install_panic_hook(paths: Option<&Paths>) {
         }
         default_hook(panic);
     }));
+}
+
+#[cfg(test)]
+mod icon_tests {
+    #[test]
+    fn icon_is_drawn() {
+        let icon = super::icon();
+        assert_eq!(icon.rgba.len(), 128 * 128 * 4);
+        assert!(icon.rgba.chunks(4).filter(|p| p[3] == 255).count() > 128 * 64);
+    }
 }

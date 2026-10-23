@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <rect x="8" y="8" width="240" height="240" rx="48" fill="#f3f1ec"/>
+  <!-- Three territories of hexagons, as on the map. -->
+  <g stroke="#2a2d33" stroke-width="6" stroke-linejoin="round">
+    <path d="M128 40 L184 72 L184 136 L128 128 L72 136 L72 72 Z" fill="#8dd3c7"/>
+    <path d="M72 136 L128 128 L128 200 L72 216 L40 184 L40 152 Z" fill="#fdb462"/>
+    <path d="M128 128 L184 136 L216 152 L216 184 L184 216 L128 200 Z" fill="#bebada"/>
+  </g>
+  <!-- A site in the middle. -->
+  <circle cx="128" cy="128" r="16" fill="#ffffff" stroke="#2a2d33" stroke-width="6"/>
+  <circle cx="128" cy="128" r="7" fill="#fb8072"/>
+</svg>

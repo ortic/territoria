@@ -66,6 +66,16 @@ cargo build --release
 ./target/release/territoria
 ```
 
+### Linux package
+
+```sh
+packaging/build-deb.sh        # target/territoria_<version>_<arch>.deb
+sudo apt install ./target/territoria_*.deb
+```
+
+It installs the program, a menu entry with icon, the `.territoria` file
+type, and the guide with its sample data under `/usr/share/doc/territoria`.
+
 ## Command line
 
 Exports run without a window, for scripts and scheduled jobs:
