@@ -283,7 +283,7 @@ impl ImportLayers {
                         }
                         if l.prepared.geometry.approximate_neighbors {
                             ui.label(
-                                RichText::new("Neighbouring areas don't share their borders exactly. Territories still work; their borders may look busier.")
+                                RichText::new(tr("Neighbouring areas don't share their borders exactly. Territories still work; their borders may look busier."))
                                     .color(theme::WARN),
                             );
                         }
@@ -606,7 +606,7 @@ impl ImportTable {
                 }
             });
             ui.add_space(4.0);
-            ui.label(RichText::new("Check the column types: codes such as postcodes should be “Key / code” so leading zeros survive.").weak());
+            ui.label(RichText::new(tr("Check the column types: codes such as postcodes should be “Key / code” so leading zeros survive.")).weak());
             ui.add_space(2.0);
             preview_grid(ui, &mut self.table);
             ui.add_space(8.0);
@@ -1026,7 +1026,7 @@ impl LinkDialog {
         let mut cancel = false;
         let title = format!("Link “{}” to the map", t.name);
         *open = modal(ctx, "link", &title, 560.0, |ui| {
-            ui.label(RichText::new("Rows of the table belong to areas by a key, such as a postcode or a municipality number.").weak());
+            ui.label(RichText::new(tr("Rows of the table belong to areas by a key, such as a postcode or a municipality number.")).weak());
             ui.add_space(6.0);
             let mut changed = false;
             let mut auto = false;
@@ -1092,7 +1092,9 @@ impl LinkDialog {
                     }
                 }
                 None => {
-                    ui.label(RichText::new("Choose the areas and the table's key column.").weak());
+                    ui.label(
+                        RichText::new(tr("Choose the areas and the table's key column.")).weak(),
+                    );
                 }
             }
             ui.add_space(8.0);
@@ -1128,9 +1130,11 @@ impl LinkDialog {
                 });
             });
             ui.label(
-                RichText::new("When several rows belong to one area, their values are combined.")
-                    .weak()
-                    .small(),
+                RichText::new(tr(
+                    "When several rows belong to one area, their values are combined.",
+                ))
+                .weak()
+                .small(),
             );
             ui.add_space(8.0);
             ui.horizontal(|ui| {
@@ -1363,7 +1367,7 @@ impl ColorByDialog {
                                     }
                                 });
                             ui.label(
-                                RichText::new("Pick the values that make up each chart, e.g. sales per product line.")
+                                RichText::new(tr("Pick the values that make up each chart, e.g. sales per product line."))
                                     .small()
                                     .weak(),
                             );
@@ -1885,7 +1889,7 @@ impl MergeDialog {
         let mut outcome = None;
         let mut cancel = false;
         *open = modal(ctx, "merge", "New layer by merging areas", 520.0, |ui| {
-            ui.label(RichText::new("Areas with the same value become one area: municipalities into districts, postcodes into postcode regions (by their first digits), sales areas into regions.").weak());
+            ui.label(RichText::new(tr("Areas with the same value become one area: municipalities into districts, postcodes into postcode regions (by their first digits), sales areas into regions.")).weak());
             ui.add_space(6.0);
             egui::Grid::new("merge-grid")
                 .num_columns(2)
@@ -1953,7 +1957,7 @@ impl MergeDialog {
                         ui.end_row();
                     }
                 });
-            ui.label(RichText::new("Numbers in the attributes are added up; an “Areas” column counts what was merged.").weak().small());
+            ui.label(RichText::new(tr("Numbers in the attributes are added up; an “Areas” column counts what was merged.")).weak().small());
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 let ready = self.layer.is_some() && self.column.is_some();
@@ -2021,7 +2025,7 @@ impl DownloadDialog {
         let mut outcome = None;
         let mut cancel = false;
         *open = modal(ctx, "download", "Download open boundaries", 720.0, |ui| {
-            ui.label(RichText::new("Administrative areas of about 230 countries from geoBoundaries (William & Mary geoLab). Each set has its own licence; the map credits it.").weak());
+            ui.label(RichText::new(tr("Administrative areas of about 230 countries from geoBoundaries (William & Mary geoLab). Each set has its own licence; the map credits it.")).weak());
             ui.add_space(6.0);
             let sets = match &self.catalog {
                 None => {
@@ -2220,7 +2224,7 @@ impl ExportMapDialog {
         *open = modal(ctx, "export-map", "Export map", 440.0, |ui| {
             ui.label(
                 RichText::new(
-                    "Exports what the map shows now, with title, legend, scale bar and credits, as on screen or on a printed page.",
+                    tr("Exports what the map shows now, with title, legend, scale bar and credits, as on screen or on a printed page."),
                 )
                 .weak(),
             );
@@ -2280,7 +2284,7 @@ impl ExportMapDialog {
                     ui.end_row();
                 });
             ui.label(
-                RichText::new("Background maps aren't part of exports yet.")
+                RichText::new(tr("Background maps aren't part of exports yet."))
                     .weak()
                     .small(),
             );
@@ -2506,7 +2510,7 @@ impl FormulaDialog {
             self.insert(ctx, editor, completions.range.clone(), &insert);
         }
         *open = modal(ctx, "formula", &title, 620.0, |ui| {
-            ui.label(RichText::new("A column computed from the others, e.g. revenue per customer: [Revenue] / [Customers]. It updates when you edit the formula.").weak());
+            ui.label(RichText::new(tr("A column computed from the others, e.g. revenue per customer: [Revenue] / [Customers]. It updates when you edit the formula.")).weak());
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 ui.label(tr("Name"));
@@ -2705,7 +2709,7 @@ impl SelectListDialog {
         let mut outcome = None;
         let mut cancel = false;
         *open = modal(ctx, "select-list", "Select areas by list", 480.0, |ui| {
-            ui.label(RichText::new("Keys of areas, separated by commas, semicolons or lines. Ranges like 8000-8099 and wildcards like 81* work too.").weak());
+            ui.label(RichText::new(tr("Keys of areas, separated by commas, semicolons or lines. Ranges like 8000-8099 and wildcards like 81* work too.")).weak());
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 ui.label(tr("Areas"));
@@ -3176,7 +3180,7 @@ impl HexGridDialog {
         let mut outcome = None;
         let mut cancel = false;
         *open = modal(ctx, "hexgrid", "New hexagon grid", 480.0, |ui| {
-            ui.label(RichText::new("Equal hexagons as areas: for density maps, and as units for territories where no boundaries fit.").weak());
+            ui.label(RichText::new(tr("Equal hexagons as areas: for density maps, and as units for territories where no boundaries fit.")).weak());
             ui.add_space(6.0);
             egui::Grid::new("hex-grid")
                 .num_columns(2)
@@ -3348,7 +3352,7 @@ impl SitesDialog {
                     .color(theme::WARN),
                 );
             } else if self.best && n > 2000 {
-                ui.label(RichText::new("Many candidates: choosing may take a moment.").weak());
+                ui.label(RichText::new(tr("Many candidates: choosing may take a moment.")).weak());
             }
             ui.add_space(6.0);
             ui.horizontal(|ui| {
@@ -3422,7 +3426,7 @@ impl CatchmentDialog {
         let mut outcome = None;
         let mut cancel = false;
         *open = modal(ctx, "catchment", "Catchment rings", 500.0, |ui| {
-            ui.label(RichText::new("Rings around branches, reps or sites, and what lies within them: customers, their sales, the areas' values.").weak());
+            ui.label(RichText::new(tr("Rings around branches, reps or sites, and what lies within them: customers, their sales, the areas' values.")).weak());
             ui.add_space(6.0);
             egui::Grid::new("catchment-grid")
                 .num_columns(2)
@@ -3713,7 +3717,7 @@ impl JoinDialog {
             crate::app::DataRef::Table(_) => None,
         };
         *open = modal(ctx, "join", "Add columns from…", 520.0, |ui| {
-            ui.label(RichText::new("New columns with values from the map or another table, as they are now (add them again after changes).").weak());
+            ui.label(RichText::new(tr("New columns with values from the map or another table, as they are now (add them again after changes).")).weak());
             ui.add_space(6.0);
             let before = self.mode;
             if kind == Some(GeometryKind::Point) {
@@ -3766,7 +3770,7 @@ impl JoinDialog {
                         {
                             ui.label(tr("Columns"));
                             ui.vertical(|ui| {
-                                ui.label(RichText::new("The area's key always; tick more:").weak().small());
+                                ui.label(RichText::new(tr("The area's key always; tick more:")).weak().small());
                                 egui::ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
                                     for c in &l.attributes.columns {
                                         let mut on = self.columns.contains(&c.name);
@@ -3907,7 +3911,7 @@ impl SummariseDialog {
             return false;
         };
         *open = modal(ctx, "summarise", "Summarise", 520.0, |ui| {
-            ui.label(RichText::new("A new table with one row per group: e.g. sales per rep, customers per segment.").weak());
+            ui.label(RichText::new(tr("A new table with one row per group: e.g. sales per rep, customers per segment.")).weak());
             ui.add_space(6.0);
             egui::Grid::new("sum-grid")
                 .num_columns(2)
@@ -4134,7 +4138,7 @@ impl ScoreDialog {
             return false;
         };
         *open = modal(ctx, "score", "Score", 460.0, |ui| {
-            ui.label(RichText::new("One figure from several, weighted: e.g. 60 % revenue and 40 % customers. The weights are made to add up to 1.").weak());
+            ui.label(RichText::new(tr("One figure from several, weighted: e.g. 60 % revenue and 40 % customers. The weights are made to add up to 1.")).weak());
             ui.add_space(6.0);
             for c in table.columns.iter().filter(|c| c.kind.is_numeric()) {
                 ui.horizontal(|ui| {
@@ -4303,7 +4307,7 @@ impl FlowDialog {
         *open = modal(ctx, "flows", "Flow lines", 520.0, |ui| {
             ui.label(
                 RichText::new(
-                    "Lines from where each row starts to where it goes, as wide as its value: customers to their branch, deliveries, commuters.",
+                    tr("Lines from where each row starts to where it goes, as wide as its value: customers to their branch, deliveries, commuters."),
                 )
                 .weak(),
             );
@@ -4517,7 +4521,7 @@ impl AtlasDialog {
         *open = modal(ctx, "atlas", "Map atlas", 480.0, |ui| {
             ui.label(
                 RichText::new(
-                    "A PDF of this map with a page per region, rep or area: each zoomed to its areas, the others veiled, with legend and scale bar.",
+                    tr("A PDF of this map with a page per region, rep or area: each zoomed to its areas, the others veiled, with legend and scale bar."),
                 )
                 .weak(),
             );
@@ -4626,14 +4630,16 @@ impl TemplatesDialog {
         *open = modal(ctx, "templates", "Templates", 460.0, |ui| {
             ui.label(
                 RichText::new(
-                    "A template is a project to start from: its boundaries, tables, maps with their colours and labels, plans and settings.",
+                    tr("A template is a project to start from: its boundaries, tables, maps with their colours and labels, plans and settings."),
                 )
                 .weak(),
             );
             ui.add_space(6.0);
-            ui.label(RichText::new("New project from").strong());
+            ui.label(RichText::new(tr("New project from")).strong());
             if self.templates.is_empty() {
-                ui.label(RichText::new("No templates yet: keep this project as one below.").weak());
+                ui.label(
+                    RichText::new(tr("No templates yet: keep this project as one below.")).weak(),
+                );
             }
             for (name, path) in &self.templates {
                 ui.horizontal(|ui| {
@@ -4654,7 +4660,7 @@ impl TemplatesDialog {
                 });
             }
             ui.add_space(8.0);
-            ui.label(RichText::new("Keep this project as a template").strong());
+            ui.label(RichText::new(tr("Keep this project as a template")).strong());
             ui.horizontal(|ui| {
                 ui.add(
                     egui::TextEdit::singleline(&mut self.name)
@@ -4725,7 +4731,7 @@ impl DriveZonesDialog {
         *open = modal(ctx, "drive-zones", "Drive-time zones", 500.0, |ui| {
             ui.label(
                 RichText::new(
-                    "Each area coloured by the minutes by road to the nearest branch, rep or site: who is within 15, 30, 45 minutes. Travel times come from the routing service in Settings.",
+                    tr("Each area coloured by the minutes by road to the nearest branch, rep or site: who is within 15, 30, 45 minutes. Travel times come from the routing service in Settings."),
                 )
                 .weak(),
             );

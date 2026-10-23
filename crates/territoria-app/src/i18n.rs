@@ -300,6 +300,112 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
         ("Area key", "Gebietsschlüssel"),
         ("A page per", "Eine Seite pro"),
         ("Rows of", "Zeilen von"),
+        // Dialog explanations.
+        (
+            "A column computed from the others, e.g. revenue per customer: [Revenue] / [Customers]. It updates when you edit the formula.",
+            "Eine aus den anderen berechnete Spalte, z. B. Umsatz pro Kunde: [Revenue] / [Customers]. Sie wird nachgeführt, wenn Sie die Formel ändern.",
+        ),
+        (
+            "A new table with one row per group: e.g. sales per rep, customers per segment.",
+            "Eine neue Tabelle mit einer Zeile pro Gruppe: z. B. Umsatz pro Vertreter, Kunden pro Segment.",
+        ),
+        (
+            "Administrative areas of about 230 countries from geoBoundaries (William & Mary geoLab). Each set has its own licence; the map credits it.",
+            "Verwaltungsgebiete von rund 230 Ländern aus geoBoundaries (William & Mary geoLab). Jeder Datensatz hat seine eigene Lizenz; die Karte nennt sie.",
+        ),
+        (
+            "Areas with the same value become one area: municipalities into districts, postcodes into postcode regions (by their first digits), sales areas into regions.",
+            "Gebiete mit gleichem Wert werden zu einem: Gemeinden zu Bezirken, PLZ zu PLZ-Regionen (nach den ersten Ziffern), Verkaufsgebiete zu Regionen.",
+        ),
+        (
+            "Background maps aren't part of exports yet.",
+            "Hintergrundkarten sind noch nicht Teil der Exporte.",
+        ),
+        (
+            "Check the column types: codes such as postcodes should be “Key / code” so leading zeros survive.",
+            "Spaltentypen prüfen: Codes wie Postleitzahlen sollten «Schlüssel / Code» sein, damit führende Nullen erhalten bleiben.",
+        ),
+        (
+            "Choose the areas and the table's key column.",
+            "Gebiete und die Schlüsselspalte der Tabelle wählen.",
+        ),
+        (
+            "Equal hexagons as areas: for density maps, and as units for territories where no boundaries fit.",
+            "Gleich grosse Sechsecke als Gebiete: für Dichtekarten und als Einheiten für Gebiete, wo keine Grenzen passen.",
+        ),
+        (
+            "Keep this project as a template",
+            "Dieses Projekt als Vorlage behalten",
+        ),
+        (
+            "Keys of areas, separated by commas, semicolons or lines. Ranges like 8000-8099 and wildcards like 81* work too.",
+            "Schlüssel der Gebiete, durch Kommas, Strichpunkte oder Zeilen getrennt. Bereiche wie 8000-8099 und Platzhalter wie 81* gehen auch.",
+        ),
+        (
+            "Many candidates: choosing may take a moment.",
+            "Viele Kandidaten: die Wahl kann einen Moment dauern.",
+        ),
+        (
+            "Neighbouring areas don't share their borders exactly. Territories still work; their borders may look busier.",
+            "Benachbarte Gebiete teilen ihre Grenzen nicht genau. Gebiete funktionieren trotzdem; ihre Grenzen wirken vielleicht unruhiger.",
+        ),
+        (
+            "New columns with values from the map or another table, as they are now (add them again after changes).",
+            "Neue Spalten mit Werten aus der Karte oder einer anderen Tabelle, so wie sie jetzt sind (nach Änderungen neu hinzufügen).",
+        ),
+        (
+            "No templates yet: keep this project as one below.",
+            "Noch keine Vorlagen: dieses Projekt unten als eine behalten.",
+        ),
+        (
+            "Numbers in the attributes are added up; an “Areas” column counts what was merged.",
+            "Zahlen in den Attributen werden addiert; eine Spalte «Areas» zählt, was zusammengelegt wurde.",
+        ),
+        (
+            "One figure from several, weighted: e.g. 60 % revenue and 40 % customers. The weights are made to add up to 1.",
+            "Eine Kennzahl aus mehreren, gewichtet: z. B. 60 % Umsatz und 40 % Kunden. Die Gewichte werden auf 1 gebracht.",
+        ),
+        (
+            "Pick the values that make up each chart, e.g. sales per product line.",
+            "Die Werte jedes Diagramms wählen, z. B. Umsatz pro Produktlinie.",
+        ),
+        (
+            "Rings around branches, reps or sites, and what lies within them: customers, their sales, the areas' values.",
+            "Ringe um Filialen, Vertreter oder Standorte und was darin liegt: Kunden, ihr Umsatz, die Werte der Gebiete.",
+        ),
+        (
+            "Rows of the table belong to areas by a key, such as a postcode or a municipality number.",
+            "Zeilen der Tabelle gehören über einen Schlüssel zu Gebieten, etwa eine Postleitzahl oder Gemeindenummer.",
+        ),
+        (
+            "The area's key always; tick more:",
+            "Immer den Schlüssel des Gebiets; weitere ankreuzen:",
+        ),
+        (
+            "When several rows belong to one area, their values are combined.",
+            "Gehören mehrere Zeilen zu einem Gebiet, werden ihre Werte zusammengefasst.",
+        ),
+        (
+            "Exports what the map shows now, with title, legend, scale bar and credits, as on screen or on a printed page.",
+            "Exportiert, was die Karte jetzt zeigt, mit Titel, Legende, Massstab und Quellen, wie am Bildschirm oder auf einer Druckseite.",
+        ),
+        (
+            "A PDF of this map with a page per region, rep or area: each zoomed to its areas, the others veiled, with legend and scale bar.",
+            "Ein PDF dieser Karte mit einer Seite pro Region, Vertreter oder Gebiet: jede auf ihre Gebiete gezoomt, die übrigen abgeblendet, mit Legende und Massstab.",
+        ),
+        (
+            "Lines from where each row starts to where it goes, as wide as its value: customers to their branch, deliveries, commuters.",
+            "Linien von wo jede Zeile beginnt bis wohin sie geht, so breit wie ihr Wert: Kunden zu ihrer Filiale, Lieferungen, Pendler.",
+        ),
+        (
+            "A template is a project to start from: its boundaries, tables, maps with their colours and labels, plans and settings.",
+            "Eine Vorlage ist ein Projekt zum Beginnen: seine Grenzen, Tabellen, Karten mit Farben und Beschriftungen, Planungen und Einstellungen.",
+        ),
+        (
+            "Each area coloured by the minutes by road to the nearest branch, rep or site: who is within 15, 30, 45 minutes. Travel times come from the routing service in Settings.",
+            "Jedes Gebiet nach den Fahrminuten zur nächsten Filiale, zum nächsten Vertreter oder Standort eingefärbt: wer liegt in 15, 30, 45 Minuten. Die Fahrzeiten kommen vom Routing-Dienst in den Einstellungen.",
+        ),
+        ("New project from", "Neues Projekt aus"),
         // Dialog options and buttons.
         (
             "Another table, by key",
