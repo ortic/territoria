@@ -5,6 +5,7 @@
 //! [`Project`] clones cheaply; undo keeps whole snapshots.
 
 pub mod file;
+pub mod grid;
 pub mod history;
 pub mod layer;
 pub mod map;

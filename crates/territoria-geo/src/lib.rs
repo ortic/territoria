@@ -5,6 +5,7 @@
 //! for display (see [`crs::Transformer`]).
 
 pub mod crs;
+pub mod hexgrid;
 pub mod index;
 pub mod points;
 pub mod simplify;

@@ -2418,3 +2418,173 @@ impl SettingsDialog {
         outcome
     }
 }
+
+/// A new layer of equal hexagons over points or areas.
+pub struct HexGridDialog {
+    pub cover: Option<LayerId>,
+    pub width_km: f64,
+    pub count: Option<LayerId>,
+    /// Cells for the spec they were computed for.
+    estimate: Option<(
+        territoria_model::grid::HexSpec,
+        Result<(usize, f64), String>,
+    )>,
+}
+
+impl HexGridDialog {
+    pub fn new(project: &Project, layer: Option<LayerId>) -> HexGridDialog {
+        let points = project
+            .layers
+            .iter()
+            .find(|l| l.kind() == GeometryKind::Point)
+            .map(|l| l.id);
+        let cover = layer
+            .or(points)
+            .or_else(|| project.layers.first().map(|l| l.id));
+        // About 30 cells across the extent, rounded to a nice size.
+        let width_km = cover
+            .and_then(|l| project.layer(l))
+            .and_then(|l| l.geometry.bbox)
+            .map_or(5.0, |b| {
+                let km = territoria_geo::haversine(b.min(), b.max()) / 1000.0 / 30.0;
+                let p = 10f64.powf(km.max(0.1).log10().floor());
+                [1.0, 2.0, 5.0, 10.0]
+                    .into_iter()
+                    .map(|m| m * p)
+                    .find(|v| *v >= km)
+                    .unwrap_or(km)
+            });
+        HexGridDialog {
+            cover,
+            width_km,
+            count: points,
+            estimate: None,
+        }
+    }
+
+    fn spec(&self, project: &Project) -> Option<territoria_model::grid::HexSpec> {
+        use territoria_model::grid::{HexCover, HexSpec};
+        let l = project.layer(self.cover?)?;
+        Some(HexSpec {
+            width_km: self.width_km,
+            cover: if l.kind() == GeometryKind::Point {
+                HexCover::Points(l.id)
+            } else {
+                HexCover::Areas(l.id)
+            },
+            count: self.count,
+        })
+    }
+
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        project: &Project,
+        open: &mut bool,
+    ) -> Option<(territoria_model::grid::HexSpec, String)> {
+        let mut outcome = None;
+        let mut cancel = false;
+        *open = modal(ctx, "hexgrid", "New hexagon grid", 480.0, |ui| {
+            ui.label(RichText::new("Equal hexagons as areas: for density maps, and as units for territories where no boundaries fit.").weak());
+            ui.add_space(6.0);
+            egui::Grid::new("hex-grid")
+                .num_columns(2)
+                .spacing([12.0, 8.0])
+                .show(ui, |ui| {
+                    ui.label("Over");
+                    layer_combo(ui, "hex-cover", project, &mut self.cover, None);
+                    ui.end_row();
+                    ui.label("");
+                    let points = self
+                        .cover
+                        .and_then(|l| project.layer(l))
+                        .is_some_and(|l| l.kind() == GeometryKind::Point);
+                    ui.label(
+                        RichText::new(if points {
+                            "Cells where there are points"
+                        } else {
+                            "Cells over the areas"
+                        })
+                        .weak(),
+                    );
+                    ui.end_row();
+                    ui.label("Cell size");
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            egui::DragValue::new(&mut self.width_km)
+                                .range(0.05..=1000.0)
+                                .speed(0.1)
+                                .suffix(" km"),
+                        );
+                        ui.label(RichText::new("across").weak());
+                    });
+                    ui.end_row();
+                    ui.label("Count");
+                    let text = self
+                        .count
+                        .and_then(|l| project.layer(l))
+                        .map_or("Nothing".to_owned(), |l| l.name.clone());
+                    ComboBox::from_id_salt("hex-count")
+                        .selected_text(text)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.count, None, "Nothing");
+                            for l in project
+                                .layers
+                                .iter()
+                                .filter(|l| l.kind() == GeometryKind::Point)
+                            {
+                                ui.selectable_value(&mut self.count, Some(l.id), &l.name);
+                            }
+                        })
+                        .response
+                        .on_hover_text("Points counted per cell, their numbers summed");
+                    ui.end_row();
+                });
+            let spec = self.spec(project);
+            if let Some(spec) = &spec
+                && self.estimate.as_ref().is_none_or(|(s, _)| s != spec)
+            {
+                let result = territoria_model::grid::hex_cells(project, spec)
+                    .map(|(g, cells)| (cells.len(), g.cell_area_km2()));
+                self.estimate = Some((spec.clone(), result));
+            }
+            ui.add_space(6.0);
+            let ok = match &self.estimate {
+                Some((_, Ok((n, area)))) => {
+                    ui.label(format!(
+                        "{} cells of {} km² each",
+                        format_value(*n as f64),
+                        format_value(*area)
+                    ));
+                    *n > 0 && *n <= 200_000
+                }
+                Some((_, Err(e))) => {
+                    ui.label(RichText::new(e).color(theme::WARN));
+                    false
+                }
+                None => false,
+            };
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(ok, egui::Button::new(RichText::new("Create").strong()))
+                    .clicked()
+                    && let Some(spec) = spec
+                {
+                    let name = format!(
+                        "Hexagons {} km",
+                        territoria_data::table::format_number(self.width_km)
+                    );
+                    outcome = Some((spec, name));
+                }
+                if ui.button("Cancel").clicked() {
+                    cancel = true;
+                }
+            });
+        });
+        if cancel || outcome.is_some() {
+            *open = false;
+        }
+        outcome
+    }
+}

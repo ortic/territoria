@@ -204,6 +204,7 @@ pub struct TerritoriaApp {
     new_plan: Option<NewPlanDialog>,
     merge: Option<MergeDialog>,
     formula: Option<crate::dialogs::FormulaDialog>,
+    hex_grid: Option<crate::dialogs::HexGridDialog>,
     settings_dialog: Option<crate::dialogs::SettingsDialog>,
     download: Option<DownloadDialog>,
     export_map: Option<crate::dialogs::ExportMapDialog>,
@@ -289,6 +290,7 @@ impl TerritoriaApp {
             new_plan: None,
             merge: None,
             formula: None,
+            hex_grid: None,
             settings_dialog: None,
             download: None,
             export_map: None,
@@ -1333,6 +1335,49 @@ impl TerritoriaApp {
         self.selection = Selection::Data(DataRef::Layer(id));
     }
 
+    /// A new layer of hexagons; coloured by the count when points were
+    /// counted.
+    pub(crate) fn create_hex_grid(&mut self, spec: &territoria_model::grid::HexSpec, name: &str) {
+        let (geometries, table) = match territoria_model::grid::hex_grid(&self.project, spec) {
+            Ok(g) => g,
+            Err(e) => {
+                self.error(e);
+                return;
+            }
+        };
+        let before = self.project.clone();
+        let geometry = territoria_model::LayerGeometry::from_imported(geometries, true);
+        let id = self
+            .project
+            .add_layer(name, geometry, table, SourceInfo::default());
+        if let Some(l) = self.project.layer_mut(id) {
+            l.key_column = Some("Cell".into());
+        }
+        let map = self.ensure_map();
+        let count = spec
+            .count
+            .and_then(|p| self.project.layer(p))
+            .map(|p| p.name.clone())
+            .and_then(|c| {
+                let column = self.project.layer(id)?.attributes.column(&c)?.name.clone();
+                Some(column)
+            });
+        let shown = match count {
+            Some(column) => self.add_choropleth(
+                map,
+                id,
+                format!("{column} per cell"),
+                territoria_model::ValueSource::Attribute { column },
+            ),
+            None => self.add_boundaries_to_map(map, id),
+        };
+        self.history.push("New hexagon grid", before);
+        if let Some(ml) = shown {
+            self.selection = Selection::MapLayer(map, ml);
+            self.right_tab = RightTab::Properties;
+        }
+    }
+
     /// The current map, creating one if the project has none.
     fn ensure_map(&mut self) -> MapId {
         if let Some(m) = self.current_map.filter(|m| self.project.map(*m).is_some()) {
@@ -1875,6 +1920,17 @@ impl TerritoriaApp {
             Command::DownloadBoundaries => {
                 self.download = Some(DownloadDialog::new());
                 self.load_catalog();
+            }
+            Command::HexGrid => {
+                if self.project.layers.is_empty() {
+                    self.toast("Add points or boundaries first.");
+                } else {
+                    let layer = match self.selection {
+                        Selection::Data(DataRef::Layer(l)) => Some(l),
+                        _ => None,
+                    };
+                    self.hex_grid = Some(crate::dialogs::HexGridDialog::new(&self.project, layer));
+                }
             }
             Command::CalculatedColumn => {
                 let data = match self.selection {
@@ -2475,6 +2531,7 @@ impl TerritoriaApp {
                     Command::ColorByValue,
                     Command::LinkData,
                     Command::MergeAreas,
+                    Command::HexGrid,
                     Command::CalculatedColumn,
                     Command::ExportMap,
                     Command::NewMap,
@@ -2780,6 +2837,14 @@ impl TerritoriaApp {
                     name,
                 }) => self.merge_areas(layer, &column, prefix, &name),
                 None if open => self.merge = Some(d),
+                None => {}
+            }
+        }
+        if let Some(mut d) = self.hex_grid.take() {
+            let mut open = true;
+            match d.show(ctx, &self.project, &mut open) {
+                Some((spec, name)) => self.create_hex_grid(&spec, &name),
+                None if open => self.hex_grid = Some(d),
                 None => {}
             }
         }
@@ -3199,6 +3264,7 @@ impl eframe::App for TerritoriaApp {
             || self.new_plan.is_some()
             || self.merge.is_some()
             || self.formula.is_some()
+            || self.hex_grid.is_some()
             || self.settings_dialog.is_some()
             || self.select_list.is_some()
             || self.download.is_some()

@@ -39,6 +39,7 @@ commands! {
     LinkData => "Data: Link Table to Map…",
     MergeAreas => "Data: New Layer by Merging Areas…",
     CalculatedColumn => "Data: Calculated Column…",
+    HexGrid => "Data: New Hexagon Grid…",
     ColorByValue => "Map: Colour Areas by Value…",
     NewMap => "Map: New Map",
     ExportMap => "Map: Export Map (PNG, SVG, PDF)…",

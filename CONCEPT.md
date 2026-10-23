@@ -231,7 +231,7 @@ territoria/
 - [x] Symbols per area (aggregated) or per row (circles at area centres from attributes, linked tables or points inside; or on each point; relative to area/another value/total; size legend; in exports)
 - [ ] Charts per area or row: pie (and donut), bars, stacked bars, paired bars (population pyramid), with size scaling
 - [ ] Heatmap / density: kernel (Gaussian, linear, uniform), radius in km or pixels, weight column
-- [ ] Hex or square grid aggregation of points
+- [x] Hex or square grid aggregation of points (equal-area hexagons over points or areas, points counted and summed per cell; usable as territory units; no square grid)
 - [ ] Bivariate choropleth (two variables, 2×2/3×3 colour matrix) with quadrant labels
 - [ ] Hatching for several values per area / overlapping territories
 - [ ] Lines: style a line layer by data

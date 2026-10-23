@@ -1459,3 +1459,67 @@ fn distance_zones() {
     settle(&mut h);
     save(&mut h, "distance-zones");
 }
+
+/// Hexagons over customers, counted per cell; and territories planned on
+/// hexagons over the areas.
+#[test]
+fn hexagon_grid() {
+    use crate::dialogs::Placement;
+    use territoria_model::grid::{HexCover, HexSpec};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let customers = customers(h.state(), layer, 800);
+    let app = h.state_mut();
+    app.add_table(
+        "Customers".into(),
+        customers,
+        PathBuf::from("customers.csv"),
+        Placement::Points {
+            x: "Longitude".into(),
+            y: "Latitude".into(),
+        },
+        None,
+    );
+    let points = app.project.layers.last().unwrap().id;
+    // Cells a 25th of the extent across.
+    let b = app.project.layer(layer).unwrap().geometry.bbox.unwrap();
+    let width = territoria_geo::haversine(b.min(), b.max()) / 1000.0 / 25.0;
+    app.create_hex_grid(
+        &HexSpec {
+            width_km: width,
+            cover: HexCover::Points(points),
+            count: Some(points),
+        },
+        "Customer hexagons",
+    );
+    let hex = app.project.layers.last().unwrap();
+    assert_eq!(hex.name, "Customer hexagons");
+    let counted: f64 = (0..hex.len())
+        .filter_map(|r| hex.attributes.column("Customers").unwrap().f64(r))
+        .sum();
+    assert_eq!(counted, 800.0, "every customer in one cell");
+    settle(&mut h);
+    save(&mut h, "hexagons");
+
+    // Hexagons over the areas, as units of a plan.
+    let app = h.state_mut();
+    app.create_hex_grid(
+        &HexSpec {
+            width_km: width,
+            cover: HexCover::Areas(layer),
+            count: Some(points),
+        },
+        "Area hexagons",
+    );
+    let hex = app.project.layers.last().unwrap().id;
+    let plan = app.add_balanced_plan_now(hex, 4);
+    let p = app.project.plan(plan).unwrap();
+    let g = &app.project.layer(hex).unwrap().geometry;
+    for m in p.members() {
+        assert!(!m.is_empty());
+        assert_eq!(g.components(&m), 1, "contiguous on hexagons");
+    }
+}
