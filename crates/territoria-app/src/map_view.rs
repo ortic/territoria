@@ -25,6 +25,17 @@ pub enum Tool {
     Paint,
     /// Click to place the active territory's site.
     Site,
+    /// Click, drag a rectangle or Alt+drag a lasso to select areas.
+    Select,
+}
+
+/// How a new selection combines with the current one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectMode {
+    Replace,
+    Add,
+    /// Selected ones leave, others join.
+    Toggle,
 }
 
 /// UI state of one map tab (not saved in the project).
@@ -37,6 +48,9 @@ pub struct MapState {
     pub fit_requested: bool,
     /// Feature to zoom to on the next frame: (layer, features).
     pub zoom_to: Option<(LayerId, Vec<u32>)>,
+    /// Screen points of the rectangle or lasso being dragged.
+    selecting: Option<Vec<Pos2>>,
+    lasso: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -57,7 +71,10 @@ pub enum MapEvent {
     /// The paint stroke ended.
     PaintEnd,
     /// Site tool: the active territory's site goes here (lon/lat).
-    PlaceSite { plan: PlanId, lonlat: [f64; 2] },
+    PlaceSite {
+        plan: PlanId,
+        lonlat: [f64; 2],
+    },
     /// Shift+click in paint mode: make the territory under the pointer active.
     PickTerritory {
         plan: PlanId,
@@ -70,6 +87,19 @@ pub enum MapEvent {
     },
     /// The view moved; remember it in the project.
     ViewChanged([f64; 2], f64),
+    /// Select tool: these features of `layer`.
+    Select {
+        layer: LayerId,
+        units: Vec<u32>,
+        mode: SelectMode,
+    },
+    /// The selection goes to a territory (`None`: unassigned).
+    AssignSelection {
+        plan: PlanId,
+        to: Option<TerritoryId>,
+    },
+    ZoomToSelection,
+    ClearSelection,
 }
 
 pub struct MapContext<'a> {
@@ -86,6 +116,39 @@ pub struct MapContext<'a> {
     pub dark: bool,
     /// Units to mark, e.g. the areas a scenario moves.
     pub highlight: Option<(LayerId, &'a [u32])>,
+    /// Selected features.
+    pub selection: Option<(LayerId, &'a [u32])>,
+}
+
+/// The rectangle (first and last point) or lasso of a drag, in screen points.
+fn selection_shape(path: &[Pos2], lasso: bool) -> Vec<Pos2> {
+    match (path.first(), path.last()) {
+        (Some(_), Some(_)) if lasso => path.to_vec(),
+        (Some(a), Some(b)) => {
+            let r = Rect::from_two_pos(*a, *b);
+            vec![
+                r.left_top(),
+                r.right_top(),
+                r.right_bottom(),
+                r.left_bottom(),
+            ]
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Even-odd point in polygon.
+fn inside(poly: &[Pos2], p: Pos2) -> bool {
+    let mut odd = false;
+    let mut j = poly.len().wrapping_sub(1);
+    for i in 0..poly.len() {
+        let (a, b) = (poly[i], poly[j]);
+        if (a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x {
+            odd = !odd;
+        }
+        j = i;
+    }
+    odd
 }
 
 /// Per plan: unit → territory index and where territory labels go.
@@ -278,6 +341,7 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
     let pointer = response.hover_pos();
     let modifiers = ui.input(|i| i.modifiers);
     let painting_tool = cx.tool == Tool::Paint && cx.active_plan.is_some();
+    let selecting_tool = cx.tool == Tool::Select;
     if let Some(p) = pointer {
         let (scroll, zoom) = ui.input(|i| (i.smooth_scroll_delta, i.zoom_delta()));
         let factor = zoom as f64 * (scroll.y as f64 / 300.0).exp();
@@ -290,11 +354,12 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
             || i.pointer.button_down(egui::PointerButton::Secondary)
     });
     let space = ui.input(|i| i.key_down(egui::Key::Space));
-    if response.dragged() && (!painting_tool || pan_button || space) {
+    if response.dragged() && (!(painting_tool || selecting_tool) || pan_button || space) {
         view.pan(response.drag_delta());
     }
     if response.double_clicked()
         && !painting_tool
+        && !selecting_tool
         && let Some(p) = pointer
     {
         view.zoom_at(p, 2.0);
@@ -369,8 +434,34 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
         }
     }
 
+    // The selection: tinted and outlined.
+    if let Some((layer, units)) = cx.selection
+        && let Some(mesh) = meshes.get(&layer)
+    {
+        let level = paint::level(mesh, &view, ppp);
+        let c = crate::theme::ACCENT;
+        paint::highlight(
+            &mut shapes,
+            mesh,
+            level,
+            &view,
+            units,
+            c.gamma_multiply(0.3),
+        );
+        for &u in units {
+            paint::outline(
+                &mut shapes,
+                mesh,
+                level,
+                &view,
+                u as usize,
+                Stroke::new(1.5, c),
+            );
+        }
+    }
+
     // Hover and painting.
-    let interactive = interactive_layer(map, cx, painting_tool);
+    let interactive = interactive_layer(map, cx, painting_tool || selecting_tool);
     state.hover = None;
     if let (Some(p), Some((layer_id, plan))) = (pointer, interactive)
         && let Some(layer) = project.layer(layer_id)
@@ -476,6 +567,87 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
             events.push(MapEvent::ClickTerritory { plan, territory: t });
         }
     }
+    // Selecting: click, drag a rectangle, Alt+drag a lasso.
+    if selecting_tool
+        && let Some((layer_id, _)) = interactive
+        && let Some(mesh) = meshes.get(&layer_id)
+    {
+        let add = modifiers.shift || modifiers.command;
+        if response.drag_started_by(egui::PointerButton::Primary)
+            && !space
+            && let Some(p) = response.interact_pointer_pos()
+        {
+            state.selecting = Some(vec![p]);
+            state.lasso = modifiers.alt;
+        }
+        if response.dragged_by(egui::PointerButton::Primary)
+            && let (Some(path), Some(p)) = (&mut state.selecting, pointer)
+            && path.last().is_none_or(|l| l.distance(p) > 2.0)
+        {
+            path.push(p);
+        }
+        if let Some(path) = &state.selecting {
+            let poly = selection_shape(path, state.lasso);
+            let c = crate::theme::ACCENT;
+            if poly.len() > 2 {
+                shapes.push(Shape::Path(egui::epaint::PathShape {
+                    points: poly.clone(),
+                    closed: true,
+                    fill: if state.lasso {
+                        Color32::TRANSPARENT
+                    } else {
+                        c.gamma_multiply(0.12)
+                    },
+                    stroke: egui::epaint::PathStroke::new(1.5, c),
+                }));
+            }
+        }
+        if response.drag_stopped()
+            && let Some(path) = state.selecting.take()
+        {
+            let poly = selection_shape(&path, state.lasso);
+            let units = mesh
+                .label_points
+                .iter()
+                .enumerate()
+                .filter_map(|(i, lp)| {
+                    let s = view.to_screen(mesh.to_display((*lp)?));
+                    inside(&poly, s).then_some(i as u32)
+                })
+                .collect();
+            let mode = if add {
+                SelectMode::Add
+            } else {
+                SelectMode::Replace
+            };
+            events.push(MapEvent::Select {
+                layer: layer_id,
+                units,
+                mode,
+            });
+        } else if response.clicked() {
+            let units = state
+                .hover
+                .as_ref()
+                .filter(|h| h.layer == layer_id)
+                .map(|h| vec![h.feature as u32])
+                .unwrap_or_default();
+            let mode = if add {
+                SelectMode::Toggle
+            } else {
+                SelectMode::Replace
+            };
+            events.push(MapEvent::Select {
+                layer: layer_id,
+                units,
+                mode,
+            });
+        }
+        if state.selecting.is_none() {
+            ui.ctx().set_cursor_icon(CursorIcon::Default);
+        }
+    }
+
     if state.painting && !response.dragged() && !ui.input(|i| i.pointer.primary_down()) {
         state.painting = false;
         state.last_paint = None;
@@ -515,7 +687,105 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
     }
     scale_bar(&painter, &view, &map.crs, cx.dark);
     attribution(&painter, &view, map, project, cx.dark);
+    if let Some((layer, units)) = cx.selection
+        && !units.is_empty()
+    {
+        selection_bar(ui, rect, map, cx, layer, units, &mut events);
+    }
     events
+}
+
+/// A bar over the map for the selection: its size, what it adds up to,
+/// and what can be done with it.
+fn selection_bar(
+    ui: &mut Ui,
+    rect: Rect,
+    map: &Map,
+    cx: &mut MapContext,
+    layer: LayerId,
+    units: &[u32],
+    events: &mut Vec<MapEvent>,
+) {
+    let project = cx.project;
+    let plan = cx
+        .active_plan
+        .and_then(|p| project.plan(p))
+        .filter(|p| p.layer == layer);
+    let noun = match project.layer(layer).map(|l| l.kind()) {
+        Some(GeometryKind::Point) => "points",
+        Some(GeometryKind::Line) => "lines",
+        _ => "areas",
+    };
+    // The plan's measure over the selection.
+    let total = plan
+        .and_then(|p| p.measures.first())
+        .filter(|m| m.source != territoria_model::ValueSource::Units)
+        .map(|m| {
+            let values = cx.values.values(project, layer, &m.source);
+            let sum: f64 = units
+                .iter()
+                .filter_map(|&u| values.get(u as usize).copied().flatten())
+                .sum();
+            (sum, m.source.label(project))
+        });
+    egui::Area::new(egui::Id::new(("selection-bar", map.id)))
+        .order(egui::Order::Foreground)
+        .fixed_pos(pos2(rect.center().x, rect.bottom() - 48.0))
+        .pivot(Align2::CENTER_BOTTOM)
+        .constrain_to(rect)
+        .show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let count = territoria_analysis::format::format_value(units.len() as f64);
+                    ui.label(egui::RichText::new(format!("{count} {noun} selected")).strong());
+                    if let Some((sum, label)) = &total {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{} {label}",
+                                territoria_analysis::format::format_value(*sum)
+                            ))
+                            .weak(),
+                        );
+                    }
+                    if let Some(p) = plan {
+                        ui.separator();
+                        if let Some(t) = cx.active_territory.and_then(|t| p.territory(t)) {
+                            let r = ui.button(format!("Assign to {}", t.name)).on_hover_text(
+                                "The selected areas join the active territory (locked ones stay)",
+                            );
+                            let swatch = Rect::from_center_size(
+                                r.rect.left_center() + vec2(-6.0, 0.0),
+                                vec2(8.0, 8.0),
+                            );
+                            ui.painter().rect_filled(swatch, 2.0, color(t.color));
+                            if r.clicked() {
+                                events.push(MapEvent::AssignSelection {
+                                    plan: p.id,
+                                    to: Some(t.id),
+                                });
+                            }
+                        }
+                        if ui.button("Unassign").clicked() {
+                            events.push(MapEvent::AssignSelection {
+                                plan: p.id,
+                                to: None,
+                            });
+                        }
+                    }
+                    ui.separator();
+                    if ui.button("Zoom to").clicked() {
+                        events.push(MapEvent::ZoomToSelection);
+                    }
+                    if ui
+                        .button("✖")
+                        .on_hover_text("Clear the selection (Esc)")
+                        .clicked()
+                    {
+                        events.push(MapEvent::ClearSelection);
+                    }
+                });
+            });
+        });
 }
 
 /// Title and (label, value) rows for the hover card: the area, then what
@@ -836,4 +1106,33 @@ fn scale_bar(painter: &egui::Painter, view: &View, crs: &Crs, dark: bool) {
         FontId::proportional(11.0),
         fg,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lasso_and_rectangle() {
+        let rect = selection_shape(
+            &[pos2(10.0, 10.0), pos2(5.0, 30.0), pos2(40.0, 20.0)],
+            false,
+        );
+        assert_eq!(rect.len(), 4, "a rectangle from first to last point");
+        assert!(inside(&rect, pos2(20.0, 15.0)));
+        assert!(!inside(&rect, pos2(20.0, 25.0)));
+        // An L-shaped lasso: the notch is outside.
+        let lasso = [
+            pos2(0.0, 0.0),
+            pos2(10.0, 0.0),
+            pos2(10.0, 4.0),
+            pos2(4.0, 4.0),
+            pos2(4.0, 10.0),
+            pos2(0.0, 10.0),
+        ];
+        let l = selection_shape(&lasso, true);
+        assert!(inside(&l, pos2(2.0, 8.0)));
+        assert!(inside(&l, pos2(8.0, 2.0)));
+        assert!(!inside(&l, pos2(8.0, 8.0)));
+    }
 }

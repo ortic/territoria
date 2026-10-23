@@ -169,6 +169,9 @@ pub struct TerritoriaApp {
     pub selection: Selection,
     pub tool: Tool,
     pub active_plan: Option<PlanId>,
+    /// Features picked with the Select tool (or by list).
+    pub selected: Option<(LayerId, Vec<u32>)>,
+    select_list: Option<crate::dialogs::SelectListDialog>,
     pub active_territory: Option<TerritoryId>,
     right_tab: RightTab,
     show_contents: bool,
@@ -252,6 +255,8 @@ impl TerritoriaApp {
             selection: Selection::None,
             tool: Tool::Navigate,
             active_plan: None,
+            selected: None,
+            select_list: None,
             active_territory: None,
             right_tab: RightTab::Properties,
             show_contents: true,
@@ -855,6 +860,12 @@ impl TerritoriaApp {
         d.name = name.into();
         d.source = source.into();
         self.formula = Some(d);
+    }
+
+    #[cfg(test)]
+    pub fn map_events_for_test(&mut self, events: Vec<MapEvent>) {
+        let map = self.ensure_map();
+        self.handle_map_events(events, map);
     }
 
     #[cfg(test)]
@@ -1626,6 +1637,28 @@ impl TerritoriaApp {
                 }
             }
             Command::ToolNavigate => self.tool = Tool::Navigate,
+            Command::ToolSelect => self.tool = Tool::Select,
+            Command::SelectByList => {
+                let layer = self
+                    .selected
+                    .as_ref()
+                    .map(|(l, _)| *l)
+                    .or_else(|| {
+                        self.active_plan
+                            .and_then(|p| self.project.plan(p))
+                            .map(|p| p.layer)
+                    })
+                    .or_else(|| self.project.layers.first().map(|l| l.id));
+                match layer {
+                    Some(layer) => {
+                        self.select_list = Some(crate::dialogs::SelectListDialog {
+                            layer: Some(layer),
+                            text: String::new(),
+                        })
+                    }
+                    None => self.toast("Add boundaries first."),
+                }
+            }
             Command::ToolPaint => {
                 if self.active_plan.is_some() {
                     self.tool = Tool::Paint;
@@ -1938,6 +1971,55 @@ impl TerritoriaApp {
                         self.right_tab = RightTab::Territories;
                     }
                 }
+                MapEvent::Select { layer, units, mode } => {
+                    use crate::map_view::SelectMode;
+                    let mut set: std::collections::BTreeSet<u32> = match &self.selected {
+                        Some((l, u)) if *l == layer && mode != SelectMode::Replace => {
+                            u.iter().copied().collect()
+                        }
+                        _ => Default::default(),
+                    };
+                    for u in units {
+                        if mode == SelectMode::Toggle && set.contains(&u) {
+                            set.remove(&u);
+                        } else {
+                            set.insert(u);
+                        }
+                    }
+                    self.selected = (!set.is_empty()).then(|| (layer, set.into_iter().collect()));
+                }
+                MapEvent::AssignSelection { plan, to } => {
+                    if let Some((_, units)) = self.selected.clone() {
+                        let label = if to.is_some() {
+                            "Assign selection"
+                        } else {
+                            "Unassign selection"
+                        };
+                        let mut changed = 0;
+                        self.edit(label, |p| {
+                            let rev = p.bump();
+                            if let Some(pl) = p.plan_mut(plan) {
+                                changed = pl.assign(&units, to);
+                                pl.rev = rev;
+                            }
+                        });
+                        if changed < units.len() {
+                            self.toast(format!(
+                                "{} of {} areas changed; the others are locked or already there.",
+                                changed,
+                                units.len()
+                            ));
+                        }
+                    }
+                }
+                MapEvent::ZoomToSelection => {
+                    if let Some((layer, units)) = self.selected.clone()
+                        && let Some(s) = self.map_states.get_mut(&map)
+                    {
+                        s.zoom_to = Some((layer, units));
+                    }
+                }
+                MapEvent::ClearSelection => self.selected = None,
                 MapEvent::ViewChanged(center, scale) => {
                     // Not an undo step: just remembered with the project.
                     if let Some(m) = self.project.map_mut(map) {
@@ -2081,6 +2163,8 @@ impl TerritoriaApp {
                     Command::ExportMap,
                     Command::NewMap,
                     Command::ZoomToAll,
+                    Command::ToolSelect,
+                    Command::SelectByList,
                 ] {
                     item(ui, commands, &self.keymap, c);
                 }
@@ -2152,6 +2236,8 @@ impl TerritoriaApp {
             let has_plan = self.active_plan.is_some();
             ui.selectable_value(&mut self.tool, Tool::Navigate, "✋ Navigate")
                 .on_hover_text("Drag to move, scroll to zoom, click an area to inspect it (V)");
+            ui.selectable_value(&mut self.tool, Tool::Select, "⬚ Select")
+                .on_hover_text("Click or drag a rectangle over areas, Alt+drag for a lasso, Shift adds. Then assign them in one go (S)");
             ui.add_enabled_ui(has_plan, |ui| {
                 ui.selectable_value(&mut self.tool, Tool::Paint, "✏ Paint")
                     .on_hover_text("Drag over areas to assign them to the active territory. Shift+click picks a territory, Alt+drag erases, right-drag moves the map (B)")
@@ -2200,6 +2286,7 @@ impl TerritoriaApp {
                     Tool::Navigate => "Drag to move the map, scroll to zoom.",
                     Tool::Paint => "Drag over areas to assign them. Shift+click picks a territory, Alt+drag erases.",
                     Tool::Site => "Click on the map where the territory's site is (Esc cancels).",
+                    Tool::Select => "Click or drag a rectangle to select, Alt+drag for a lasso, Shift adds. Right-drag moves the map, Esc clears.",
                 }).weak());
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -2390,6 +2477,19 @@ impl TerritoriaApp {
                     source,
                 }) => self.apply_formula(data, editing, &name, &source),
                 None if open => self.formula = Some(d),
+                None => {}
+            }
+        }
+        if let Some(mut d) = self.select_list.take() {
+            let mut open = true;
+            match d.show(ctx, &self.project, &mut open) {
+                Some((layer, units)) => {
+                    self.selected = Some((layer, units.clone()));
+                    if let Some(s) = self.current_map.and_then(|m| self.map_states.get_mut(&m)) {
+                        s.zoom_to = Some((layer, units));
+                    }
+                }
+                None if open => self.select_list = Some(d),
                 None => {}
             }
         }
@@ -2674,6 +2774,7 @@ impl TabViewer for Viewer<'_> {
                     active_territory: app.active_territory,
                     dark: ui.visuals().dark_mode,
                     highlight: app.territories_panel.highlight(app.active_plan),
+                    selection: app.selected.as_ref().map(|(l, u)| (*l, u.as_slice())),
                 };
                 let map = map.clone();
                 let events = map_view::show(ui, &map, state, &mut cx);
@@ -2710,6 +2811,7 @@ impl eframe::App for TerritoriaApp {
             || self.new_plan.is_some()
             || self.merge.is_some()
             || self.formula.is_some()
+            || self.select_list.is_some()
             || self.download.is_some()
             || self.export_map.is_some()
             || self.palette.is_some()
@@ -2717,6 +2819,18 @@ impl eframe::App for TerritoriaApp {
             || self.about;
         if self.tool == Tool::Site && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.tool = Tool::Navigate;
+        }
+        if !modal_open && self.selected.is_some() && ctx.input(|i| i.key_pressed(egui::Key::Escape))
+        {
+            self.selected = None;
+        }
+        if let Some((layer, units)) = &self.selected
+            && self
+                .project
+                .layer(*layer)
+                .is_none_or(|l| units.iter().any(|&u| u as usize >= l.len()))
+        {
+            self.selected = None;
         }
         let mut commands = if modal_open {
             Vec::new()

@@ -167,7 +167,7 @@ territoria/
 - [ ] Display projection: Web Mercator by default, any EPSG code per map
 - [x] Level-of-detail rendering: simplified arcs per zoom level, GPU meshes, viewport culling
 - [x] Hover highlight with a tooltip card (name, key, data values)
-- [ ] Selection: click, Ctrl+click, rectangle, lasso, radius; by list (ranges like `01-09, 15`)
+- [x] Selection: click, Ctrl+click, rectangle, lasso, radius; by list (ranges like `01-09, 15`) (Select tool: click, Shift/Ctrl+click toggles, drag a rectangle, Alt+drag a lasso; list dialog with ranges and wildcards; no radius yet)
 - [ ] Transfer a selection to another layer (contained / touching / centre inside)
 - [x] Labels with collision avoidance, placed at a pole of inaccessibility
 - [x] Layer list with visibility, order (drag), opacity, zoom range (order by context menu; no zoom range)
@@ -253,7 +253,7 @@ territoria/
 - [x] Territories: stable internal id, code, name, colour, weight/capacity, manager/site, notes (no UI for weight, site or notes yet)
 - [ ] Hierarchy: any number of levels (e.g. territory → region → area); levels built from the level below or from other boundaries ("borders like layer X")
 - [x] Paint tool: click or drag over units to assign them to the active territory; Shift to pick a territory from the map; Alt to unassign
-- [ ] Assign by rectangle, lasso, radius, list, table selection
+- [x] Assign by rectangle, lasso, radius, list, table selection (a bar over the map assigns or unassigns the selection, shows its measure total, zooms to it; no radius or table selection yet)
 - [ ] Move a whole territory into another parent; drag in the territory tree
 - [x] KPI panel: per territory sums of chosen measures, target (mean or set), deviation in % with bars, unit count, area, parts (contiguity), compactness; totals; updates live while painting (no compactness figure)
 - [x] Measures: any numeric column of linked tables (sum/mean/count per territory), unit count, area, customer count; several at once (one in the panel; the model and optimizer take several)

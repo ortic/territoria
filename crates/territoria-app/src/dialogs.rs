@@ -2174,3 +2174,70 @@ impl FormulaDialog {
         outcome
     }
 }
+
+/// Selects areas by a list of keys, ranges and wildcards.
+pub struct SelectListDialog {
+    pub layer: Option<LayerId>,
+    pub text: String,
+}
+
+impl SelectListDialog {
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        project: &Project,
+        open: &mut bool,
+    ) -> Option<(LayerId, Vec<u32>)> {
+        let mut outcome = None;
+        let mut cancel = false;
+        *open = modal(ctx, "select-list", "Select areas by list", 480.0, |ui| {
+            ui.label(RichText::new("Keys of areas, separated by commas, semicolons or lines. Ranges like 8000-8099 and wildcards like 81* work too.").weak());
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label("Areas");
+                layer_combo(ui, "select-layer", project, &mut self.layer, None);
+            });
+            ui.add(
+                egui::TextEdit::multiline(&mut self.text)
+                    .hint_text("8000-8099; 8105, 81*")
+                    .desired_rows(4)
+                    .desired_width(f32::INFINITY),
+            );
+            let units = self.layer.map(|layer| {
+                let keys = layer_keys(project, layer);
+                let index = territoria_data::KeyIndex::new(
+                    keys.iter().map(|k| k.as_deref()),
+                    MatchMode::Loose,
+                );
+                let mut u = territoria_model::plan::expand_unit_list(&self.text, &keys, &index);
+                u.sort_unstable();
+                u.dedup();
+                (layer, u)
+            });
+            let n = units.as_ref().map_or(0, |(_, u)| u.len());
+            ui.label(if self.text.trim().is_empty() {
+                RichText::new(" ")
+            } else if n == 0 {
+                RichText::new("No area matches.").color(theme::WARN)
+            } else {
+                RichText::new(format!("{} areas match.", format_value(n as f64)))
+            });
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(n > 0, egui::Button::new(RichText::new("Select").strong()))
+                    .clicked()
+                {
+                    outcome = units;
+                }
+                if ui.button("Cancel").clicked() {
+                    cancel = true;
+                }
+            });
+        });
+        if cancel || outcome.is_some() {
+            *open = false;
+        }
+        outcome
+    }
+}

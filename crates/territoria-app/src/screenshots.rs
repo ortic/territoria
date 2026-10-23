@@ -1009,3 +1009,59 @@ fn label_templates() {
     assert!(svg.contains("<tspan"), "labels on two lines");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Selecting areas and assigning them in one go, with undo.
+#[test]
+fn select_and_assign() {
+    use crate::map_view::{MapEvent, SelectMode};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    let plan = app.add_balanced_plan_now(layer, 4);
+    let p = app.project.plan(plan).unwrap();
+    let (t0, t1) = (p.territories[0].id, p.territories[1].id);
+    let units: Vec<u32> = (0..p.assignment.len() as u32)
+        .filter(|&u| p.assignment[u as usize] == Some(t0))
+        .take(5)
+        .collect();
+    app.map_events_for_test(vec![MapEvent::Select {
+        layer,
+        units: units[..3].to_vec(),
+        mode: SelectMode::Replace,
+    }]);
+    // Shift+click toggles: one leaves, two join.
+    app.map_events_for_test(vec![MapEvent::Select {
+        layer,
+        units: vec![units[2], units[3], units[4]],
+        mode: SelectMode::Toggle,
+    }]);
+    let mut expected = vec![units[0], units[1], units[3], units[4]];
+    expected.sort_unstable();
+    assert_eq!(app.selected, Some((layer, expected.clone())));
+    app.active_territory = Some(t1);
+    app.tool = crate::map_view::Tool::Select;
+    settle(&mut h);
+    save(&mut h, "selection");
+    let app = h.state_mut();
+    app.map_events_for_test(vec![MapEvent::AssignSelection { plan, to: Some(t1) }]);
+    let p = app.project.plan(plan).unwrap();
+    assert!(
+        expected
+            .iter()
+            .all(|&u| p.assignment[u as usize] == Some(t1))
+    );
+    app.run_command_for_test(crate::commands::Command::Undo);
+    let p = h.state().project.plan(plan).unwrap();
+    assert!(
+        expected
+            .iter()
+            .all(|&u| p.assignment[u as usize] == Some(t0))
+    );
+    // Esc-like clearing.
+    h.state_mut()
+        .map_events_for_test(vec![MapEvent::ClearSelection]);
+    assert!(h.state().selected.is_none());
+}
