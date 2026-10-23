@@ -52,6 +52,9 @@ pub struct Resolved {
     pub flows: Vec<Flow>,
     /// Closed lines in display coordinates (catchment rings) with a label.
     pub rings: Vec<Ring>,
+    /// Areas striped in a colour (shared with a second territory): their
+    /// rings in display coordinates.
+    pub hatched: Vec<(Vec<Vec<[f64; 2]>>, Color32)>,
 }
 
 /// A line from one place to another (display coordinates).
@@ -165,6 +168,7 @@ fn resolve_one(
                 charts: Vec::new(),
                 flows,
                 rings: Vec::new(),
+                hatched: Vec::new(),
             }])
         }
         MapLayerKind::Rings {
@@ -214,6 +218,7 @@ fn resolve_one(
                 charts: Vec::new(),
                 flows: Vec::new(),
                 rings,
+                hatched: Vec::new(),
             }])
         }
         MapLayerKind::Boundaries { layer, style }
@@ -279,6 +284,7 @@ fn resolve_one(
                 charts: Vec::new(),
                 flows: Vec::new(),
                 rings: Vec::new(),
+                hatched: Vec::new(),
             }])
         }
         MapLayerKind::Territories { plan, style } => {
@@ -389,6 +395,7 @@ fn resolve_one(
                 charts: Vec::new(),
                 flows: Vec::new(),
                 rings: Vec::new(),
+                hatched: shared_hatches(project, p, crs, opacity),
             };
             if !points {
                 return Some(vec![area]);
@@ -426,6 +433,7 @@ fn resolve_one(
                 charts: Vec::new(),
                 flows: Vec::new(),
                 rings: Vec::new(),
+                hatched: Vec::new(),
             };
             Some(vec![area, dot_layer])
         }
@@ -457,6 +465,7 @@ fn resolve_one(
                 charts: charts(cx, *layer, parts, chart, opacity),
                 flows: Vec::new(),
                 rings: Vec::new(),
+                hatched: Vec::new(),
             }])
         }
         MapLayerKind::Symbols {
@@ -514,6 +523,7 @@ fn resolve_one(
                 charts: Vec::new(),
                 flows: Vec::new(),
                 rings: Vec::new(),
+                hatched: Vec::new(),
             }])
         }
     }
@@ -611,6 +621,86 @@ fn charts(
             });
         }
         out.sort_by(|a, b| b.size.total_cmp(&a.size));
+    }
+    out
+}
+
+/// Units a plan shares with a second territory: their outlines in display
+/// coordinates and the second territory's colour.
+fn shared_hatches(
+    project: &Project,
+    plan: &territoria_model::Plan,
+    crs: &Crs,
+    opacity: f32,
+) -> Vec<(Vec<Vec<[f64; 2]>>, Color32)> {
+    let shared = plan.shared_with();
+    if shared.is_empty() {
+        return Vec::new();
+    }
+    let (Some(layer), Ok(to_display)) = (
+        project.layer(plan.layer),
+        Transformer::new(&Crs::wgs84(), crs),
+    ) else {
+        return Vec::new();
+    };
+    if layer.kind() != GeometryKind::Area {
+        return Vec::new();
+    }
+    shared
+        .into_iter()
+        .map(|(u, second, _)| {
+            let rings = layer
+                .geometry
+                .polygon(u as usize)
+                .0
+                .iter()
+                .flat_map(|p| std::iter::once(p.exterior()).chain(p.interiors()))
+                .map(|ring| {
+                    ring.0
+                        .iter()
+                        .filter_map(|c| to_display.convert(*c))
+                        .map(|d| [d.x, d.y])
+                        .collect()
+                })
+                .collect();
+            let c = color(plan.territories[second].color.lighten(-0.3));
+            (rings, with_opacity(c, opacity))
+        })
+        .collect()
+}
+
+/// Diagonal stripes inside the outline `rings` (screen points), `spacing`
+/// apart: the segments between where each stripe enters and leaves.
+pub fn hatch_segments(rings: &[Vec<egui::Pos2>], spacing: f32) -> Vec<[egui::Pos2; 2]> {
+    let points = rings.iter().flatten();
+    let (lo, hi) = points.fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), p| {
+        (lo.min(p.x - p.y), hi.max(p.x - p.y))
+    });
+    let mut out = Vec::new();
+    if !lo.is_finite() {
+        return out;
+    }
+    let mut c = (lo / spacing).ceil() * spacing;
+    while c <= hi {
+        // Where the stripe x − y = c crosses the outline, by x.
+        let mut xs: Vec<f32> = Vec::new();
+        for ring in rings {
+            for w in ring.windows(2) {
+                let (fa, fb) = (w[0].x - w[0].y - c, w[1].x - w[1].y - c);
+                if (fa < 0.0) != (fb < 0.0) {
+                    let t = fa / (fa - fb);
+                    xs.push(w[0].x + t * (w[1].x - w[0].x));
+                }
+            }
+        }
+        xs.sort_by(f32::total_cmp);
+        for pair in xs.chunks_exact(2) {
+            out.push([
+                egui::pos2(pair[0], pair[0] - c),
+                egui::pos2(pair[1], pair[1] - c),
+            ]);
+        }
+        c += spacing;
     }
     out
 }

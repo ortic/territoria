@@ -379,6 +379,8 @@ impl Project {
                 .collect();
             plan.assignment = Arc::new(assignment);
             plan.pinned = Arc::new(pinned);
+            // Shares were of the old areas.
+            plan.shared.clear();
             plan.rev = rev;
         }
         let layer = self.layer_mut(id)?;

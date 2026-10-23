@@ -111,6 +111,11 @@ pub enum MapEvent {
     ClearSelection,
     /// The quickest round by road through the selected points.
     Round,
+    /// Share the selection with a territory (or stop sharing: `None`).
+    Share {
+        plan: PlanId,
+        with: Option<TerritoryId>,
+    },
     /// A table column dropped on the map.
     ShowColumn(crate::app::DataRef, String),
     /// The measured line as a barrier for the areas of a layer.
@@ -1007,6 +1012,27 @@ fn selection_bar(
                                 });
                             }
                         }
+                        if let Some(t) = cx.active_territory.and_then(|t| p.territory(t))
+                            && ui
+                                .button(format!("{} {}", tr("Share with"), t.name))
+                                .on_hover_text(tr(
+                                    "The selected areas stay in their territory and are also served by this one: half of their figures count here; shown striped",
+                                ))
+                                .clicked()
+                        {
+                            events.push(MapEvent::Share {
+                                plan: p.id,
+                                with: Some(t.id),
+                            });
+                        }
+                        if units.iter().any(|u| p.shared.iter().any(|s| s.unit == *u))
+                            && ui.button(tr("Stop sharing")).clicked()
+                        {
+                            events.push(MapEvent::Share {
+                                plan: p.id,
+                                with: None,
+                            });
+                        }
                         if ui.button(tr("Unassign")).clicked() {
                             events.push(MapEvent::AssignSelection {
                                 plan: p.id,
@@ -1360,6 +1386,14 @@ fn hover_rows(
                         p.name.clone(),
                         t.map_or("unassigned".into(), |t| t.name.clone()),
                     ));
+                    if let Some(sh) = p.shared.iter().find(|s| s.unit as usize == h.feature)
+                        && let Some(with) = p.territory(sh.with)
+                    {
+                        rows.push((
+                            tr("Shared with").to_owned(),
+                            format!("{} ({:.0} %)", with.name, sh.share * 100.0),
+                        ));
+                    }
                 }
             }
             _ => {}
@@ -1486,6 +1520,16 @@ pub fn draw_resolved(shapes: &mut Vec<Shape>, r: &Resolved, view: &View, ppp: f3
     }
     for flow in &r.flows {
         crate::flowlines::shapes(shapes, flow, view);
+    }
+    // Shared areas: striped in the second territory's colour.
+    for (rings, c) in &r.hatched {
+        let screen: Vec<Vec<Pos2>> = rings
+            .iter()
+            .map(|ring| ring.iter().map(|d| view.to_screen(*d)).collect())
+            .collect();
+        for [a, b] in crate::resolve::hatch_segments(&screen, 6.0) {
+            shapes.push(Shape::line_segment([a, b], Stroke::new(2.0, *c)));
+        }
     }
 }
 

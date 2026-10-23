@@ -226,6 +226,7 @@ fn overview_layer(d: &ReportData) -> Resolved {
         charts: Vec::new(),
         flows: Vec::new(),
         rings: Vec::new(),
+        hatched: Vec::new(),
     }
 }
 
@@ -303,6 +304,7 @@ fn territory_layer(d: &ReportData, t: usize) -> Resolved {
         charts: Vec::new(),
         flows: Vec::new(),
         rings: Vec::new(),
+        hatched: Vec::new(),
     }
 }
 

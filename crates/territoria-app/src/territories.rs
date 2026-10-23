@@ -395,7 +395,16 @@ pub fn balance_input(
         measures,
         capacity: plan.territories.iter().map(|t| t.weight).collect(),
         locked: plan.territories.iter().map(|t| t.locked).collect(),
-        pinned: plan.pinned.to_vec(),
+        // Shared areas stay where they are: their split is set by hand.
+        pinned: {
+            let mut pinned = plan.pinned.to_vec();
+            for s in &plan.shared {
+                if let Some(p) = pinned.get_mut(s.unit as usize) {
+                    *p = true;
+                }
+            }
+            pinned
+        },
         initial: plan
             .assignment
             .iter()

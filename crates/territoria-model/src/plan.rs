@@ -36,6 +36,17 @@ pub struct Plan {
     /// Colours for territories (empty: [`TERRITORY_COLORS`]).
     #[serde(default)]
     pub palette: Vec<Rgba>,
+    /// Units also served by a second territory, with its share.
+    #[serde(default)]
+    pub shared: Vec<SharedUnit>,
+}
+
+/// A unit shared with a second territory: `share` of its figures go there.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct SharedUnit {
+    pub unit: u32,
+    pub with: TerritoryId,
+    pub share: f64,
 }
 
 /// A group of territories.
@@ -122,6 +133,7 @@ impl Plan {
             regions: Vec::new(),
             next_region: 0,
             palette: Vec::new(),
+            shared: Vec::new(),
         }
     }
 
@@ -554,6 +566,41 @@ impl Plan {
         groups.into_iter().collect()
     }
 
+    /// Shares `units` with territory `with` (`share` of their figures go
+    /// there); units already in `with` are left alone.
+    pub fn share_units(&mut self, units: &[u32], with: TerritoryId, share: f64) {
+        for &u in units {
+            if self.assignment.get(u as usize).copied().flatten() == Some(with) {
+                continue;
+            }
+            self.shared.retain(|s| s.unit != u);
+            self.shared.push(SharedUnit {
+                unit: u,
+                with,
+                share: share.clamp(0.0, 1.0),
+            });
+        }
+    }
+
+    /// Units no longer shared.
+    pub fn unshare_units(&mut self, units: &[u32]) {
+        self.shared.retain(|s| !units.contains(&s.unit));
+    }
+
+    /// The second territory of each shared unit (index) whose own
+    /// territory is another one.
+    pub fn shared_with(&self) -> Vec<(u32, usize, f64)> {
+        self.shared
+            .iter()
+            .filter_map(|s| {
+                let own = self.assignment.get(s.unit as usize).copied().flatten()?;
+                (own != s.with)
+                    .then(|| self.territory_index(s.with).map(|i| (s.unit, i, s.share)))
+                    .flatten()
+            })
+            .collect()
+    }
+
     /// The colours territories take.
     pub fn colors(&self) -> &[Rgba] {
         if self.palette.is_empty() {
@@ -620,6 +667,24 @@ impl Plan {
                 deviations: Vec::new(),
             })
             .collect();
+        // Shared units: their share of the figures goes to the second
+        // territory.
+        for (u, second, share) in self.shared_with() {
+            let Some(own) = self
+                .assignment
+                .get(u as usize)
+                .copied()
+                .flatten()
+                .and_then(|t| self.territory_index(t))
+            else {
+                continue;
+            };
+            for (m, v) in measure_values.iter().enumerate() {
+                let x = v.get(u as usize).copied().flatten().unwrap_or(0.0) * share;
+                territories[own].values[m] -= x;
+                territories[second].values[m] += x;
+            }
+        }
         let total_weight: f64 = self.territories.iter().map(|t| t.weight.max(0.0)).sum();
         let mut totals = Vec::new();
         let mut unassigned_values = Vec::new();

@@ -4499,3 +4499,84 @@ fn printed_page_with_figures() {
     }
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Areas shared with a second territory: half their figures count there,
+/// they show striped, and sharing can stop again.
+#[test]
+fn shared_areas() {
+    use crate::app::{Action, Export};
+    use crate::export_map::Format;
+    use crate::map_view::MapEvent;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    let plan = app.add_balanced_plan_now(layer, 4);
+    let (first, second, units) = {
+        let p = app.project.plan(plan).unwrap();
+        let members = p.members();
+        (
+            p.territories[0].id,
+            p.territories[1].id,
+            members[0].iter().take(10).copied().collect::<Vec<u32>>(),
+        )
+    };
+    let mut values = territoria_model::Cache::default();
+    let before = app
+        .project
+        .plan(plan)
+        .unwrap()
+        .stats(&app.project, &mut values);
+    app.apply_action_for_test(Action::SelectUnits(layer, units.clone()));
+    app.apply_action_for_test(Action::ActivateTerritory(Some(second)));
+    app.map_events_for_test(vec![MapEvent::Share {
+        plan,
+        with: Some(second),
+    }]);
+    settle(&mut h);
+    save(&mut h, "shared-areas");
+    let app = h.state_mut();
+    let p = app.project.plan(plan).unwrap();
+    assert_eq!(p.shared.len(), 10);
+    assert!(p.shared.iter().all(|s| s.with == second));
+    let after = p.stats(&app.project, &mut values);
+    let v = |s: &territoria_model::PlanStats, i: usize| s.territories[i].values[0];
+    assert!(
+        (v(&before, 0) - v(&after, 0) - 5.0).abs() < 1e-9,
+        "half of 10 areas leave"
+    );
+    assert!(
+        (v(&after, 1) - v(&before, 1) - 5.0).abs() < 1e-9,
+        "and arrive"
+    );
+    assert_eq!(
+        p.assignment[units[0] as usize],
+        Some(first),
+        "still in its own territory"
+    );
+    // Striped in exports too.
+    let dir = std::env::temp_dir().join(format!("territoria-shared-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("shared.svg");
+    app.set_map_export_for_test(crate::dialogs::MapExportSettings {
+        format: Format::Svg,
+        scale: 1.0,
+        title: String::new(),
+        legend: false,
+        scale_bar: false,
+        page: Default::default(),
+        footer: String::new(),
+        overview: false,
+        figures: false,
+    });
+    app.export(Export::Map(Format::Svg), path.clone());
+    settle(&mut h);
+    let svg = std::fs::read_to_string(&path).unwrap();
+    assert!(svg.contains(r#"fill="none" stroke=""#) && svg.contains(r#"stroke-width="2"/>"#));
+    let _ = std::fs::remove_dir_all(dir);
+    h.state_mut()
+        .map_events_for_test(vec![MapEvent::Share { plan, with: None }]);
+    assert!(h.state().project.plan(plan).unwrap().shared.is_empty());
+}

@@ -302,6 +302,13 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
         ("Rows of", "Zeilen von"),
         // Panels: properties, territories, contents, tables.
         ("of", "von"),
+        ("Share with", "Teilen mit"),
+        ("Stop sharing", "Nicht mehr teilen"),
+        ("Shared with", "Geteilt mit"),
+        (
+            "The selected areas stay in their territory and are also served by this one: half of their figures count here; shown striped",
+            "Die ausgewählten Gebiete bleiben in ihrem Gebiet und werden auch von diesem betreut: die Hälfte ihrer Kennzahlen zählt hier; gestreift gezeigt",
+        ),
         ("Territory figures", "Gebietskennzahlen"),
         ("Regions like…", "Regionen wie…"),
         (

@@ -233,7 +233,7 @@ territoria/
 - [x] Heatmap / density: kernel (Gaussian, linear, uniform), radius in km or pixels, weight column (quartic kernel, spread in km, optional weight column, sequential ramps; computed for the view; embedded in exports)
 - [x] Hex or square grid aggregation of points (equal-area hexagons over points or areas, points counted and summed per cell; usable as territory units; no square grid)
 - [x] Bivariate choropleth (two variables, 2×2/3×3 colour matrix) with quadrant labels (quantile classes, three colour grids, swap; legend grid tells ranges and counts on hover; in exports and web pages; no quadrant labels yet)
-- [ ] Hatching for several values per area / overlapping territories
+- [x] Hatching for several values per area / overlapping territories (shared areas striped in the second territory's colour; not for other values yet)
 - [x] Lines: style a line layer by data (colour by value or category like areas; width from any number between two widths, on screen and in exports)
 - [x] Flows: origin–destination lines with width/colour by data, curved, arrows (rows of a table or layer; each end the row's own point or a column naming a feature by key or name, guessed; equal pairs add up; width by a number or row count; one colour; in exports)
 - [x] Radius/catchment circles around points, several rings; count and sum of what lies inside (around points or territory sites; points counted and summed, areas' values summed; a results table; labelled rings in exports)
@@ -259,7 +259,7 @@ territoria/
 - [x] Measures: any numeric column of linked tables (sum/mean/count per territory), unit count, area, customer count; several at once (one in the panel; the model and optimizer take several)
 - [x] Tolerance band per measure (e.g. ±10 %); out-of-band territories flagged on map and in the panel (in the panel)
 - [x] Territory table: editable code/name/colour/weight/locks; per-unit assignment table (plan ⋯ → Open as table: code, name, region, size, lock editable, figures sortable; the layer's table shows each area's territory; colour in the panel)
-- [ ] Multiple assignment (a unit shared by territories, with shares) shown hatched (optional per plan)
+- [x] Multiple assignment (a unit shared by territories, with shares) shown hatched (optional per plan) ("Share with" on the selection bar: areas stay in their territory and are also served by the active one, half their figures counting there; striped in its colour on screen and in exports; named in the hover card; kept out of balancing)
 - [x] Locks: pin a unit's assignment, freeze a territory, freeze a territory's outer border (children may move); shown on the map; respected by every tool and the optimizer (territory locks and unit pins; no border freeze, no map display)
 - [x] Sites (rep homes, branches): place by coordinates, address or unit centroid; link to territories (1:1 or many); capacity (one site per territory, placed on the map or at the centre; no capacity yet)
 - [x] Generate sites at territory centroids; move sites; "site outside its territory" warning

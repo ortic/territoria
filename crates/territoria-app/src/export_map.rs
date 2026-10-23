@@ -693,6 +693,23 @@ fn layer(s: &mut String, r: &Resolved, view: &View, tips: Option<&[String]>, fin
     for flow in &r.flows {
         crate::flowlines::svg(s, flow, view);
     }
+    for (rings, c) in &r.hatched {
+        let screen: Vec<Vec<egui::Pos2>> = rings
+            .iter()
+            .map(|ring| ring.iter().map(|d| view.to_screen(*d)).collect())
+            .collect();
+        let mut d = String::new();
+        for [a, b] in crate::resolve::hatch_segments(&screen, 6.0) {
+            let _ = write!(d, "M{:.2} {:.2}L{:.2} {:.2}", a.x, a.y, b.x, b.y);
+        }
+        if !d.is_empty() {
+            let (hc, ha) = hex(*c);
+            let _ = write!(
+                s,
+                r#"<path d="{d}" fill="none" stroke="{hc}" stroke-opacity="{ha:.3}" stroke-width="2"/>"#
+            );
+        }
+    }
 }
 
 fn sites(s: &mut String, r: &Resolved, view: &View) {

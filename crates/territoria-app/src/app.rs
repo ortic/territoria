@@ -2186,6 +2186,7 @@ impl TerritoriaApp {
                 charts: Vec::new(),
                 flows: Vec::new(),
                 rings: Vec::new(),
+                hatched: Vec::new(),
             });
         }
         // Legends top layer first, like the Contents panel.
@@ -4885,6 +4886,25 @@ impl TerritoriaApp {
                     self.toast(format!(
                         "Barrier added: {cut} pairs of areas are no longer neighbours."
                     ));
+                }
+                MapEvent::Share { plan, with } => {
+                    if let Some((_, units)) = self.selected.clone() {
+                        let label = if with.is_some() {
+                            "Share areas"
+                        } else {
+                            "Stop sharing"
+                        };
+                        self.edit(label, |p| {
+                            let rev = p.bump();
+                            if let Some(pl) = p.plan_mut(plan) {
+                                match with {
+                                    Some(t) => pl.share_units(&units, t, 0.5),
+                                    None => pl.unshare_units(&units),
+                                }
+                                pl.rev = rev;
+                            }
+                        });
+                    }
                 }
                 MapEvent::Round => {
                     if let Some((layer, units)) = self.selected.clone() {
