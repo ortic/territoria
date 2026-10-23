@@ -131,6 +131,144 @@ Everything can be undone (Ctrl+Z). The command palette (Ctrl+Shift+P) finds ever
     },
 ];
 
+/// The topics in German: (id, title, body).
+const GERMAN: &[(&str, &str, &str)] = &[
+    (
+        "start",
+        "Erste Schritte",
+        "Territoria zeigt Ihre Daten auf Karten von Gebieten (Postleitzahlen, Gemeinden, Regionen) und plant darauf Verkaufsgebiete.
+
+## Der übliche Weg
+- Grenzen hinzufügen: ein Shapefile, GeoJSON, GeoPackage oder KML, oder offene Grenzen vieler Länder herunterladen.
+- Daten hinzufügen: eine CSV- oder Excel-Tabelle mit einer Spalte von Gebietsschlüsseln (PLZ), Adressen oder Koordinaten.
+- Die Tabelle über ihre Schlüsselspalte mit den Grenzen verknüpfen; Territoria findet die beste Zuordnung (führende Nullen, Gross-/Kleinschreibung).
+- Nach Wert einfärben: eine Zahl wählen und die Gebiete einfärben, oder Kreise, Diagramme oder eine Heatmap zeigen.
+- Neue Gebiete: die Flächen in ausgeglichene Gebiete aufteilen und dann durch Malen anpassen.
+
+Alles lässt sich rückgängig machen (Ctrl+Z). Die Befehlspalette (Ctrl+Shift+P) findet jeden Befehl nach Namen.",
+    ),
+    (
+        "boundaries",
+        "Grenzen und Ebenen",
+        "Eine Ebene ist eine Menge von Flächen, Linien oder Punkten mit einer Attributtabelle. Jede Fläche hat einen Schlüssel (z. B. ihre PLZ), über den Daten verknüpft und Gebiete zugeteilt werden.
+
+- Formate: Shapefile (auch gezippt), GeoJSON, GeoPackage, KML/KMZ. Das Koordinatensystem kommt aus der Datei oder wird als EPSG-Code angegeben.
+- Datei → Offene Grenzen herunterladen holt Verwaltungsgebiete vieler Länder.
+- Daten → Neue Ebene aus zusammengelegten Gebieten fasst Gebiete nach einer Spalte oder einem Schlüsselanfang zusammen (PLZ-Bezirke aus PLZ).
+- Daten → Neues Sechseckraster deckt eine Fläche mit gleich grossen Sechsecken ab, für Analysen unabhängig von Verwaltungsgrenzen.
+- Daten → Grenzen durch neuere Version ersetzen behält Verknüpfungen und Gebietszuteilungen, zugeordnet über Schlüssel und Lage.",
+    ),
+    (
+        "data",
+        "Daten, Verknüpfungen und Adressen",
+        "Tabellen bringen die Zahlen: Kunden, Umsatz, Potenzial.
+
+- Eine Tabelle mit einer Spalte von Gebietsschlüsseln wird mit einer Ebene verknüpft; mehrere Zeilen pro Gebiet werden addiert (oder gezählt, gemittelt…).
+- Adressen werden durch Geokodierung zu Punkten (Einstellungen → Geokodierung); Koordinaten in einer Spalte (\"47.37, 8.54\") oder zwei werden direkt gelesen.
+- Die Tabellenansicht bearbeitet Zellen, fügt Zeilen hinzu, löscht und sortiert; Neu laden liest eine geänderte Datei wieder ein.
+- ⊕ Spalten aus übernimmt Spalten des Gebiets, in dem ein Punkt liegt, zählt Punkte pro Gebiet, schlägt in einer anderen Tabelle nach oder findet den nächsten Punkt einer anderen Ebene, auch über die Strasse: Minuten und Kilometer zur nächsten Filiale vom Routing-Dienst (Einstellungen → Routing).
+- Σ Zusammenfassen erstellt eine Tabelle mit einer Zeile pro Gruppe; ⚖ Punktwert verbindet Spalten zu einer gewichteten Kennzahl.
+- Segmente sind Ja/Nein-Spalten, z. B. eine berechnete [Schlüsselkunde] = [Sales] > 10000: die Tabelle zeigt und exportiert nur die Zeilen eines Segments, und «Nur wo» in Analysen wählt Segmente oder behält einen eingegebenen Filter als neues.",
+    ),
+    (
+        "formulas",
+        "Berechnete Spalten und Formeln",
+        "Eine berechnete Spalte rechnet pro Zeile einen Wert aus anderen Spalten aus, wie eine Tabellenkalkulation, und wird nachgeführt, wenn sich die Daten ändern.
+
+- Spalten stehen in eckigen Klammern: [Revenue] / [Customers].
+- Text in Anführungszeichen, Daten als date(\"2026-01-31\"); if(Bedingung, a, b) wählt.
+- Spaltenfunktionen betrachten die ganze Spalte: share([Sales]) ist der Anteil jeder Zeile am Total, rank([Sales]) ihr Rang; die meisten nehmen eine Gruppe, z. B. share([Sales], [Region]).
+- Vorlagen in Beschriftungen und Infokarten setzen Formeln in geschweifte Klammern: {Name}: {round([Sales] / 1000)} k.
+
+## Funktionen",
+    ),
+    (
+        "colour",
+        "Gebiete nach Wert einfärben",
+        "Nach Wert einfärben teilt eine Zahl in Klassen ein und färbt jedes Gebiet nach seiner Klasse.
+
+- Methoden: gleiche Anzahl (Quantile), gleiche Abstände, natürliche Brüche, Standardabweichung, gleiche Summen oder eigene Grenzen; die Grenzen lassen sich im Histogramm des Klasseneditors ziehen.
+- Bezogen auf: pro km², pro einem anderen Wert (z. B. Umsatz pro Einwohner) oder als Anteil am Total.
+- Nur wo: nur die Zeilen zählen oder addieren, die einen Filter erfüllen, z. B. [Segment] = \"Retail\".
+- Zwei Werte zugleich: ein Farbraster zeigt, wo beide hoch sind oder nur einer.
+- Kategorien: eine Textspalte gibt jedem Wert eine eigene Farbe; die häufigsten bekommen Farben, der Rest ist «Andere».
+- Am schnellsten: eine Spaltenüberschrift aus einer Tabelle auf die Karte ziehen (oder auf den Ablagestreifen im Inhalt); «Zeigen als» in den Eigenschaften wechselt zwischen Farben, Kreisen und Heatmap.",
+    ),
+    (
+        "symbols",
+        "Kreise, Diagramme, Heatmaps und Flüsse",
+        "- Kreise nach Wert: die Kreisflächen wachsen mit der Zahl; ihre Farbe kann eine Kategorie zeigen; auch Quadrate, Rauten und Dreiecke.
+- Kuchen- und Balkendiagramme: mehrere Zahlen pro Gebiet, als Anteile eines Kuchens nach der Summe oder als Balken auf einer Skala.
+- Heatmap: wo Punkte dicht liegen, wahlweise nach einer Zahl gewichtet; die Reichweite jedes Punkts ist einstellbar.
+- Einzugsringe: Ringe in bestimmten Abständen um Punkte oder Standorte, mit den Kennzahlen innerhalb jedes Rings.
+- Fahrzeitzonen: Gebiete nach ihren Fahrminuten zum nächsten Standort eingefärbt, in selbst gewählten Stufen (15, 30, 45 Minuten).
+- Flusslinien: Linien von wo jede Zeile beginnt bis wohin sie geht (Kunden zu ihrer Filiale), so breit wie ihr Wert.
+- Jede Kartenebene lässt sich auf Zoomstufen beschränken: Sichtbar → nur beim Hinein- oder Herauszoomen.",
+    ),
+    (
+        "territories",
+        "Gebietsplanungen",
+        "Eine Planung teilt die Flächen einer Ebene Gebieten zu, z. B. eines pro Vertreter.
+
+- Neue Planung: leer beginnen, aus einer Zuordnungstabelle oder automatisch ausgeglichen nach einer Kennzahl (Kunden, Potenzial) mit einer Toleranz.
+- Malen (B): über Flächen ziehen gibt sie dem aktiven Gebiet; Shift+Klick wählt das Gebiet unter dem Mauszeiger.
+- Ausgleichen verbessert die Grössen und hält die Gebiete zusammenhängend und kompakt; gesperrte Gebiete bleiben, wie sie sind.
+- Standorte setzen das Büro oder den Vertreter jedes Gebiets; Gebiete lassen sich um Standorte aufbauen, Distanzen zum Standort messen, und «Abdeckung von den Standorten» zeigt, was die Standorte bis zu ihrer Kapazität abdecken.
+- Regionen gruppieren Gebiete mit breiteren Grenzen; automatisch gebildet oder von Hand, Gebiete lassen sich zwischen Regionen ziehen.
+- Bei Planungen auf Kundenpunkten plant «Touren für alle Gebiete» je eine Tour über die Strasse.
+- Vor dem Ausgleichen zeigt eine Prüfung, was im Weg stünde: Gebiete ohne Daten, negative Werte, von ihren Nachbarn abgeschnittene Flächen.",
+    ),
+    (
+        "scenarios",
+        "Szenarien und Vergleiche",
+        "Eine Planung duplizieren, um Änderungen auszuprobieren, ohne das Original zu verlieren. Der Vergleich zeigt, welche Flächen wechselten und wie sich jedes Gebiet veränderte; Übernehmen macht ein Szenario wieder zur Planung.",
+    ),
+    (
+        "selection",
+        "Gebiete auswählen",
+        "- Auswählen (S): klicken, ein Rechteck ziehen oder mit gedrückter Alt-Taste ein Lasso zeichnen; mit Shift oder Ctrl wächst die Auswahl.
+- Karte → Gebiete per Liste auswählen nimmt aus einer Tabellenkalkulation eingefügte Schlüssel.
+- Die Auswahlleiste zeigt die Anzahl und die Kennzahl der Planung, teilt die Auswahl dem aktiven Gebiet zu, zoomt hin oder blendet alles andere ab (Fokus).
+- Auswählen in: überträgt die Auswahl auf eine andere Ebene, z. B. die PLZ in ausgewählten Bezirken oder die Kunden darin.
+- Tour: für ausgewählte Punkte (die Kunden eines Vertreters) die schnellste Tour über die Strasse vom Routing-Dienst, auf der Karte mit Kilometern und Zeit, und die Reihenfolge als Spalte.
+- In einer Tabelle ausgewählte Zeilen werden auf der Karte ausgewählt.",
+    ),
+    (
+        "views",
+        "Ansichten, Projektion und Präsentation",
+        "- Eine Ansicht behalten (Karte → Diese Ansicht behalten), um darauf zurückzukommen; Ansichten werden mit dem Projekt gespeichert.
+- Projektion: Web Mercator (wie Webkarten) oder eine flächentreue oder nationale Projektion über ihren EPSG-Code.
+- Hintergrund: Kartenkacheln von OpenStreetMap oder einem anderen Anbieter.
+- Präsentation (F11) zeigt nur die Karte im Vollbild.",
+    ),
+    (
+        "export",
+        "Exporte und Berichte",
+        "- Karte → Karte exportieren: PNG, SVG oder PDF mit Titel, Legende und Massstab, wie am Bildschirm oder auf einer A4/A3-Seite mit der Legende neben der Karte, Nordpfeil, Übersichtskarte und Fusszeile ({project}, {map}, {date}); Karte als Bild kopieren legt sie in die Zwischenablage.
+- Als Webseite exportieren: eine HTML-Datei, die zoomt, verschiebt und Infokarten zeigt, zum Versenden an alle.
+- Gebietsbericht: ein PDF mit Übersicht und einer Seite pro Gebiet; Excel mit einem Blatt pro Gebiet.
+- Karte → Atlas exportieren: die Karte als PDF mit einer Seite pro Region, Vertreter oder Gebiet, jede darauf gezoomt und der Rest abgeblendet.
+- Exporte der Planung: die Zuteilung als CSV oder Excel, Änderungen zwischen Szenarien, Kennzahlen der Gebiete.
+- Einstellungen → Firma setzt Firmenname und Logo auf exportierte Karten, Webseiten und Berichte.
+- Befehlszeile: territoria projekt.territoria --export-map karte.png (siehe --help).",
+    ),
+    (
+        "shortcuts",
+        "Tastenkürzel",
+        "tasten kürzel tastatur",
+    ),
+];
+
+/// A topic's title and body in the interface language.
+fn localized(t: &Topic) -> (&'static str, &'static str) {
+    if crate::i18n::language() == crate::i18n::Language::German
+        && let Some((_, title, body)) = GERMAN.iter().find(|(id, _, _)| *id == t.id)
+    {
+        return (title, body);
+    }
+    (t.title, t.body)
+}
+
 /// The topic for what is selected, if any fits.
 pub fn topic_for(
     selection: crate::app::Selection,
@@ -182,7 +320,8 @@ impl HelpWindow {
 
     /// Topics whose title or text has all words of the search.
     fn matches(&self, t: &Topic) -> bool {
-        let text = format!("{} {}", t.title, t.body).to_lowercase();
+        let (title, body) = localized(t);
+        let text = format!("{title} {body}").to_lowercase();
         self.search
             .to_lowercase()
             .split_whitespace()
@@ -190,7 +329,7 @@ impl HelpWindow {
     }
 
     pub fn show(&mut self, ctx: &egui::Context, keymap: &crate::commands::Keymap, open: &mut bool) {
-        egui::Window::new("Help")
+        egui::Window::new(crate::i18n::tr("Help"))
             .open(open)
             .default_size([720.0, 520.0])
             .collapsible(false)
@@ -200,20 +339,26 @@ impl HelpWindow {
                         ui.set_width(190.0);
                         ui.add(
                             egui::TextEdit::singleline(&mut self.search)
-                                .hint_text("Search help")
+                                .hint_text(crate::i18n::tr("Search help"))
                                 .desired_width(180.0),
                         );
                         ui.add_space(4.0);
                         let found: Vec<&Topic> =
                             TOPICS.iter().filter(|t| self.matches(t)).collect();
                         for t in found {
-                            if ui.selectable_label(self.topic == t.id, t.title).clicked() {
+                            if ui
+                                .selectable_label(self.topic == t.id, localized(t).0)
+                                .clicked()
+                            {
                                 self.topic = t.id;
                             }
                         }
                         if self.matches(&SHORTCUTS)
                             && ui
-                                .selectable_label(self.topic == SHORTCUTS.id, SHORTCUTS.title)
+                                .selectable_label(
+                                    self.topic == SHORTCUTS.id,
+                                    localized(&SHORTCUTS).0,
+                                )
                                 .clicked()
                         {
                             self.topic = SHORTCUTS.id;
@@ -227,12 +372,13 @@ impl HelpWindow {
                             ui.vertical(|ui| {
                                 ui.set_max_width(480.0);
                                 if self.topic == SHORTCUTS.id {
-                                    ui.heading(SHORTCUTS.title);
+                                    ui.heading(localized(&SHORTCUTS).0);
                                     shortcuts(ui, keymap);
                                 } else if let Some(t) = TOPICS.iter().find(|t| t.id == self.topic) {
-                                    ui.heading(t.title);
+                                    let (title, text) = localized(t);
+                                    ui.heading(title);
                                     ui.add_space(4.0);
-                                    body(ui, t.body);
+                                    body(ui, text);
                                     if t.id == "formulas" {
                                         functions(ui);
                                     }

@@ -4241,6 +4241,11 @@ fn german_interface() {
     h.run_steps(3);
     save(&mut h, "german-dialog");
     h.get_by_label("Karte exportieren");
+    // Help as well.
+    h.state_mut()
+        .run_command_for_test(crate::commands::Command::Help);
+    h.run_steps(3);
+    h.get_by_label("Erste Schritte");
     crate::i18n::set_language(territoria_config::Language::English);
 }
 
