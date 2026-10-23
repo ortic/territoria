@@ -96,6 +96,15 @@ pub enum MapLayerKind {
     },
     /// Territories of a plan: fills, borders, labels.
     Territories { plan: PlanId, style: TerritoryStyle },
+    /// Density of points as a smooth colour field.
+    Heatmap {
+        layer: LayerId,
+        /// Points weigh by this number (each counts 1 without).
+        weight: Option<String>,
+        /// How far each point spreads, in km.
+        radius_km: f64,
+        ramp: territoria_analysis::RampSpec,
+    },
     /// Rings of given radii around centres (catchment).
     Rings {
         centres: crate::catchment::Centres,
@@ -159,7 +168,8 @@ impl MapLayerKind {
             MapLayerKind::Boundaries { layer, .. }
             | MapLayerKind::Choropleth { layer, .. }
             | MapLayerKind::Categories { layer, .. }
-            | MapLayerKind::Symbols { layer, .. } => Some(*layer),
+            | MapLayerKind::Symbols { layer, .. }
+            | MapLayerKind::Heatmap { layer, .. } => Some(*layer),
             MapLayerKind::Rings {
                 centres: crate::catchment::Centres::Points(layer),
                 ..
@@ -194,7 +204,9 @@ impl MapLayerKind {
             | MapLayerKind::Choropleth { style, .. }
             | MapLayerKind::Categories { style, .. }
             | MapLayerKind::Symbols { style, .. } => Some(style),
-            MapLayerKind::Territories { .. } | MapLayerKind::Rings { .. } => None,
+            MapLayerKind::Territories { .. }
+            | MapLayerKind::Rings { .. }
+            | MapLayerKind::Heatmap { .. } => None,
         }
     }
 
@@ -204,7 +216,9 @@ impl MapLayerKind {
             | MapLayerKind::Choropleth { style, .. }
             | MapLayerKind::Categories { style, .. }
             | MapLayerKind::Symbols { style, .. } => Some(style),
-            MapLayerKind::Territories { .. } | MapLayerKind::Rings { .. } => None,
+            MapLayerKind::Territories { .. }
+            | MapLayerKind::Rings { .. }
+            | MapLayerKind::Heatmap { .. } => None,
         }
     }
 
@@ -216,6 +230,7 @@ impl MapLayerKind {
             MapLayerKind::Territories { .. } => "Territories",
             MapLayerKind::Symbols { .. } => "Circles sized by value",
             MapLayerKind::Rings { .. } => "Catchment rings",
+            MapLayerKind::Heatmap { .. } => "Heat map (density)",
         }
     }
 

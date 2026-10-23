@@ -57,6 +57,8 @@ pub struct MapState {
     pub(crate) measure: Vec<[f64; 2]>,
     /// A view to go to on the next frame: centre and scale.
     pub(crate) go_to_view: Option<([f64; 2], f64)>,
+    /// Heat map images by map layer, with what they were made from.
+    heat: HashMap<territoria_model::MapLayerId, (u64, egui::TextureHandle)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -416,6 +418,56 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
     };
     let mut resolved = Vec::new();
     for ml in map.layers.iter().filter(|l| l.visible) {
+        if let MapLayerKind::Heatmap {
+            layer,
+            weight,
+            radius_km,
+            ramp,
+        } = &ml.kind
+            && let Some(mesh) = meshes.get(layer)
+        {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            (
+                view.center[0].to_bits(),
+                view.center[1].to_bits(),
+                view.scale.to_bits(),
+            )
+                .hash(&mut h);
+            (
+                view.rect.width().to_bits(),
+                view.rect.height().to_bits(),
+                mesh.rev,
+            )
+                .hash(&mut h);
+            format!("{weight:?}{radius_km}{ramp:?}").hash(&mut h);
+            project.layer(*layer).map(|l| l.rev).hash(&mut h);
+            let key = h.finish();
+            let fresh = state.heat.get(&ml.id).is_some_and(|(k, _)| *k == key);
+            if !fresh {
+                let weights = weight
+                    .as_deref()
+                    .and_then(|w| project.layer(*layer).and_then(|l| l.attributes.column(w)));
+                let pts = crate::heat::screen_points(mesh, &view, weights);
+                let radius = crate::heat::radius_px(&view, &map.crs, *radius_km);
+                let image = crate::heat::raster(&pts, view.rect, radius, ramp, crate::heat::CELL);
+                let tex = ui.ctx().load_texture(
+                    format!("heat-{}", ml.id.0),
+                    image,
+                    egui::TextureOptions::LINEAR,
+                );
+                state.heat.insert(ml.id, (key, tex));
+            }
+            if let Some((_, tex)) = state.heat.get(&ml.id) {
+                shapes.push(Shape::image(
+                    tex.id(),
+                    view.rect,
+                    Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
+                    Color32::WHITE.gamma_multiply(ml.opacity),
+                ));
+            }
+            continue;
+        }
         for r in crate::resolve::resolve(&mut rcx, &meshes, &cells, ml, &map.crs) {
             draw_resolved(&mut shapes, &r, &view, ppp);
             resolved.push(r);

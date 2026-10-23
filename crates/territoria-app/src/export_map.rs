@@ -44,6 +44,7 @@ pub fn svg(
     crs: &Crs,
     deco: &Decorations,
     font: &str,
+    overlays: &str,
 ) -> String {
     let (w, h) = (view.rect.width(), view.rect.height());
     let mut s = String::new();
@@ -53,6 +54,7 @@ pub fn svg(
     );
     let _ = write!(s, r##"<rect width="{w}" height="{h}" fill="#f3f1ec"/>"##);
     map_into(&mut s, resolved, view, "map");
+    s.push_str(overlays);
     decorations(&mut s, view, crs, deco);
     s.push_str("</svg>");
     s

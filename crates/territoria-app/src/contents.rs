@@ -82,6 +82,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                             MapLayerKind::Territories { .. } => "⬣",
                             MapLayerKind::Symbols { .. } => "●",
                             MapLayerKind::Rings { .. } => "◎",
+                            MapLayerKind::Heatmap { .. } => "◍",
                         };
                         let text = RichText::new(format!("{icon} {}", ml.name));
                         let text = if ml.visible { text } else { text.weak() };
@@ -205,6 +206,21 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                                         size_legend(ui, symbol, max);
                                     });
                                 }
+                            }
+                            MapLayerKind::Heatmap { ramp, .. } => {
+                                ui.indent(("legend", ml.id.0), |ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.label(RichText::new("fewer").small());
+                                        let (rect, _) = ui.allocate_exact_size(vec2(90.0, 10.0), Sense::hover());
+                                        let stops = ramp.colors(9);
+                                        let step = rect.width() / stops.len() as f32;
+                                        for (i, c) in stops.iter().enumerate() {
+                                            let r = egui::Rect::from_min_size(rect.min + vec2(i as f32 * step, 0.0), vec2(step + 0.5, rect.height()));
+                                            ui.painter().rect_filled(r, 0.0, color(*c));
+                                        }
+                                        ui.label(RichText::new("more").small());
+                                    });
+                                });
                             }
                             MapLayerKind::Rings {
                                 radii_km, color: c, ..

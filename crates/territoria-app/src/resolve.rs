@@ -94,6 +94,8 @@ fn resolve_one(
     let project = cx.project;
     let opacity = ml.opacity;
     match &ml.kind {
+        // Drawn as an image of its own (see `heat`).
+        MapLayerKind::Heatmap { .. } => Some(Vec::new()),
         MapLayerKind::Rings {
             centres,
             radii_km,

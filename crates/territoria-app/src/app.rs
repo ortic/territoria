@@ -1680,6 +1680,24 @@ impl TerritoriaApp {
             counts.push((ml.clone(), r.len()));
             resolved.extend(r);
             match &ml.kind {
+                MapLayerKind::Heatmap { ramp, .. } => {
+                    let stops = ramp.colors(3);
+                    legends.push((
+                        ml.name.clone(),
+                        vec![
+                            territoria_analysis::LegendEntry {
+                                color: stops[0],
+                                label: "fewer".into(),
+                                count: 0,
+                            },
+                            territoria_analysis::LegendEntry {
+                                color: stops[2],
+                                label: "more".into(),
+                                count: 0,
+                            },
+                        ],
+                    ));
+                }
                 MapLayerKind::Rings {
                     radii_km, color, ..
                 } => {
@@ -1840,12 +1858,45 @@ impl TerritoriaApp {
                 &deco,
             ));
         }
+        // Heat maps as images over the layers.
+        let mut overlays = String::new();
+        for ml in map.layers.iter().filter(|l| l.visible) {
+            if let MapLayerKind::Heatmap {
+                layer,
+                weight,
+                radius_km,
+                ramp,
+            } = &ml.kind
+                && let Some(mesh) = meshes.get(layer)
+            {
+                let weights = weight.as_deref().and_then(|w| {
+                    self.project
+                        .layer(*layer)
+                        .and_then(|l| l.attributes.column(w))
+                });
+                let pts = crate::heat::screen_points(mesh, &view, weights);
+                let radius = crate::heat::radius_px(&view, &map.crs, *radius_km);
+                let image = crate::heat::raster(&pts, view.rect, radius, ramp, 2.0);
+                if let Some(uri) = crate::heat::png_data_uri(&image) {
+                    let r = view.rect;
+                    overlays.push_str(&format!(
+                        r#"<image x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" opacity="{:.3}" preserveAspectRatio="none" href="{uri}"/>"#,
+                        r.min.x,
+                        r.min.y,
+                        r.width(),
+                        r.height(),
+                        ml.opacity
+                    ));
+                }
+            }
+        }
         Ok(crate::export_map::svg(
             &resolved,
             &view,
             &map.crs,
             &deco,
             "sans-serif",
+            &overlays,
         ))
     }
 
@@ -2342,10 +2393,41 @@ impl TerritoriaApp {
             name,
             what,
             circles,
+            heat,
         } = outcome;
         let before = self.project.clone();
         let map = self.ensure_map();
         let id = match what {
+            Colorable::Number(source) if heat => {
+                let id = self.project.new_map_layer_id();
+                let weight = match source {
+                    territoria_model::ValueSource::Attribute { column } => Some(column),
+                    _ => None,
+                };
+                // Each point reaches about a 40th of the data's extent.
+                let radius_km = self
+                    .project
+                    .layer(layer)
+                    .and_then(|l| l.geometry.bbox)
+                    .map_or(5.0, |b| {
+                        (territoria_geo::haversine(b.min(), b.max()) / 1000.0 / 40.0).max(0.1)
+                    });
+                self.push_map_layer(
+                    map,
+                    MapLayer {
+                        id,
+                        name: format!("Density of {name}"),
+                        visible: true,
+                        opacity: 0.85,
+                        kind: MapLayerKind::Heatmap {
+                            layer,
+                            weight,
+                            radius_km: (radius_km * 10.0).round() / 10.0,
+                            ramp: crate::heat::default_ramp(),
+                        },
+                    },
+                )
+            }
             Colorable::Number(source) if circles => {
                 let id = self.project.new_map_layer_id();
                 let n = self.project.layer(layer).map_or(0, |l| l.len());

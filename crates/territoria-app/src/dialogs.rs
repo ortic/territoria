@@ -1269,6 +1269,8 @@ pub struct ColorByDialog {
     pub choice: usize,
     /// Circles sized by the value instead of colours (`None`: by layer kind).
     pub circles: Option<bool>,
+    /// Points: a heat map weighted by the value.
+    pub heat: bool,
 }
 
 impl ColorByDialog {
@@ -1277,6 +1279,7 @@ impl ColorByDialog {
             layer,
             choice: 0,
             circles: None,
+            heat: false,
         }
     }
 }
@@ -1287,6 +1290,7 @@ pub enum ColorByOutcome {
         name: String,
         what: Colorable,
         circles: bool,
+        heat: bool,
     },
 }
 
@@ -1335,13 +1339,35 @@ impl ColorByDialog {
                     if matches!(options.get(self.choice), Some((_, Colorable::Number(_)))) {
                         let mut circles = self.circles.unwrap_or(points);
                         ui.label("Show as");
-                        ui.horizontal(|ui| {
-                            ui.radio_value(&mut circles, false, "Colours")
-                                .on_hover_text("Each area coloured by its class");
-                            ui.radio_value(&mut circles, true, "Circles sized by value")
+                        ui.horizontal_wrapped(|ui| {
+                            if ui
+                                .radio(!circles && !self.heat, "Colours")
+                                .on_hover_text("Each area coloured by its class")
+                                .clicked()
+                            {
+                                circles = false;
+                                self.heat = false;
+                            }
+                            if ui
+                                .radio(circles && !self.heat, "Circles sized by value")
                                 .on_hover_text(
                                     "A circle on each area or point; its area grows with the value",
-                                );
+                                )
+                                .clicked()
+                            {
+                                circles = true;
+                                self.heat = false;
+                            }
+                            if points
+                                && ui
+                                    .radio(self.heat, "Heat map")
+                                    .on_hover_text(
+                                        "Where the points are dense, weighted by the value",
+                                    )
+                                    .clicked()
+                            {
+                                self.heat = true;
+                            }
                         });
                         self.circles = Some(circles);
                         ui.end_row();
@@ -1366,6 +1392,7 @@ impl ColorByDialog {
                                 name: label.clone(),
                                 what: what.clone(),
                                 circles: self.circles.unwrap_or(points),
+                                heat: self.heat && points,
                             });
                         }
                         if ui.button("Cancel").clicked() {

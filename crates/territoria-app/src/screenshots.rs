@@ -2543,3 +2543,73 @@ fn score_column() {
     // A: 0.75·0.75 + 0.25·0.25 = 0.625
     assert!((s.f64(0).unwrap() - 0.625).abs() < 1e-12);
 }
+
+/// A heat map of customers weighted by sales, on screen and in exports.
+#[test]
+fn heat_map() {
+    use crate::app::Export;
+    use crate::dialogs::Placement;
+    use crate::export_map::Format;
+    use territoria_model::{MapLayer, MapLayerKind};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let customers = customers(h.state(), layer, 1200);
+    let app = h.state_mut();
+    app.add_table(
+        "Customers".into(),
+        customers,
+        PathBuf::from("customers.csv"),
+        Placement::Points {
+            x: "Longitude".into(),
+            y: "Latitude".into(),
+        },
+        None,
+    );
+    let points = app.project.layers.last().unwrap().id;
+    let b = app.project.layer(layer).unwrap().geometry.bbox.unwrap();
+    let span = territoria_geo::haversine(b.min(), b.max()) / 1000.0;
+    let map = app.project.maps[0].id;
+    let m = app.project.map_mut(map).unwrap();
+    // Hide the points themselves: the density shows them.
+    for ml in &mut m.layers {
+        if ml.kind.layer() == Some(points) {
+            ml.visible = false;
+        }
+    }
+    m.layers.push(MapLayer {
+        id: territoria_model::MapLayerId(4001),
+        name: "Density of Sales".into(),
+        visible: true,
+        opacity: 0.85,
+        kind: MapLayerKind::Heatmap {
+            layer: points,
+            weight: Some("Sales".into()),
+            radius_km: span / 30.0,
+            ramp: crate::heat::default_ramp(),
+        },
+    });
+    settle(&mut h);
+    save(&mut h, "heatmap");
+    let dir = std::env::temp_dir().join(format!("territoria-heat-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("heat.svg");
+    let app = h.state_mut();
+    app.set_map_export_for_test(crate::dialogs::MapExportSettings {
+        format: Format::Svg,
+        scale: 1.0,
+        title: String::new(),
+        legend: true,
+        scale_bar: false,
+    });
+    app.export(Export::Map(Format::Svg), path.clone());
+    settle(&mut h);
+    let svg = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        svg.contains("data:image/png;base64,"),
+        "the density as an image"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

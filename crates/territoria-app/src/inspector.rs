@@ -794,6 +794,70 @@ fn map_layer(
                 actions,
             );
         }
+        MapLayerKind::Heatmap {
+            layer,
+            weight,
+            radius_km,
+            ramp,
+        } => {
+            let l = project.layer(*layer);
+            egui::Grid::new("heat")
+                .num_columns(2)
+                .spacing([10.0, 6.0])
+                .show(ui, |ui| {
+                    ui.label("Weight");
+                    let text = weight
+                        .clone()
+                        .unwrap_or_else(|| "Each point counts 1".into());
+                    let mut w = weight.clone();
+                    ComboBox::from_id_salt("heat-weight")
+                        .selected_text(text)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut w, None, "Each point counts 1");
+                            if let Some(l) = l {
+                                for c in l.attributes.columns.iter().filter(|c| c.kind.is_numeric())
+                                {
+                                    ui.selectable_value(&mut w, Some(c.name.clone()), &c.name);
+                                }
+                            }
+                        });
+                    if &w != weight {
+                        actions.push(edit_layer(map, id, "Change heat weight", move |l| {
+                            if let MapLayerKind::Heatmap { weight, .. } = &mut l.kind {
+                                *weight = w;
+                            }
+                        }));
+                    }
+                    ui.end_row();
+                    ui.label("Spread")
+                        .on_hover_text("How far each point reaches");
+                    let mut r = *radius_km;
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut r)
+                                .range(0.05..=500.0)
+                                .speed(0.1)
+                                .suffix(" km"),
+                        )
+                        .changed()
+                    {
+                        actions.push(edit_layer(map, id, "Change heat spread", move |l| {
+                            if let MapLayerKind::Heatmap { radius_km, .. } = &mut l.kind {
+                                *radius_km = r;
+                            }
+                        }));
+                    }
+                    ui.end_row();
+                });
+            ui.label("Colours");
+            if let Some(r) = ramp_picker(ui, ramp, &[RampKind::Sequential]) {
+                actions.push(edit_layer(map, id, "Change heat colours", move |l| {
+                    if let MapLayerKind::Heatmap { ramp, .. } = &mut l.kind {
+                        *ramp = r;
+                    }
+                }));
+            }
+        }
         MapLayerKind::Rings {
             centres,
             radii_km,
