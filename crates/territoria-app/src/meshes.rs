@@ -21,16 +21,44 @@ enum Entry {
     Ready(Arc<LayerMesh>),
 }
 
+/// What a mesh shows of a layer: its features, or (for points) their
+/// Voronoi cells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MeshKind {
+    Features,
+    Cells,
+}
+
 #[derive(Default)]
 pub struct MeshCache {
-    entries: HashMap<(LayerId, String), Entry>,
+    entries: HashMap<(LayerId, String, MeshKind), Entry>,
 }
 
 impl MeshCache {
     /// The mesh for `layer` in `crs`, starting a build when missing or out
     /// of date. Returns a stale mesh while a newer one is built.
     pub fn get(&mut self, layer: &Layer, crs: &Crs, jobs: &mut Jobs) -> Option<Arc<LayerMesh>> {
-        let key = (layer.id, crs.proj.clone());
+        self.get_kind(layer, crs, MeshKind::Features, jobs)
+    }
+
+    /// The Voronoi cells of a point layer as an area mesh.
+    pub fn get_cells(
+        &mut self,
+        layer: &Layer,
+        crs: &Crs,
+        jobs: &mut Jobs,
+    ) -> Option<Arc<LayerMesh>> {
+        self.get_kind(layer, crs, MeshKind::Cells, jobs)
+    }
+
+    fn get_kind(
+        &mut self,
+        layer: &Layer,
+        crs: &Crs,
+        kind: MeshKind,
+        jobs: &mut Jobs,
+    ) -> Option<Arc<LayerMesh>> {
+        let key = (layer.id, crs.proj.clone(), kind);
         match self.entries.get(&key) {
             Some(Entry::Ready(m)) if m.rev == layer.rev => return Some(m.clone()),
             Some(Entry::Building { rev, old }) if *rev == layer.rev => return old.clone(),
@@ -45,11 +73,27 @@ impl MeshCache {
         let crs = crs.clone();
         let (id, rev) = (layer.id, layer.rev);
         let label = format!("Preparing {} for display", layer.name);
-        jobs.spawn(label, move |_| JobResult::Mesh {
-            layer: id,
-            crs: crs.proj.clone(),
-            rev,
-            mesh: Arc::new(LayerMesh::build(geometry, &crs, rev)),
+        jobs.spawn(label, move |_| {
+            let geometry = match kind {
+                MeshKind::Features => geometry,
+                MeshKind::Cells => {
+                    let cells = territoria_geo::points::voronoi_cells(
+                        &geometry.label_points,
+                        geometry.geographic,
+                    );
+                    Arc::new(territoria_model::LayerGeometry::from_imported(
+                        territoria_io::Geometries::Areas(cells),
+                        geometry.geographic,
+                    ))
+                }
+            };
+            JobResult::Mesh {
+                layer: id,
+                crs: crs.proj.clone(),
+                kind,
+                rev,
+                mesh: Arc::new(LayerMesh::build(geometry, &crs, rev)),
+            }
         });
         self.entries.insert(
             key,
@@ -61,8 +105,15 @@ impl MeshCache {
         old
     }
 
-    pub fn finished(&mut self, layer: LayerId, crs: String, rev: u64, mesh: Arc<LayerMesh>) {
-        let key = (layer, crs);
+    pub fn finished(
+        &mut self,
+        layer: LayerId,
+        crs: String,
+        kind: MeshKind,
+        rev: u64,
+        mesh: Arc<LayerMesh>,
+    ) {
+        let key = (layer, crs, kind);
         let current =
             matches!(self.entries.get(&key), Some(Entry::Building { rev: r, .. }) if *r == rev);
         if current || !self.entries.contains_key(&key) {
@@ -73,7 +124,7 @@ impl MeshCache {
     /// Forgets meshes of layers that no longer exist.
     pub fn retain(&mut self, project: &Project) {
         self.entries
-            .retain(|(id, _), _| project.layer(*id).is_some());
+            .retain(|(id, _, _), _| project.layer(*id).is_some());
     }
 }
 

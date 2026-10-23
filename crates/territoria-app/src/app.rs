@@ -650,9 +650,10 @@ impl TerritoriaApp {
             JobResult::Mesh {
                 layer,
                 crs,
+                kind,
                 rev,
                 mesh,
-            } => self.meshes.finished(layer, crs, rev, mesh),
+            } => self.meshes.finished(layer, crs, kind, rev, mesh),
             JobResult::Loaded { path, result } => match result {
                 Ok(project) => self.set_project(project, Some(path)),
                 Err(e) => self.error(format!("Couldn't open {}: {e}", file_name(&path))),
@@ -946,6 +947,7 @@ impl TerritoriaApp {
             ..view
         };
         let mut meshes = HashMap::new();
+        let mut cells = HashMap::new();
         for ml in map.layers.iter().filter(|l| l.visible) {
             let id = match &ml.kind {
                 MapLayerKind::Territories { plan, .. } => self.project.plan(*plan).map(|p| p.layer),
@@ -960,6 +962,20 @@ impl TerritoriaApp {
                 }
                 None => {
                     return Err("The map is still being prepared; try again in a moment.".into());
+                }
+            }
+            if matches!(ml.kind, MapLayerKind::Territories { .. })
+                && layer.kind() == GeometryKind::Point
+            {
+                match self.meshes.get_cells(layer, &map.crs, &mut self.jobs) {
+                    Some(m) => {
+                        cells.insert(layer.id, m);
+                    }
+                    None => {
+                        return Err(
+                            "The map is still being prepared; try again in a moment.".into()
+                        );
+                    }
                 }
             }
         }
@@ -979,9 +995,9 @@ impl TerritoriaApp {
             credits.push(attribution.clone());
         }
         for ml in map.layers.iter().filter(|l| l.visible) {
-            if let Some(r) = crate::resolve::resolve(&mut rcx, &meshes, ml, &map.crs) {
-                resolved.push(r);
-            }
+            resolved.extend(crate::resolve::resolve(
+                &mut rcx, &meshes, &cells, ml, &map.crs,
+            ));
             match &ml.kind {
                 MapLayerKind::Choropleth { .. } | MapLayerKind::Categories { .. } => {
                     if let Some(scaled) = rcx.analyses.get(rcx.project, rcx.values, ml.id, &ml.kind)

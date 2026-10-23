@@ -4310,6 +4310,7 @@ dependencies = [
  "proj4rs",
  "rstar 0.12.2",
  "serde",
+ "spade",
 ]
 
 [[package]]

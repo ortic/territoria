@@ -155,7 +155,7 @@ territoria/
 - [x] Multi-part areas, holes, enclaves handled everywhere
 - [x] Derived layers: dissolve by a key prefix or an attribute (e.g. 4-digit codes → 2-digit regions); areas sharing a key merged on import
 - [x] Point layers from tables (coordinates, geocoded addresses, area centroids) (coordinates in any CRS; no geocoding or centroids yet)
-- [ ] Voronoi areas for point layers (customers as planning units)
+- [x] Voronoi areas for point layers (customers as planning units)
 - [x] Download open boundaries (e.g. geoBoundaries ADM0–ADM2 for any country) with licence shown (all levels; credited on the map)
 - [ ] Switch a layer to a newer vintage, carrying data and assignments over (by key, or geometrically)
 - [x] Geometry embedded in the project (no "map not found" after moving the file)
@@ -246,7 +246,7 @@ territoria/
 
 ### 5.8 Territory planning (M4)
 
-- [x] Plan (territory structure) on any area or point layer; several plans per project (scenarios) (area layers)
+- [x] Plan (territory structure) on any area or point layer; several plans per project (scenarios)
 - [x] Create a plan: empty, from an assignment table (unit key → territory code/name), from a customer list (customer → rep, rolled up to units), from site locations (empty or from an assignment table)
 - [x] Assignment lists with ranges, enumerations, prefixes and wildcards (`10-19; 2*; 3301`)
 - [x] Match report for assignment tables like 5.6

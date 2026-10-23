@@ -174,6 +174,7 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
 
     // Meshes of the visible layers.
     let mut meshes: HashMap<LayerId, Arc<LayerMesh>> = HashMap::new();
+    let mut cells: HashMap<LayerId, Arc<LayerMesh>> = HashMap::new();
     let mut missing = false;
     for ml in map.layers.iter().filter(|l| l.visible) {
         let layer_id = match &ml.kind {
@@ -188,6 +189,17 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
                 meshes.insert(layer.id, m);
             }
             None => missing = true,
+        }
+        // Plans on points are drawn as the points' Voronoi cells.
+        if matches!(ml.kind, MapLayerKind::Territories { .. })
+            && layer.kind() == GeometryKind::Point
+        {
+            match cx.meshes.get_cells(layer, &map.crs, cx.jobs) {
+                Some(m) => {
+                    cells.insert(layer.id, m);
+                }
+                None => missing = true,
+            }
         }
     }
     if meshes.is_empty() {
@@ -323,7 +335,7 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
     };
     let mut resolved = Vec::new();
     for ml in map.layers.iter().filter(|l| l.visible) {
-        if let Some(r) = crate::resolve::resolve(&mut rcx, &meshes, ml, &map.crs) {
+        for r in crate::resolve::resolve(&mut rcx, &meshes, &cells, ml, &map.crs) {
             draw_resolved(&mut shapes, &r, &view, ppp);
             resolved.push(r);
         }
@@ -333,7 +345,9 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
     let interactive = interactive_layer(map, cx, painting_tool);
     state.hover = None;
     if let (Some(p), Some((layer_id, plan))) = (pointer, interactive)
-        && let (Some(layer), Some(mesh)) = (project.layer(layer_id), meshes.get(&layer_id))
+        && let Some(layer) = project.layer(layer_id)
+        // Plans on points are worked on through the points' cells.
+        && let Some(mesh) = cells.get(&layer_id).filter(|_| plan.is_some()).or(meshes.get(&layer_id))
         && let Ok(to_wgs) = Transformer::new(&map.crs, &Crs::wgs84())
     {
         let lookup = |s: Pos2| -> (Option<usize>, Option<[f64; 2]>) {
@@ -346,7 +360,13 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
                 return (None, None);
             };
             let tol = {
-                let d2 = view.to_display(s + vec2(6.0, 0.0));
+                // Points are small: a wider brush finds them.
+                let brush = if layer.kind() == GeometryKind::Point {
+                    10.0
+                } else {
+                    6.0
+                };
+                let d2 = view.to_display(s + vec2(brush, 0.0));
                 let c2 = if layer.geometry.geographic {
                     to_wgs.convert(geo_types::Coord { x: d2[0], y: d2[1] })
                 } else {
@@ -354,7 +374,7 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
                 };
                 c2.map_or(0.0, |c2| (c2.x - c.x).abs())
             };
-            (layer.geometry.feature_at(c, tol), Some([c.x, c.y]))
+            (mesh.geometry.feature_at(c, tol), Some([c.x, c.y]))
         };
         let (feature, lonlat) = lookup(p);
         if let Some(f) = feature {

@@ -695,3 +695,41 @@ fn territories_around_sites() {
     settle(&mut h);
     save(&mut h, "sites");
 }
+
+/// Customers themselves as planning units: balanced, contiguous in the
+/// Voronoi sense.
+#[test]
+fn plan_on_customer_points() {
+    use crate::dialogs::Placement;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = customers(h.state(), layer, 1500);
+    let app = h.state_mut();
+    app.add_table(
+        "Customers".into(),
+        table,
+        PathBuf::from("customers.csv"),
+        Placement::Points {
+            x: "Longitude".into(),
+            y: "Latitude".into(),
+        },
+        None,
+    );
+    let points = app.project.layers.last().unwrap().id;
+    let g = app.project.layer(points).unwrap().geometry.clone();
+    let avg = g.neighbors.iter().map(Vec::len).sum::<usize>() as f64 / g.len() as f64;
+    assert!(avg > 3.0 && avg < 12.0, "{avg} neighbours on average");
+    let plan = app.add_balanced_plan_now(points, 6);
+    let p = app.project.plan(plan).unwrap();
+    assert!(p.assignment.iter().all(Option::is_some));
+    let members = p.members();
+    for m in &members {
+        assert!((200..=300).contains(&m.len()), "{} customers", m.len());
+        assert_eq!(g.components(m), 1);
+    }
+    settle(&mut h);
+    save(&mut h, "customer-territories");
+}

@@ -6,6 +6,7 @@
 
 pub mod crs;
 pub mod index;
+pub mod points;
 pub mod simplify;
 pub mod topology;
 pub mod wkt;

@@ -31,6 +31,7 @@ pub enum JobResult {
     Mesh {
         layer: LayerId,
         crs: String,
+        kind: crate::meshes::MeshKind,
         rev: u64,
         mesh: Arc<LayerMesh>,
     },

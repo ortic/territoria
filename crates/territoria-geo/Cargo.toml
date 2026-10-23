@@ -9,6 +9,7 @@ crs-definitions.workspace = true
 geo.workspace = true
 geo-types = { workspace = true, features = ["serde"] }
 polylabel = "3.3"
+spade = "2"
 proj4rs.workspace = true
 rstar.workspace = true
 serde.workspace = true

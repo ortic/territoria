@@ -287,8 +287,21 @@ impl LayerGeometry {
                     .iter()
                     .map(|p| p.0.first().map(|p| p.0))
                     .collect();
-                self.areas = vec![0.0; self.points.len()];
-                self.neighbors = vec![Vec::new(); self.points.len()];
+                // Points touch where their Voronoi cells do; each stands for
+                // an equal share of the extent (compactness needs an area).
+                self.neighbors =
+                    territoria_geo::points::point_neighbors(&self.label_points, geographic);
+                let extent = territoria_geo::union_rect(self.bboxes.iter().flatten().copied());
+                let km2 = extent.map_or(0.0, |b| {
+                    let k = if geographic {
+                        111.32 * b.center().y.to_radians().cos() * 110.57
+                    } else {
+                        1e-6
+                    };
+                    b.width() * b.height() * k
+                });
+                let n = self.points.len().max(1) as f64;
+                self.areas = vec![km2 / n; self.points.len()];
             }
         }
         self.index = BoxIndex::new(&self.bboxes);

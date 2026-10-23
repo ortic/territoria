@@ -59,12 +59,25 @@ pub struct Context<'a> {
     pub dark: bool,
 }
 
+/// What `ml` draws: usually one layer; a plan on points draws their
+/// Voronoi cells (from `cells`) under the points.
 pub fn resolve(
     cx: &mut Context,
     meshes: &HashMap<LayerId, Arc<LayerMesh>>,
+    cells: &HashMap<LayerId, Arc<LayerMesh>>,
     ml: &MapLayer,
     crs: &Crs,
-) -> Option<Resolved> {
+) -> Vec<Resolved> {
+    resolve_one(cx, meshes, cells, ml, crs).unwrap_or_default()
+}
+
+fn resolve_one(
+    cx: &mut Context,
+    meshes: &HashMap<LayerId, Arc<LayerMesh>>,
+    cells: &HashMap<LayerId, Arc<LayerMesh>>,
+    ml: &MapLayer,
+    crs: &Crs,
+) -> Option<Vec<Resolved>> {
     let project = cx.project;
     let opacity = ml.opacity;
     match &ml.kind {
@@ -110,7 +123,7 @@ pub fn resolve(
                 LabelMode::None => Labels::None,
                 mode => Labels::Features((0..n).map(|f| label_text(l, mode, f)).collect()),
             };
-            Some(Resolved {
+            Some(vec![Resolved {
                 mesh,
                 fills,
                 arcs,
@@ -119,11 +132,18 @@ pub fn resolve(
                 point_stroke: stroke,
                 labels,
                 sites: Vec::new(),
-            })
+            }])
         }
         MapLayerKind::Territories { plan, style } => {
             let p = project.plan(*plan)?;
-            let mesh = meshes.get(&p.layer)?.clone();
+            let points = project.layer(p.layer)?.kind() == GeometryKind::Point;
+            // Points: the territories are drawn as their Voronoi cells.
+            let mesh = if points {
+                cells.get(&p.layer)?
+            } else {
+                meshes.get(&p.layer)?
+            }
+            .clone();
             let tr = cx.territories.get(project, *plan)?;
             let territory_fill: Vec<Color32> = p
                 .territories
@@ -146,8 +166,7 @@ pub fn resolve(
                 0.55,
             );
             let ut = &tr.unit_territory;
-            let layer = project.layer(p.layer)?;
-            let arcs = layer
+            let arcs = mesh
                 .geometry
                 .topology
                 .arcs
@@ -166,7 +185,7 @@ pub fn resolve(
                             style.border_width,
                             with_opacity(border, opacity),
                         ))
-                    } else if style.unit_borders {
+                    } else if style.unit_borders && !points {
                         Some(Stroke::new(0.5, with_opacity(inner, opacity)))
                     } else {
                         None
@@ -196,7 +215,7 @@ pub fn resolve(
                     }
                 }
             }
-            Some(Resolved {
+            let area = Resolved {
                 mesh,
                 fills,
                 arcs,
@@ -205,7 +224,36 @@ pub fn resolve(
                 point_stroke: Stroke::new(1.0, border),
                 labels,
                 sites,
-            })
+            };
+            if !points {
+                return Some(vec![area]);
+            }
+            // The customers themselves on top, in their territory's colour.
+            let dots = meshes.get(&p.layer)?.clone();
+            let dot_fills = tr
+                .unit_territory
+                .iter()
+                .map(|t| {
+                    Some(t.map_or(Color32::from_rgb(0x9a, 0x9a, 0xa2), |t| {
+                        // A shade darker than the cell, so customers stand out.
+                        with_opacity(
+                            color(p.territories[t as usize].color.lighten(-0.18)).to_opaque(),
+                            opacity,
+                        )
+                    }))
+                })
+                .collect();
+            let dot_layer = Resolved {
+                mesh: dots,
+                fills: dot_fills,
+                arcs: Vec::new(),
+                line_width: 1.0,
+                point_radius: 3.0,
+                point_stroke: Stroke::new(0.8, with_opacity(border, 0.7 * opacity)),
+                labels: Labels::None,
+                sites: Vec::new(),
+            };
+            Some(vec![area, dot_layer])
         }
     }
 }
