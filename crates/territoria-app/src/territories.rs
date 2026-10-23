@@ -108,6 +108,8 @@ pub struct TerritoriesPanel {
     /// Mark the areas that change territory on the map.
     pub mark_changes: bool,
     compared: Option<Compared>,
+    /// What's wrong with the active plan's data, by plan key.
+    diagnostics: Option<(PlanId, u64, Vec<territoria_model::Diagnostic>)>,
 }
 
 pub struct PanelContext<'a> {
@@ -697,6 +699,44 @@ impl TerritoriesPanel {
             if ui.button("Recolour").on_hover_text("Different colours for neighbouring territories").clicked() {
                 actions.push(Action::Command(crate::commands::Command::Recolor));
             }
+            ui.menu_button("Names", |ui| {
+                if ui
+                    .button("Name after the largest place")
+                    .on_hover_text("Each territory takes the name of its largest area by the measure (or by size). Locked territories keep theirs.")
+                    .clicked()
+                {
+                    let weights = (measure.source != ValueSource::Units)
+                        .then(|| cx.values.values(project, plan.layer, &measure.source));
+                    actions.push(Action::Edit(
+                        "Name territories".into(),
+                        Box::new(move |p| {
+                            let Some(l) = p.plan(plan_id).and_then(|pl| p.layer(pl.layer)).cloned() else { return };
+                            if let Some(pl) = p.plan_mut(plan_id) {
+                                pl.name_after_largest(&l, weights.as_deref());
+                            }
+                            touch(p, plan_id);
+                        }),
+                    ));
+                    ui.close();
+                }
+                if ui
+                    .button("Renumber north to south")
+                    .on_hover_text("Codes 01, 02, … in reading order on the map; default names follow")
+                    .clicked()
+                {
+                    actions.push(Action::Edit(
+                        "Renumber territories".into(),
+                        Box::new(move |p| {
+                            let Some(g) = p.plan(plan_id).and_then(|pl| p.layer(pl.layer)).map(|l| l.geometry.clone()) else { return };
+                            if let Some(pl) = p.plan_mut(plan_id) {
+                                pl.renumber_by_position(&g);
+                            }
+                            touch(p, plan_id);
+                        }),
+                    ));
+                    ui.close();
+                }
+            });
             let missing = plan.territories.iter().filter(|t| t.site.is_none()).count();
             if missing > 0
                 && ui
@@ -758,6 +798,43 @@ impl TerritoriesPanel {
                 ui.label(RichText::new(format!("{split} in pieces")).color(theme::WARN));
             }
         });
+
+        // Things in the data that keep territories from balancing.
+        if let Some(key) = plan_key(project, plan_id) {
+            if self
+                .diagnostics
+                .as_ref()
+                .is_none_or(|(p, k, _)| *p != plan_id || *k != key)
+            {
+                self.diagnostics = Some((plan_id, key, plan.diagnose(project, cx.values)));
+            }
+            if let Some((_, _, list)) = &self.diagnostics
+                && !list.is_empty()
+            {
+                ui.add_space(2.0);
+                for d in list {
+                    ui.horizontal(|ui| {
+                        let (icon, color) = if d.serious {
+                            ("⚠", theme::WARN)
+                        } else {
+                            ("ℹ", ui.visuals().weak_text_color())
+                        };
+                        ui.label(RichText::new(icon).color(color));
+                        if !d.units.is_empty()
+                            && ui
+                                .small_button("Show")
+                                .on_hover_text("Select these areas on the map")
+                                .clicked()
+                        {
+                            actions.push(Action::SelectUnits(plan.layer, d.units.clone()));
+                        }
+                        ui.add(
+                            egui::Label::new(RichText::new(&d.text).color(color).small()).wrap(),
+                        );
+                    });
+                }
+            }
+        }
 
         // Comparison with another plan (a scenario with its original).
         if let Some(base) = self.compare.filter(|b| *b != plan_id) {

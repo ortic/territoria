@@ -196,7 +196,7 @@ territoria/
 - [ ] Queries: join, union, group by with aggregations (sum, mean, min, max, median, mode, first, last, list, count rows, count values), filter before and after grouping
 - [ ] Spatial join: points get attributes of the area they lie in (areas get counts and sums of the points inside)
 - [ ] Saved filters (segments) usable by analyses, reports and exports; one clear meaning
-- [ ] Table ↔ map coupling: hover/select rows highlights areas and the other way round
+- [x] Table ↔ map coupling: hover/select rows highlights areas and the other way round (clicking rows selects their areas, Shift toggles; rows of the map's selection are highlighted and can be filtered; not on hover)
 - [x] Data export: CSV, XLSX (one sheet per table or files), filtered or all (plans, tables and layer attributes with each row's territories; not filtered yet)
 - [ ] Coordinates in degrees-minutes-seconds and "lat, lon" in one column parsed on import
 
@@ -265,7 +265,7 @@ territoria/
 - [x] Generate sites at territory centroids; move sites; "site outside its territory" warning
 - [x] Territory borders drawn from the topology (outer and inner borders, per level)
 - [x] Unassigned units: highlight, auto-assign to nearest/adjacent territory
-- [ ] Rename territories after their biggest place or site; renumber by position
+- [x] Rename territories after their biggest place or site; renumber by position (largest area by the measure or by size; codes north to south; not after sites yet)
 - [x] Scenarios: copy a plan, compare two plans (moved units, KPI deltas), adopt changes (⋯ menu → Duplicate as scenario; the panel compares, marks moved areas on the map, adopts into the original)
 - [x] Change log: what moved since a snapshot ("143 customers change rep") (a scenario copy is the snapshot: moved areas, points in them per point layer, Excel export of the moves and per-territory figures; no automatic snapshots)
 - [x] Rename, delete and export a plan from the Territories panel; one plan shown on the map at a time
@@ -284,7 +284,7 @@ territoria/
 - [ ] Distance model: straight line (default), drive time/distance from a matrix (M7), barriers (units not adjacent across)
 - [x] Runs in the background with progress, live preview, cancel, deterministic seed (no live preview)
 - [x] Result as a proposal: KPI before/after, moved units listed, accept or discard (counts, not a list)
-- [ ] Diagnostics instead of silent failure (a unit alone exceeds the target, too few units, negative values)
+- [x] Diagnostics instead of silent failure (a unit alone exceeds the target, too few units, negative values) (also areas without data and islands; each with a button that selects the areas)
 - [ ] Location optimization: place sites at (weighted) centroids or p-median over candidate points; match sites to territories (assignment problem)
 - [x] Colour optimization: neighbours get different colours; palettes; hierarchical colours (children shades of the parent) (neighbours differ; one palette)
 

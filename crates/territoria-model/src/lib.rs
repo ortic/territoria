@@ -22,7 +22,7 @@ pub use layer::{
 };
 pub use map::{BoundaryStyle, LabelMode, Map, MapLayer, MapLayerKind};
 pub use plan::{
-    Comparison, Measure, Move, Plan, PlanStats, RowUnits, Territory, TerritoryChange,
+    Comparison, Diagnostic, Measure, Move, Plan, PlanStats, RowUnits, Territory, TerritoryChange,
     TerritoryStats,
 };
 pub use values::{Cache, TextSource, ValueSource};

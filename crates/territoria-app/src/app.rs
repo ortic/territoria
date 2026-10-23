@@ -79,6 +79,10 @@ pub enum Action {
     Balance(PlanId),
     AcceptProposal(PlanId),
     DiscardProposal,
+    /// Select features and zoom to them.
+    SelectUnits(LayerId, Vec<u32>),
+    /// Select the features of table rows (adding to the selection: `true`).
+    SelectRows(DataRef, Vec<usize>, bool),
     /// Open the formula editor for a new (`None`) or calculated column.
     Formula(DataRef, Option<String>),
     DeleteColumn(DataRef, String),
@@ -895,6 +899,12 @@ impl TerritoriaApp {
     }
 
     #[cfg(test)]
+    pub fn apply_action_for_test(&mut self, action: Action) {
+        let ctx = egui::Context::default();
+        self.apply_action(&ctx, action);
+    }
+
+    #[cfg(test)]
     pub fn map_events_for_test(&mut self, events: Vec<MapEvent>) {
         let map = self.ensure_map();
         self.handle_map_events(events, map);
@@ -1466,6 +1476,25 @@ impl TerritoriaApp {
     }
 
     /// Puts a plan on the current map (once) and makes it the active one.
+    /// Changes the selection.
+    fn select(&mut self, layer: LayerId, units: Vec<u32>, mode: crate::map_view::SelectMode) {
+        use crate::map_view::SelectMode;
+        let mut set: std::collections::BTreeSet<u32> = match &self.selected {
+            Some((l, u)) if *l == layer && mode != SelectMode::Replace => {
+                u.iter().copied().collect()
+            }
+            _ => Default::default(),
+        };
+        for u in units {
+            if mode == SelectMode::Toggle && set.contains(&u) {
+                set.remove(&u);
+            } else {
+                set.insert(u);
+            }
+        }
+        self.selected = (!set.is_empty()).then(|| (layer, set.into_iter().collect()));
+    }
+
     /// Adds or updates a calculated column.
     fn apply_formula(&mut self, data: DataRef, editing: Option<String>, name: &str, source: &str) {
         let label = if editing.is_some() {
@@ -1968,6 +1997,44 @@ impl TerritoriaApp {
                 }
             }
             Action::DiscardProposal => self.territories_panel.proposal = None,
+            Action::SelectUnits(layer, units) => {
+                self.selected = Some((layer, units.clone()));
+                if let Some(s) = self.current_map.and_then(|m| self.map_states.get_mut(&m)) {
+                    s.zoom_to = Some((layer, units));
+                }
+            }
+            Action::SelectRows(data, rows, add) => {
+                let target = match data {
+                    DataRef::Layer(l) => Some((l, rows.iter().map(|&r| r as u32).collect())),
+                    DataRef::Table(t) => self
+                        .project
+                        .links
+                        .iter()
+                        .find(|l| l.table == t)
+                        .map(|l| (l.id, l.layer))
+                        .and_then(|(link, layer)| {
+                            let m = self.values.matching(&self.project, link)?;
+                            Some((
+                                layer,
+                                rows.iter()
+                                    .filter_map(|&r| m.row_target.get(r).copied().flatten())
+                                    .collect::<Vec<u32>>(),
+                            ))
+                        }),
+                };
+                match target {
+                    Some((layer, units)) if !units.is_empty() => {
+                        let mode = if add {
+                            crate::map_view::SelectMode::Toggle
+                        } else {
+                            crate::map_view::SelectMode::Replace
+                        };
+                        self.select(layer, units, mode);
+                    }
+                    Some(_) => self.toast("This row isn't on the map: its key matched no area."),
+                    None => self.toast("Link this table to areas to see its rows on the map."),
+                }
+            }
             Action::Formula(data, column) => {
                 self.formula = Some(crate::dialogs::FormulaDialog::new(
                     &self.project,
@@ -2064,23 +2131,7 @@ impl TerritoriaApp {
                         self.right_tab = RightTab::Territories;
                     }
                 }
-                MapEvent::Select { layer, units, mode } => {
-                    use crate::map_view::SelectMode;
-                    let mut set: std::collections::BTreeSet<u32> = match &self.selected {
-                        Some((l, u)) if *l == layer && mode != SelectMode::Replace => {
-                            u.iter().copied().collect()
-                        }
-                        _ => Default::default(),
-                    };
-                    for u in units {
-                        if mode == SelectMode::Toggle && set.contains(&u) {
-                            set.remove(&u);
-                        } else {
-                            set.insert(u);
-                        }
-                    }
-                    self.selected = (!set.is_empty()).then(|| (layer, set.into_iter().collect()));
-                }
+                MapEvent::Select { layer, units, mode } => self.select(layer, units, mode),
                 MapEvent::AssignSelection { plan, to } => {
                     if let Some((_, units)) = self.selected.clone() {
                         let label = if to.is_some() {
@@ -2881,8 +2932,14 @@ impl TabViewer for Viewer<'_> {
                 self.events.push((id, events));
             }
             Tab::Table(data) => {
-                let actions =
-                    crate::table_view::show(ui, &self.app.project, &mut self.app.values, data);
+                let selected = self.app.selected.as_ref().map(|(l, u)| (*l, u.as_slice()));
+                let actions = crate::table_view::show(
+                    ui,
+                    &self.app.project,
+                    &mut self.app.values,
+                    data,
+                    selected,
+                );
                 self.actions.extend(actions);
             }
         }

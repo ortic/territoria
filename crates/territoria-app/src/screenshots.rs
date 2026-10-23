@@ -1121,3 +1121,36 @@ fn territory_report() {
     }
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Clicking table rows selects their areas; Shift toggles. The table shows
+/// which rows belong to the map's selection.
+#[test]
+fn table_rows_select_areas() {
+    use crate::app::{Action, DataRef};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    h.state_mut()
+        .add_linked_table_now("Sales 2026", table, "Area", layer, Some("Revenue"));
+    let app = h.state_mut();
+    let t = app.project.tables[0].id;
+    let link = app.project.links[0].id;
+    let m = territoria_model::Cache::default()
+        .matching(&app.project, link)
+        .unwrap();
+    let unit = |r: usize| m.row_target[r].unwrap();
+    app.apply_action_for_test(Action::SelectRows(DataRef::Table(t), vec![0, 1, 2], false));
+    let mut expected = vec![unit(0), unit(1), unit(2)];
+    expected.sort_unstable();
+    assert_eq!(app.selected, Some((layer, expected)));
+    app.apply_action_for_test(Action::SelectRows(DataRef::Table(t), vec![1], true));
+    let mut expected = vec![unit(0), unit(2)];
+    expected.sort_unstable();
+    assert_eq!(app.selected, Some((layer, expected)));
+    app.open_table_for_test(DataRef::Table(t));
+    settle(&mut h);
+    save(&mut h, "table-selection");
+}

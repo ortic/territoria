@@ -229,6 +229,100 @@ impl Plan {
 
     /// Gives neighbouring territories different colours (greedy, most
     /// constrained first), from [`TERRITORY_COLORS`].
+    /// Names each territory after its largest unit (by `weights` per unit,
+    /// e.g. the measure; by area without). Locked territories keep their
+    /// names. Returns how many were renamed.
+    pub fn name_after_largest(
+        &mut self,
+        layer: &crate::Layer,
+        weights: Option<&[Option<f64>]>,
+    ) -> usize {
+        let members = self.members();
+        let size = |u: u32| match weights {
+            Some(w) => w.get(u as usize).copied().flatten().unwrap_or(0.0),
+            None => layer.geometry.areas.get(u as usize).copied().unwrap_or(0.0),
+        };
+        // The place name without the key, when there is one.
+        let place = |u: u32| {
+            layer
+                .name_column
+                .as_deref()
+                .and_then(|c| layer.attributes.column(c))
+                .map(|c| c.display(u as usize))
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| layer.key(u as usize))
+        };
+        let mut used: HashMap<String, usize> = HashMap::new();
+        let mut renamed = 0;
+        for (t, units) in self.territories.iter_mut().zip(&members) {
+            if t.locked {
+                continue;
+            }
+            let Some(&best) = units.iter().max_by(|a, b| size(**a).total_cmp(&size(**b))) else {
+                continue;
+            };
+            let base = place(best);
+            let n = used.entry(base.clone()).or_insert(0);
+            *n += 1;
+            let name = if *n == 1 { base } else { format!("{base} {n}") };
+            if t.name != name {
+                t.name = name;
+                renamed += 1;
+            }
+        }
+        renamed
+    }
+
+    /// Orders and numbers territories from north to south (west to east
+    /// within a band), so codes follow the map. Default names follow.
+    pub fn renumber_by_position(&mut self, geometry: &LayerGeometry) {
+        let members = self.members();
+        let centre = |units: &Vec<u32>| -> Option<(f64, f64)> {
+            let pts: Vec<_> = units
+                .iter()
+                .filter_map(|&u| geometry.label_points.get(u as usize).copied().flatten())
+                .collect();
+            (!pts.is_empty()).then(|| {
+                let n = pts.len() as f64;
+                (
+                    pts.iter().map(|p| p.x).sum::<f64>() / n,
+                    pts.iter().map(|p| p.y).sum::<f64>() / n,
+                )
+            })
+        };
+        let centres: Vec<Option<(f64, f64)>> = members.iter().map(centre).collect();
+        // Bands of about a territory's height, so a row reads west to east.
+        let ys: Vec<f64> = centres.iter().flatten().map(|c| c.1).collect();
+        let (lo, hi) = ys
+            .iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &y| {
+                (a.min(y), b.max(y))
+            });
+        let rows = (self.territories.len() as f64).sqrt().ceil().max(1.0);
+        let band = ((hi - lo) / rows).max(1e-12);
+        let mut order: Vec<usize> = (0..self.territories.len()).collect();
+        order.sort_by(|&a, &b| match (centres[a], centres[b]) {
+            (Some(ca), Some(cb)) => {
+                let (ra, rb) = (((hi - ca.1) / band).floor(), ((hi - cb.1) / band).floor());
+                ra.total_cmp(&rb).then(ca.0.total_cmp(&cb.0))
+            }
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.cmp(&b),
+        });
+        let width = self.territories.len().to_string().len().max(2);
+        let old = std::mem::take(&mut self.territories);
+        for (i, k) in order.into_iter().enumerate() {
+            let mut t = old[k].clone();
+            let code = format!("{:0width$}", i + 1);
+            if t.name == format!("Territory {}", t.code) {
+                t.name = format!("Territory {code}");
+            }
+            t.code = code;
+            self.territories.push(t);
+        }
+    }
+
     pub fn recolor(&mut self, geometry: &LayerGeometry) {
         let adj = self.territory_neighbors(geometry);
         let n = self.territories.len();
@@ -938,6 +1032,153 @@ impl Project {
     }
 }
 
+/// Something about a plan's data that keeps territories from balancing
+/// or explains why they don't.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Diagnostic {
+    /// `true`: balancing can't succeed; `false`: worth knowing.
+    pub serious: bool,
+    pub text: String,
+    /// The units it is about, to show them.
+    pub units: Vec<u32>,
+}
+
+impl Plan {
+    /// Checks the plan's data before balancing.
+    pub fn diagnose(&self, project: &Project, cache: &mut Cache) -> Vec<Diagnostic> {
+        let mut out = Vec::new();
+        let Some(layer) = project.layer(self.layer) else {
+            return out;
+        };
+        let n = layer.len();
+        let fmt = territoria_analysis::format::format_value;
+        let names = |units: &[u32]| -> String {
+            let mut list: Vec<String> = units
+                .iter()
+                .take(3)
+                .map(|&u| layer.display_name(u as usize))
+                .collect();
+            if units.len() > 3 {
+                list.push(format!("{} more", units.len() - 3));
+            }
+            list.join(", ")
+        };
+        let territories = self.territories.len();
+        if territories > 0 && n < territories {
+            out.push(Diagnostic {
+                serious: true,
+                text: format!(
+                    "Only {n} areas for {territories} territories: some territories stay empty."
+                ),
+                units: Vec::new(),
+            });
+        }
+        if let Some(m) = self.measures.first() {
+            let values = cache.values(project, self.layer, &m.source);
+            let label = m.source.label(project);
+            let negative: Vec<u32> = (0..n as u32)
+                .filter(|&u| {
+                    values
+                        .get(u as usize)
+                        .copied()
+                        .flatten()
+                        .is_some_and(|v| v < 0.0)
+                })
+                .collect();
+            if !negative.is_empty() {
+                out.push(Diagnostic {
+                    serious: true,
+                    text: format!("{} areas have a negative {label} ({}); balancing treats them as taking away.", negative.len(), names(&negative)),
+                    units: negative,
+                });
+            }
+            let missing: Vec<u32> = (0..n as u32)
+                .filter(|&u| values.get(u as usize).copied().flatten().is_none())
+                .collect();
+            if !missing.is_empty() && missing.len() < n {
+                out.push(Diagnostic {
+                    serious: false,
+                    text: format!(
+                        "{} areas have no {label}; they count as 0.",
+                        fmt(missing.len() as f64)
+                    ),
+                    units: missing,
+                });
+            }
+            // A unit bigger than the smallest target makes its territory overshoot.
+            let total: f64 = values.iter().flatten().sum();
+            let weights: f64 = self.territories.iter().map(|t| t.weight.max(0.0)).sum();
+            let smallest = self
+                .territories
+                .iter()
+                .map(|t| t.weight)
+                .filter(|w| *w > 0.0)
+                .fold(f64::INFINITY, f64::min);
+            if weights > 0.0 && smallest.is_finite() {
+                let per_weight = m.target.unwrap_or(total / weights);
+                let target = per_weight * smallest;
+                let limit = target * (1.0 + m.tolerance);
+                let mut big: Vec<u32> = (0..n as u32)
+                    .filter(|&u| {
+                        values
+                            .get(u as usize)
+                            .copied()
+                            .flatten()
+                            .is_some_and(|v| v > limit)
+                    })
+                    .collect();
+                big.sort_by(|a, b| {
+                    let v = |u: u32| values[u as usize].unwrap_or(0.0);
+                    v(*b).total_cmp(&v(*a))
+                });
+                if !big.is_empty() {
+                    out.push(Diagnostic {
+                        serious: true,
+                        text: format!(
+                            "{} {} alone more {label} than a territory should have ({} with tolerance): {}.",
+                            big.len(),
+                            if big.len() == 1 { "area has" } else { "areas have" },
+                            fmt(limit),
+                            names(&big)
+                        ),
+                        units: big,
+                    });
+                }
+            }
+        }
+        if layer.kind() == territoria_io::GeometryKind::Area && n > 1 {
+            let islands: Vec<u32> = (0..n as u32)
+                .filter(|&u| {
+                    layer
+                        .geometry
+                        .neighbors
+                        .get(u as usize)
+                        .is_none_or(Vec::is_empty)
+                })
+                .collect();
+            if !islands.is_empty() {
+                out.push(Diagnostic {
+                    serious: false,
+                    text: format!(
+                        "{} areas touch no other area ({}); a territory with them is in pieces.",
+                        fmt(islands.len() as f64),
+                        names(&islands)
+                    ),
+                    units: islands,
+                });
+            }
+        }
+        if self.territories.iter().any(|t| t.weight <= 0.0) {
+            out.push(Diagnostic {
+                serious: false,
+                text: "Territories with size 0 get no share and end up empty.".into(),
+                units: Vec::new(),
+            });
+        }
+        out
+    }
+}
+
 /// Which unit (feature of a plan's layer) each row of some data belongs to.
 #[derive(Debug, Clone)]
 pub enum RowUnits {
@@ -1162,9 +1403,117 @@ mod tests {
         let [code, name] = pb.territory_columns(&rows, 4);
         assert_eq!(code.display(0), "01");
         assert_eq!(name.name, "Territory (Next year)");
+        // Four units of 1 for two territories: nothing to complain about.
+        let d = p.plan(a).unwrap().diagnose(&p, &mut cache);
+        assert!(d.is_empty(), "{d:?}");
         assert!(p.adopt_plan(b, a));
         assert!(p.compare_plans(a, b, &mut cache).unwrap().moves.is_empty());
         assert_eq!(p.plan(a).unwrap().name, "Now");
+    }
+
+    #[test]
+    fn diagnostics() {
+        use crate::layer::LayerGeometry;
+        use geo_types::{MultiPolygon, polygon};
+        // Five squares in a row and one far away.
+        let mut areas: Vec<MultiPolygon<f64>> = (0..5)
+            .map(|i| {
+                let x = i as f64;
+                MultiPolygon(vec![polygon![(x: x, y: 0.0), (x: x + 1.0, y: 0.0), (x: x + 1.0, y: 1.0), (x: x, y: 1.0), (x: x, y: 0.0)]])
+            })
+            .collect();
+        areas.push(MultiPolygon(vec![polygon![(x: 20.0, y: 0.0), (x: 21.0, y: 0.0), (x: 21.0, y: 1.0), (x: 20.0, y: 1.0), (x: 20.0, y: 0.0)]]));
+        let table = Table::new(vec![territoria_data::Column::number(
+            "Sales",
+            vec![
+                Some(1.0),
+                Some(-2.0),
+                Some(1.0),
+                Some(40.0),
+                None,
+                Some(1.0),
+            ],
+        )])
+        .unwrap();
+        let mut p = Project::new();
+        let g = LayerGeometry::from_imported(territoria_io::Geometries::Areas(areas), true);
+        let layer = p.add_layer("A", g, table, Default::default());
+        let plan = p.add_plan("Plan", layer, 3);
+        p.plan_mut(plan).unwrap().measures = vec![Measure {
+            source: ValueSource::Attribute {
+                column: "Sales".into(),
+            },
+            tolerance: 0.1,
+            target: None,
+        }];
+        let d = p.plan(plan).unwrap().diagnose(&p, &mut Cache::default());
+        let find = |word: &str| {
+            d.iter()
+                .find(|x| x.text.contains(word))
+                .unwrap_or_else(|| panic!("{word}: {d:?}"))
+        };
+        assert_eq!(find("negative").units, vec![1]);
+        assert_eq!(find("no Sales").units, vec![4]);
+        assert_eq!(find("alone").units, vec![3], "40 is more than 41 / 3 × 1.1");
+        assert_eq!(find("touch no other").units, vec![5]);
+        assert!(find("alone").serious && !find("touch no other").serious);
+    }
+
+    #[test]
+    fn names_and_numbers() {
+        use crate::layer::LayerGeometry;
+        use geo_types::{MultiPolygon, polygon};
+        // A 2×2 grid: units 0, 1 on the bottom row, 2, 3 on top.
+        let areas: Vec<MultiPolygon<f64>> = (0..4)
+            .map(|i| {
+                let (x, y) = ((i % 2) as f64, (i / 2) as f64);
+                MultiPolygon(vec![polygon![(x: x, y: y), (x: x + 1.0, y: y), (x: x + 1.0, y: y + 1.0), (x: x, y: y + 1.0), (x: x, y: y)]])
+            })
+            .collect();
+        let table = Table::new(vec![
+            territoria_data::Column::text(
+                "Code",
+                territoria_data::ColumnKind::Key,
+                ["A", "B", "C", "D"].map(|s| Some(s.to_owned())).to_vec(),
+            ),
+            territoria_data::Column::text(
+                "Place",
+                territoria_data::ColumnKind::Text,
+                ["Ash", "Birch", "Cedar", "Dogwood"]
+                    .map(|s| Some(s.to_owned()))
+                    .to_vec(),
+            ),
+        ])
+        .unwrap();
+        let mut p = Project::new();
+        let g = LayerGeometry::from_imported(territoria_io::Geometries::Areas(areas), true);
+        let layer = p.add_layer("A", g, table, Default::default());
+        {
+            let l = p.layer_mut(layer).unwrap();
+            l.key_column = Some("Code".into());
+            l.name_column = Some("Place".into());
+        }
+        let plan = p.add_plan("Plan", layer, 2);
+        let l = p.layer(layer).unwrap().clone();
+        let pl = p.plan_mut(plan).unwrap();
+        let (t1, t2) = (pl.territories[0].id, pl.territories[1].id);
+        // Territory 01 is the bottom row, 02 the top row.
+        pl.assign(&[0, 1], Some(t1));
+        pl.assign(&[2, 3], Some(t2));
+        let weights = [Some(1.0), Some(5.0), Some(9.0), Some(2.0)];
+        assert_eq!(pl.name_after_largest(&l, Some(&weights)), 2);
+        assert_eq!(pl.territories[0].name, "Birch");
+        assert_eq!(pl.territories[1].name, "Cedar");
+        pl.territories[0].name = "Territory 01".into();
+        pl.renumber_by_position(&l.geometry);
+        // North first: the top row becomes 01.
+        assert_eq!(pl.territories[0].id, t2);
+        assert_eq!(pl.territories[0].code, "01");
+        assert_eq!(pl.territories[1].code, "02");
+        assert_eq!(
+            pl.territories[1].name, "Territory 02",
+            "default names follow"
+        );
     }
 
     #[test]

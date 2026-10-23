@@ -5,7 +5,7 @@ use egui::{RichText, Sense, Ui, vec2};
 use egui_extras::{Column as TableColumn, TableBuilder};
 use territoria_analysis::format::format_value;
 use territoria_data::Table;
-use territoria_model::{Cache, Plan, Project, RowUnits};
+use territoria_model::{Cache, LayerId, Plan, Project, RowUnits};
 
 use crate::app::{Action, DataRef, Export};
 
@@ -16,12 +16,21 @@ struct TableState {
     /// Row order for `key`.
     order: Vec<usize>,
     key: Option<OrderKey>,
+    /// Show only the rows of the map's selection.
+    only_selected: bool,
 }
 
-/// What the row order depends on: revision, sort, filter, plan revisions.
-type OrderKey = (u64, Option<(usize, bool)>, String, Vec<u64>);
+/// What the row order depends on: revision, sort, filter, plan revisions,
+/// selection.
+type OrderKey = (u64, Option<(usize, bool)>, String, Vec<u64>, Option<u64>);
 
-pub fn show(ui: &mut Ui, project: &Project, values: &mut Cache, data: DataRef) -> Vec<Action> {
+pub fn show(
+    ui: &mut Ui,
+    project: &Project,
+    values: &mut Cache,
+    data: DataRef,
+    selected: Option<(LayerId, &[u32])>,
+) -> Vec<Action> {
     let mut actions = Vec::new();
     let (table, rev, keys): (&Table, u64, Option<&str>) = match data {
         DataRef::Layer(id) => match project.layer(id) {
@@ -46,6 +55,28 @@ pub fn show(ui: &mut Ui, project: &Project, values: &mut Cache, data: DataRef) -
         .filter_map(|p| Some((p, crate::app::plan_rows(project, values, data, p)?)))
         .collect();
     let territory = |i: usize, r: usize| plans[i].0.row_territory(&plans[i].1, r);
+    // Rows that belong to the features selected on the map.
+    let selection: Option<(RowUnits, std::collections::HashSet<u32>)> =
+        selected.and_then(|(layer, units)| {
+            let rows = match data {
+                DataRef::Layer(l) => project.layer_rows(values, l, layer),
+                DataRef::Table(t) => project.table_rows(values, t, layer),
+            }?;
+            Some((rows, units.iter().copied().collect()))
+        });
+    let in_selection = |r: usize| {
+        selection
+            .as_ref()
+            .is_some_and(|(rows, set)| rows.unit(r).is_some_and(|u| set.contains(&u)))
+    };
+    let selection_key = selection.as_ref().map(|(_, set)| {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::hash::DefaultHasher::new();
+        let mut units: Vec<&u32> = set.iter().collect();
+        units.sort_unstable();
+        units.hash(&mut h);
+        h.finish()
+    });
     let id = ui.id().with(("table-state", data));
     let mut state: TableState = ui.data_mut(|d| d.get_temp(id).unwrap_or_default());
 
@@ -57,6 +88,10 @@ pub fn show(ui: &mut Ui, project: &Project, values: &mut Cache, data: DataRef) -
                 .desired_width(220.0),
         );
         ui.label(RichText::new(format!("{} rows", format_value(state.order.len() as f64))).weak());
+        if selection.is_some() {
+            ui.checkbox(&mut state.only_selected, "Only the selection")
+                .on_hover_text("Rows of the areas selected on the map");
+        }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.menu_button("Export", |ui| {
                 if ui.button("Excel…").clicked() {
@@ -79,10 +114,18 @@ pub fn show(ui: &mut Ui, project: &Project, values: &mut Cache, data: DataRef) -
     });
 
     let plan_revs = plans.iter().map(|(p, _)| p.rev).collect();
-    let key = Some((rev, state.sort, state.filter.clone(), plan_revs));
+    let only = state.only_selected && selection.is_some();
+    let key = Some((
+        rev,
+        state.sort,
+        state.filter.clone(),
+        plan_revs,
+        selection_key.filter(|_| only),
+    ));
     if state.key != key {
         let needle = state.filter.to_lowercase();
         let mut order: Vec<usize> = (0..table.rows())
+            .filter(|&r| !only || in_selection(r))
             .filter(|&r| {
                 needle.is_empty()
                     || table
@@ -123,9 +166,11 @@ pub fn show(ui: &mut Ui, project: &Project, values: &mut Cache, data: DataRef) -
     }
 
     let text_height = ui.text_style_height(&egui::TextStyle::Body) + 4.0;
+    let ui_modifiers = ui.input(|i| i.modifiers);
     egui::ScrollArea::horizontal().show(ui, |ui| {
         let mut builder = TableBuilder::new(ui)
             .striped(true)
+            .sense(Sense::click())
             .resizable(true)
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center));
         for _ in 0..table.columns.len() + plans.len() {
@@ -212,6 +257,7 @@ pub fn show(ui: &mut Ui, project: &Project, values: &mut Cache, data: DataRef) -
             .body(|body| {
                 body.rows(text_height, state.order.len(), |mut row| {
                     let r = state.order[row.index()];
+                    row.set_selected(in_selection(r));
                     for c in &table.columns {
                         row.col(|ui| {
                             let text = c.display(r);
@@ -248,6 +294,10 @@ pub fn show(ui: &mut Ui, project: &Project, values: &mut Cache, data: DataRef) -
                                 ui.label(&t.name);
                             }
                         });
+                    }
+                    if row.response().clicked() {
+                        let add = ui_modifiers.shift || ui_modifiers.command;
+                        actions.push(Action::SelectRows(data, vec![r], add));
                     }
                 });
             });
