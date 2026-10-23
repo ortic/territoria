@@ -1108,8 +1108,10 @@ impl TerritoriesPanel {
             };
             ui.label(
                 RichText::new(format!(
-                    "{outside} of {} outside ±{:.0} %",
+                    "{outside} {} {} {} ±{:.0} %",
+                    tr("of"),
                     plan.territories.len(),
+                    tr("outside"),
                     measure.tolerance * 100.0
                 ))
                 .color(c),

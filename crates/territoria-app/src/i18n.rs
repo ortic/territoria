@@ -301,6 +301,14 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
         ("A page per", "Eine Seite pro"),
         ("Rows of", "Zeilen von"),
         // Panels: properties, territories, contents, tables.
+        ("of", "von"),
+        ("outside", "ausserhalb"),
+        ("areas", "Gebiete"),
+        ("area", "Gebiet"),
+        ("lines", "Linien"),
+        ("line", "Linie"),
+        ("points", "Punkte"),
+        ("point", "Punkt"),
         (
             "Select a map layer or data in the Contents panel to see its settings.",
             "Eine Kartenebene oder Daten im Inhalt wählen, um ihre Einstellungen zu sehen.",

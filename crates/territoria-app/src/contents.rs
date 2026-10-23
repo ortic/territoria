@@ -439,7 +439,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                     }
                 });
                 ui.label(
-                    RichText::new(format!("    {} {kind}", format_value(l.len() as f64)))
+                    RichText::new(format!("    {} {}", format_value(l.len() as f64), tr(kind)))
                         .small()
                         .weak(),
                 );
