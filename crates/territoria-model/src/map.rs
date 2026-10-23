@@ -120,6 +120,84 @@ pub enum MapLayerKind {
         symbol: SymbolStyle,
         style: BoundaryStyle,
     },
+    /// A small chart on each area or point: a slice or bar per value.
+    Charts {
+        layer: LayerId,
+        parts: Vec<ChartPart>,
+        chart: ChartStyle,
+        style: BoundaryStyle,
+    },
+}
+
+/// One value of a chart with its colour.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChartPart {
+    pub label: String,
+    pub source: ValueSource,
+    pub color: Rgba,
+}
+
+impl ChartPart {
+    /// The colour of a chart's `i`th part, distinct from the others.
+    pub fn color_for(i: usize) -> Rgba {
+        let colors = territoria_analysis::RampSpec::named("Tableau").colors(i + 1);
+        colors[i % colors.len()]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum ChartShape {
+    #[default]
+    Pie,
+    Donut,
+    Bars,
+}
+
+impl ChartShape {
+    pub const ALL: [ChartShape; 3] = [ChartShape::Pie, ChartShape::Donut, ChartShape::Bars];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ChartShape::Pie => "Pie",
+            ChartShape::Donut => "Donut",
+            ChartShape::Bars => "Bars",
+        }
+    }
+}
+
+/// How charts look.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChartStyle {
+    pub shape: ChartShape,
+    /// The largest chart in screen points: pie radius or tallest bar.
+    pub max_size: f32,
+    /// Pies sized by their total (areas grow with it), else all alike.
+    pub sized: bool,
+    pub outline: Rgba,
+}
+
+impl ChartStyle {
+    /// A style whose charts suit `n` features (see [`SymbolStyle::for_count`]).
+    pub fn for_count(shape: ChartShape, n: usize) -> ChartStyle {
+        ChartStyle {
+            shape,
+            max_size: SymbolStyle::for_count(n).max_radius.max(10.0),
+            sized: true,
+            outline: Rgba([0xff, 0xff, 0xff, 230]),
+        }
+    }
+
+    /// Pie radius for a total when `max` gets the full size.
+    pub fn radius(&self, total: f64, max: f64) -> f32 {
+        if total <= 0.0 || max <= 0.0 {
+            return 0.0;
+        }
+        if self.sized {
+            (self.max_size * (total / max).min(1.0).sqrt() as f32).max(3.0)
+        } else {
+            self.max_size
+        }
+    }
 }
 
 /// How proportional circles look.
@@ -169,6 +247,7 @@ impl MapLayerKind {
             | MapLayerKind::Choropleth { layer, .. }
             | MapLayerKind::Categories { layer, .. }
             | MapLayerKind::Symbols { layer, .. }
+            | MapLayerKind::Charts { layer, .. }
             | MapLayerKind::Heatmap { layer, .. } => Some(*layer),
             MapLayerKind::Rings {
                 centres: crate::catchment::Centres::Points(layer),
@@ -194,6 +273,7 @@ impl MapLayerKind {
                 source: TextSource::Linked { link, .. },
                 ..
             } => links.contains(link),
+            MapLayerKind::Charts { parts, .. } => parts.iter().any(|p| p.source.uses_links(links)),
             _ => false,
         }
     }
@@ -203,7 +283,8 @@ impl MapLayerKind {
             MapLayerKind::Boundaries { style, .. }
             | MapLayerKind::Choropleth { style, .. }
             | MapLayerKind::Categories { style, .. }
-            | MapLayerKind::Symbols { style, .. } => Some(style),
+            | MapLayerKind::Symbols { style, .. }
+            | MapLayerKind::Charts { style, .. } => Some(style),
             MapLayerKind::Territories { .. }
             | MapLayerKind::Rings { .. }
             | MapLayerKind::Heatmap { .. } => None,
@@ -215,7 +296,8 @@ impl MapLayerKind {
             MapLayerKind::Boundaries { style, .. }
             | MapLayerKind::Choropleth { style, .. }
             | MapLayerKind::Categories { style, .. }
-            | MapLayerKind::Symbols { style, .. } => Some(style),
+            | MapLayerKind::Symbols { style, .. }
+            | MapLayerKind::Charts { style, .. } => Some(style),
             MapLayerKind::Territories { .. }
             | MapLayerKind::Rings { .. }
             | MapLayerKind::Heatmap { .. } => None,
@@ -231,6 +313,10 @@ impl MapLayerKind {
             MapLayerKind::Symbols { .. } => "Circles sized by value",
             MapLayerKind::Rings { .. } => "Catchment rings",
             MapLayerKind::Heatmap { .. } => "Heat map (density)",
+            MapLayerKind::Charts { chart, .. } => match chart.shape {
+                ChartShape::Bars => "Bar charts",
+                _ => "Pie charts",
+            },
         }
     }
 

@@ -1087,6 +1087,24 @@ fn hover_rows(
                 );
                 rows.push((ml.name.clone(), text));
             }
+            MapLayerKind::Charts {
+                layer: l, parts, ..
+            } if *l == h.layer && custom.is_none() => {
+                for p in parts {
+                    let v = values
+                        .values(project, *l, &p.source)
+                        .get(h.feature)
+                        .copied()
+                        .flatten();
+                    rows.push((
+                        p.label.clone(),
+                        v.map_or(
+                            "no data".to_owned(),
+                            territoria_analysis::format::format_value,
+                        ),
+                    ));
+                }
+            }
             MapLayerKind::Symbols {
                 layer: l,
                 source,
@@ -1191,6 +1209,15 @@ pub fn draw_resolved(shapes: &mut Vec<Shape>, r: &Resolved, view: &View, ppp: f3
         if view.rect.expand(radius).contains(p) {
             shapes.push(Shape::circle_filled(p, radius, r.symbol_fill));
             shapes.push(Shape::circle_stroke(p, radius, r.symbol_stroke));
+        }
+    }
+    for chart in &r.charts {
+        let Some(lp) = mesh.label_points.get(chart.feature).copied().flatten() else {
+            continue;
+        };
+        let p = view.to_screen(mesh.to_display(lp));
+        if view.rect.intersects(crate::charts::bounds(chart, p)) {
+            crate::charts::shapes(shapes, chart, p);
         }
     }
 }

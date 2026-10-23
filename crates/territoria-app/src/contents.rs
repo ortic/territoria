@@ -83,6 +83,13 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                             MapLayerKind::Symbols { .. } => "●",
                             MapLayerKind::Rings { .. } => "◎",
                             MapLayerKind::Heatmap { .. } => "◍",
+                            MapLayerKind::Charts { chart, .. } => {
+                                if chart.shape == territoria_model::ChartShape::Bars {
+                                    "▮"
+                                } else {
+                                    "◔"
+                                }
+                            }
                         };
                         let text = RichText::new(format!("{icon} {}", ml.name));
                         let text = if ml.visible { text } else { text.weak() };
@@ -206,6 +213,39 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                                         size_legend(ui, symbol, max);
                                     });
                                 }
+                            }
+                            MapLayerKind::Charts {
+                                layer, parts, chart, ..
+                            } => {
+                                ui.indent(("legend", ml.id.0), |ui| {
+                                    for p in parts {
+                                        ui.horizontal(|ui| {
+                                            swatch(ui, color(p.color));
+                                            ui.label(RichText::new(&p.label).small());
+                                        });
+                                    }
+                                    // Pies sized by their total: what sizes mean.
+                                    if chart.sized && chart.shape != territoria_model::ChartShape::Bars {
+                                        let n = project.layer(*layer).map_or(0, |l| l.len());
+                                        let mut totals = vec![0.0f64; n];
+                                        for p in parts {
+                                            let v = cx.values.values(project, *layer, &p.source);
+                                            for (t, x) in totals.iter_mut().zip(&v) {
+                                                *t += x.unwrap_or(0.0).max(0.0);
+                                            }
+                                        }
+                                        let max = totals.iter().copied().fold(0.0f64, f64::max);
+                                        if max > 0.0 {
+                                            ui.label(RichText::new("Total").small().weak());
+                                            let symbol = territoria_model::SymbolStyle {
+                                                color: territoria_analysis::Rgba::rgb(0x8a, 0x8d, 0x96),
+                                                max_radius: chart.max_size,
+                                                ..Default::default()
+                                            };
+                                            size_legend(ui, &symbol, max);
+                                        }
+                                    }
+                                });
                             }
                             MapLayerKind::Heatmap { ramp, .. } => {
                                 ui.indent(("legend", ml.id.0), |ui| {

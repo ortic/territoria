@@ -492,6 +492,16 @@ fn layer(s: &mut String, r: &Resolved, view: &View, tips: Option<&[String]>, fin
             r.symbol_stroke.width
         );
     }
+    for chart in &r.charts {
+        let Some(lp) = mesh.label_points.get(chart.feature).copied().flatten() else {
+            continue;
+        };
+        let (x, y) = f.xy(lp);
+        let p = pos2(x, y);
+        if view.rect.intersects(crate::charts::bounds(chart, p)) {
+            crate::charts::svg(s, chart, p, &tip_attr(tips, chart.feature));
+        }
+    }
 }
 
 fn sites(s: &mut String, r: &Resolved, view: &View) {

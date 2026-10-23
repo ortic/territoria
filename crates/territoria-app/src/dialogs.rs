@@ -1271,6 +1271,9 @@ pub struct ColorByDialog {
     pub circles: Option<bool>,
     /// Points: a heat map weighted by the value.
     pub heat: bool,
+    /// A chart of several values (their indices in the choices).
+    pub chart: Option<territoria_model::ChartShape>,
+    pub chart_values: Vec<usize>,
 }
 
 impl ColorByDialog {
@@ -1280,6 +1283,8 @@ impl ColorByDialog {
             choice: 0,
             circles: None,
             heat: false,
+            chart: None,
+            chart_values: Vec::new(),
         }
     }
 }
@@ -1291,6 +1296,11 @@ pub enum ColorByOutcome {
         what: Colorable,
         circles: bool,
         heat: bool,
+    },
+    Chart {
+        layer: LayerId,
+        shape: territoria_model::ChartShape,
+        values: Vec<(String, ValueSource)>,
     },
 }
 
@@ -1311,45 +1321,81 @@ impl ColorByDialog {
                     ui.label("Areas");
                     if layer_combo(ui, "cb-layer", project, &mut self.layer, None) {
                         self.choice = 0;
+                        self.chart_values.clear();
                     }
                     ui.end_row();
-                    ui.label("Value");
                     let options = self
                         .layer
                         .map(|l| colorables(project, l))
                         .unwrap_or_default();
-                    ComboBox::from_id_salt("cb-value")
-                        .width(280.0)
-                        .selected_text(
-                            options
-                                .get(self.choice)
-                                .map_or("No values: add data first".into(), |o| o.0.clone()),
-                        )
-                        .show_ui(ui, |ui| {
-                            for (i, (label, _)) in options.iter().enumerate() {
-                                ui.selectable_value(&mut self.choice, i, label);
-                            }
+                    if self.chart.is_some() {
+                        // Charts: several numbers, each a slice or bar.
+                        ui.label("Values");
+                        ui.vertical(|ui| {
+                            egui::ScrollArea::vertical()
+                                .max_height(180.0)
+                                .show(ui, |ui| {
+                                    for (i, (label, what)) in options.iter().enumerate() {
+                                        if !matches!(what, Colorable::Number(_)) {
+                                            continue;
+                                        }
+                                        let mut on = self.chart_values.contains(&i);
+                                        if ui.checkbox(&mut on, label).changed() {
+                                            if on {
+                                                self.chart_values.push(i);
+                                            } else {
+                                                self.chart_values.retain(|v| *v != i);
+                                            }
+                                        }
+                                    }
+                                });
+                            ui.label(
+                                RichText::new("Pick the values that make up each chart, e.g. sales per product line.")
+                                    .small()
+                                    .weak(),
+                            );
                         });
-                    ui.end_row();
+                        ui.end_row();
+                    }
+                    if self.chart.is_none() {
+                        ui.label("Value");
+                        ComboBox::from_id_salt("cb-value")
+                            .width(280.0)
+                            .selected_text(
+                                options
+                                    .get(self.choice)
+                                    .map_or("No values: add data first".into(), |o| o.0.clone()),
+                            )
+                            .show_ui(ui, |ui| {
+                                for (i, (label, _)) in options.iter().enumerate() {
+                                    ui.selectable_value(&mut self.choice, i, label);
+                                }
+                            });
+                        ui.end_row();
+                    }
                     // Numbers can also be circles; on points that's the default.
                     let points = self
                         .layer
                         .and_then(|l| project.layer(l))
                         .is_some_and(|l| l.kind() == GeometryKind::Point);
-                    if matches!(options.get(self.choice), Some((_, Colorable::Number(_)))) {
+                    if self.chart.is_some()
+                        || matches!(options.get(self.choice), Some((_, Colorable::Number(_))))
+                    {
                         let mut circles = self.circles.unwrap_or(points);
+                        let single = self.chart.is_none();
                         ui.label("Show as");
                         ui.horizontal_wrapped(|ui| {
                             if ui
-                                .radio(!circles && !self.heat, "Colours")
+                                .radio(single && !circles && !self.heat, "Colours")
                                 .on_hover_text("Each area coloured by its class")
                                 .clicked()
                             {
                                 circles = false;
                                 self.heat = false;
+                                self.chart = None;
                             }
                             if ui
-                                .radio(circles && !self.heat, "Circles sized by value")
+                                .radio(single && circles && !self.heat, "Circles sized by value")
                                 .on_hover_text(
                                     "A circle on each area or point; its area grows with the value",
                                 )
@@ -1357,16 +1403,48 @@ impl ColorByDialog {
                             {
                                 circles = true;
                                 self.heat = false;
+                                self.chart = None;
                             }
                             if points
                                 && ui
-                                    .radio(self.heat, "Heat map")
+                                    .radio(single && self.heat, "Heat map")
                                     .on_hover_text(
                                         "Where the points are dense, weighted by the value",
                                     )
                                     .clicked()
                             {
                                 self.heat = true;
+                                self.chart = None;
+                            }
+                            for (shape, label, tip) in [
+                                (
+                                    territoria_model::ChartShape::Pie,
+                                    "Pie charts",
+                                    "A pie on each area: the values' shares, sized by their total",
+                                ),
+                                (
+                                    territoria_model::ChartShape::Bars,
+                                    "Bar charts",
+                                    "Bars on each area, one per value, on one scale",
+                                ),
+                            ] {
+                                if ui
+                                    .radio(self.chart == Some(shape), label)
+                                    .on_hover_text(tip)
+                                    .clicked()
+                                {
+                                    if self.chart.is_none()
+                                        && self.chart_values.is_empty()
+                                        && matches!(
+                                            options.get(self.choice),
+                                            Some((_, Colorable::Number(_)))
+                                        )
+                                    {
+                                        self.chart_values.push(self.choice);
+                                    }
+                                    self.chart = Some(shape);
+                                    self.heat = false;
+                                }
                             }
                         });
                         self.circles = Some(circles);
@@ -1375,12 +1453,33 @@ impl ColorByDialog {
                     ui.end_row();
                     ui.label("");
                     ui.horizontal(|ui| {
-                        if ui
-                            .add_enabled(
-                                options.get(self.choice).is_some(),
-                                egui::Button::new(RichText::new("Create").strong()),
-                            )
-                            .clicked()
+                        let chart_values: Vec<(String, ValueSource)> = self
+                            .chart_values
+                            .iter()
+                            .filter_map(|i| match options.get(*i) {
+                                Some((label, Colorable::Number(s))) => {
+                                    Some((label.clone(), s.clone()))
+                                }
+                                _ => None,
+                            })
+                            .collect();
+                        let ready = if self.chart.is_some() {
+                            !chart_values.is_empty()
+                        } else {
+                            options.get(self.choice).is_some()
+                        };
+                        let create = ui
+                            .add_enabled(ready, egui::Button::new(RichText::new("Create").strong()))
+                            .clicked();
+                        if create
+                            && let (Some(layer), Some(shape)) = (self.layer, self.chart)
+                        {
+                            outcome = Some(ColorByOutcome::Chart {
+                                layer,
+                                shape,
+                                values: chart_values,
+                            });
+                        } else if create
                             && let (Some(layer), Some((label, what))) =
                                 (self.layer, options.get(self.choice))
                         {

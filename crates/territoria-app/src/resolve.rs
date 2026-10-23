@@ -39,8 +39,21 @@ pub struct Resolved {
     pub symbols: Vec<(usize, f32)>,
     pub symbol_fill: Color32,
     pub symbol_stroke: Stroke,
+    /// Charts per feature, largest first.
+    pub charts: Vec<Chart>,
     /// Closed lines in display coordinates (catchment rings) with a label.
     pub rings: Vec<Ring>,
+}
+
+/// A chart on a feature's label point.
+pub struct Chart {
+    pub feature: usize,
+    pub shape: territoria_model::ChartShape,
+    /// Pie radius, or the height of the tallest bar, in points.
+    pub size: f32,
+    /// Pies: shares adding up to 1; bars: heights as fractions of `size`.
+    pub parts: Vec<(f32, Color32)>,
+    pub outline: Stroke,
 }
 
 pub struct Ring {
@@ -137,6 +150,7 @@ fn resolve_one(
                 symbols: Vec::new(),
                 symbol_fill: Color32::TRANSPARENT,
                 symbol_stroke: Stroke::NONE,
+                charts: Vec::new(),
                 rings,
             }])
         }
@@ -200,6 +214,7 @@ fn resolve_one(
                 symbols: Vec::new(),
                 symbol_fill: Color32::TRANSPARENT,
                 symbol_stroke: Stroke::NONE,
+                charts: Vec::new(),
                 rings: Vec::new(),
             }])
         }
@@ -305,6 +320,7 @@ fn resolve_one(
                 symbols: Vec::new(),
                 symbol_fill: Color32::TRANSPARENT,
                 symbol_stroke: Stroke::NONE,
+                charts: Vec::new(),
                 rings: Vec::new(),
             };
             if !points {
@@ -337,9 +353,45 @@ fn resolve_one(
                 symbols: Vec::new(),
                 symbol_fill: Color32::TRANSPARENT,
                 symbol_stroke: Stroke::NONE,
+                charts: Vec::new(),
                 rings: Vec::new(),
             };
             Some(vec![area, dot_layer])
+        }
+        MapLayerKind::Charts {
+            layer,
+            parts,
+            chart,
+            style,
+        } => {
+            let l = project.layer(*layer)?;
+            let mesh = meshes.get(layer)?.clone();
+            let n = l.len();
+            let labels = match &style.labels {
+                LabelMode::None => Labels::None,
+                LabelMode::Template(t) => cx
+                    .values
+                    .template_texts(project, *layer, t)
+                    .map_or(Labels::None, Labels::Features),
+                mode => {
+                    Labels::Features(Arc::new((0..n).map(|f| label_text(l, mode, f)).collect()))
+                }
+            };
+            Some(vec![Resolved {
+                mesh,
+                fills: vec![None; n],
+                arcs: Vec::new(),
+                line_width: 1.0,
+                point_radius: 0.0,
+                point_stroke: Stroke::NONE,
+                labels,
+                sites: Vec::new(),
+                symbols: Vec::new(),
+                symbol_fill: Color32::TRANSPARENT,
+                symbol_stroke: Stroke::NONE,
+                charts: charts(cx, *layer, parts, chart, opacity),
+                rings: Vec::new(),
+            }])
         }
         MapLayerKind::Symbols {
             layer,
@@ -385,10 +437,84 @@ fn resolve_one(
                 symbols,
                 symbol_fill: with_opacity(color(symbol.color), opacity),
                 symbol_stroke: Stroke::new(0.8, with_opacity(color(symbol.outline), opacity)),
+                charts: Vec::new(),
                 rings: Vec::new(),
             }])
         }
     }
+}
+
+/// Per feature its chart: values of each part, sized and scaled as the
+/// style says.
+fn charts(
+    cx: &mut Context,
+    layer: LayerId,
+    parts: &[territoria_model::ChartPart],
+    chart: &territoria_model::ChartStyle,
+    opacity: f32,
+) -> Vec<Chart> {
+    let n = cx.project.layer(layer).map_or(0, |l| l.len());
+    let values: Vec<Vec<Option<f64>>> = parts
+        .iter()
+        .map(|p| cx.values.values(cx.project, layer, &p.source))
+        .collect();
+    let colors: Vec<Color32> = parts
+        .iter()
+        .map(|p| with_opacity(color(p.color), opacity))
+        .collect();
+    let outline = Stroke::new(0.8, with_opacity(color(chart.outline), opacity));
+    let at = |f: usize| -> Vec<f64> {
+        values
+            .iter()
+            .map(|v| v.get(f).copied().flatten().unwrap_or(0.0).max(0.0))
+            .collect()
+    };
+    let mut out = Vec::new();
+    if chart.shape == territoria_model::ChartShape::Bars {
+        let max = (0..n).flat_map(&at).fold(0.0f64, f64::max);
+        if max <= 0.0 {
+            return out;
+        }
+        for f in 0..n {
+            let v = at(f);
+            if v.iter().all(|x| *x <= 0.0) {
+                continue;
+            }
+            out.push(Chart {
+                feature: f,
+                shape: chart.shape,
+                size: chart.max_size,
+                parts: v
+                    .iter()
+                    .zip(&colors)
+                    .map(|(x, c)| ((x / max) as f32, *c))
+                    .collect(),
+                outline,
+            });
+        }
+    } else {
+        let totals: Vec<f64> = (0..n).map(|f| at(f).iter().sum()).collect();
+        let max = totals.iter().copied().fold(0.0f64, f64::max);
+        for (f, total) in totals.iter().enumerate() {
+            let size = chart.radius(*total, max);
+            if size <= 0.0 {
+                continue;
+            }
+            out.push(Chart {
+                feature: f,
+                shape: chart.shape,
+                size,
+                parts: at(f)
+                    .iter()
+                    .zip(&colors)
+                    .map(|(x, c)| ((x / total) as f32, *c))
+                    .collect(),
+                outline,
+            });
+        }
+        out.sort_by(|a, b| b.size.total_cmp(&a.size));
+    }
+    out
 }
 
 pub fn label_text(

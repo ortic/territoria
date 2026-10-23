@@ -24,7 +24,10 @@ pub use history::History;
 pub use layer::{
     Layer, LayerGeometry, SourceInfo, duplicate_keys, merge_by_column, points_from_table,
 };
-pub use map::{BoundaryStyle, LabelMode, Map, MapLayer, MapLayerKind, SymbolStyle};
+pub use map::{
+    BoundaryStyle, ChartPart, ChartShape, ChartStyle, LabelMode, Map, MapLayer, MapLayerKind,
+    SymbolStyle,
+};
 pub use plan::{
     Comparison, Diagnostic, Measure, Move, Plan, PlanStats, Region, RegionStats, RowUnits,
     Territory, TerritoryChange, TerritoryStats,

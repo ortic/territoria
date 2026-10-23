@@ -14,6 +14,10 @@ use crate::dialogs::{Colorable, colorables, match_report};
 use crate::map_view::color;
 use crate::meshes::AnalysisCache;
 
+/// A change of a chart layer's values and style.
+type ChartEdit =
+    Box<dyn FnOnce(&mut Vec<territoria_model::ChartPart>, &mut territoria_model::ChartStyle)>;
+
 /// An undoable change of one map layer.
 fn edit_layer(
     map: MapId,
@@ -857,6 +861,168 @@ fn map_layer(
                     }
                 }));
             }
+        }
+        MapLayerKind::Charts {
+            layer,
+            parts,
+            chart,
+            style,
+        } => {
+            let edit_chart = |label: &str, f: ChartEdit| {
+                edit_layer(map, id, label, move |l| {
+                    if let MapLayerKind::Charts { parts, chart, .. } = &mut l.kind {
+                        f(parts, chart);
+                    }
+                })
+            };
+            ui.label(RichText::new("Values").strong());
+            for (i, p) in parts.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    if let Some(c) = rgba_button(ui, p.color) {
+                        actions.push(edit_chart(
+                            "Change chart colour",
+                            Box::new(move |parts, _| {
+                                if let Some(p) = parts.get_mut(i) {
+                                    p.color = c;
+                                }
+                            }),
+                        ));
+                    }
+                    let mut label = p.label.clone();
+                    if ui
+                        .add(egui::TextEdit::singleline(&mut label).desired_width(150.0))
+                        .on_hover_text(p.source.label(project))
+                        .changed()
+                    {
+                        actions.push(edit_chart(
+                            "Rename chart value",
+                            Box::new(move |parts, _| {
+                                if let Some(p) = parts.get_mut(i) {
+                                    p.label = label;
+                                }
+                            }),
+                        ));
+                    }
+                    if parts.len() > 1
+                        && ui
+                            .small_button("🗑")
+                            .on_hover_text("Remove this value")
+                            .clicked()
+                    {
+                        actions.push(edit_chart(
+                            "Remove chart value",
+                            Box::new(move |parts, _| {
+                                if i < parts.len() {
+                                    parts.remove(i);
+                                }
+                            }),
+                        ));
+                    }
+                });
+            }
+            let options: Vec<(String, ValueSource)> = colorables(project, *layer)
+                .into_iter()
+                .filter_map(|(label, c)| match c {
+                    Colorable::Number(s) if !parts.iter().any(|p| p.source == s) => {
+                        Some((label, s))
+                    }
+                    _ => None,
+                })
+                .collect();
+            if !options.is_empty() {
+                ui.menu_button("➕ Add a value", |ui| {
+                    egui::ScrollArea::vertical()
+                        .max_height(300.0)
+                        .show(ui, |ui| {
+                            for (label, source) in options {
+                                if ui.button(&label).clicked() {
+                                    let n = parts.len();
+                                    actions.push(edit_chart(
+                                        "Add chart value",
+                                        Box::new(move |parts, _| {
+                                            parts.push(territoria_model::ChartPart {
+                                                label,
+                                                source,
+                                                color: territoria_model::ChartPart::color_for(n),
+                                            });
+                                        }),
+                                    ));
+                                    ui.close();
+                                }
+                            }
+                        });
+                });
+            }
+            ui.add_space(4.0);
+            egui::Grid::new("chart")
+                .num_columns(2)
+                .spacing([10.0, 6.0])
+                .show(ui, |ui| {
+                    ui.label("Chart");
+                    ui.horizontal(|ui| {
+                        for shape in territoria_model::ChartShape::ALL {
+                            if ui
+                                .selectable_label(chart.shape == shape, shape.label())
+                                .clicked()
+                                && chart.shape != shape
+                            {
+                                actions.push(edit_chart("Change chart type", Box::new(move |_, c| {
+                                    c.shape = shape;
+                                })));
+                            }
+                        }
+                    });
+                    ui.end_row();
+                    let bars = chart.shape == territoria_model::ChartShape::Bars;
+                    ui.label(if bars { "Tallest" } else { "Largest" }).on_hover_text(if bars {
+                        "Height of the bar for the largest value"
+                    } else {
+                        "Radius of the largest pie"
+                    });
+                    let mut r = chart.max_size;
+                    if ui
+                        .add(egui::Slider::new(&mut r, 4.0..=80.0).suffix(" pt"))
+                        .changed()
+                    {
+                        actions.push(edit_chart("Change chart size", Box::new(move |_, c| {
+                            c.max_size = r;
+                        })));
+                    }
+                    ui.end_row();
+                    if !bars {
+                        ui.label("");
+                        let mut sized = chart.sized;
+                        if ui
+                            .checkbox(&mut sized, "Sized by the total")
+                            .on_hover_text("Pie areas grow with the sum of the values; else all pies are alike")
+                            .changed()
+                        {
+                            actions.push(edit_chart("Change chart sizes", Box::new(move |_, c| {
+                                c.sized = sized;
+                            })));
+                        }
+                        ui.end_row();
+                    }
+                    ui.label("Outline");
+                    if let Some(o) = rgba_button(ui, chart.outline) {
+                        actions.push(edit_chart("Change chart outline", Box::new(move |_, c| {
+                            c.outline = o;
+                        })));
+                    }
+                    ui.end_row();
+                });
+            ui.separator();
+            style_ui(
+                ui,
+                project,
+                values,
+                style,
+                project.layer(*layer),
+                false,
+                map,
+                id,
+                actions,
+            );
         }
         MapLayerKind::Rings {
             centres,

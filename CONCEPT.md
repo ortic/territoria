@@ -229,7 +229,7 @@ territoria/
 - [x] Normalization: per area size, per another column (rates), share of total ("Relative to" on area colourings: per km², per another value, % of the total)
 - [ ] Symbols (points): colour, size (by area or radius, sqrt/linear/log), shape — each from a column, or one column for all (circles sized by a column (area-true), one colour; no shapes, colour by column or linear/log scaling yet)
 - [x] Symbols per area (aggregated) or per row (circles at area centres from attributes, linked tables or points inside; or on each point; relative to area/another value/total; size legend; in exports)
-- [ ] Charts per area or row: pie (and donut), bars, stacked bars, paired bars (population pyramid), with size scaling
+- [x] Charts per area or row: pie (and donut), bars, stacked bars, paired bars (population pyramid), with size scaling (pie, donut and bars from any numbers of the layer or linked tables; pies sized by their total; values in the hover card, legend and exports; no stacked or paired bars yet)
 - [x] Heatmap / density: kernel (Gaussian, linear, uniform), radius in km or pixels, weight column (quartic kernel, spread in km, optional weight column, sequential ramps; computed for the view; embedded in exports)
 - [x] Hex or square grid aggregation of points (equal-area hexagons over points or areas, points counted and summed per cell; usable as territory units; no square grid)
 - [ ] Bivariate choropleth (two variables, 2×2/3×3 colour matrix) with quadrant labels

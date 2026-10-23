@@ -1680,6 +1680,19 @@ impl TerritoriaApp {
             counts.push((ml.clone(), r.len()));
             resolved.extend(r);
             match &ml.kind {
+                MapLayerKind::Charts { parts, .. } => {
+                    legends.push((
+                        ml.name.clone(),
+                        parts
+                            .iter()
+                            .map(|p| territoria_analysis::LegendEntry {
+                                color: p.color,
+                                label: p.label.clone(),
+                                count: 0,
+                            })
+                            .collect(),
+                    ));
+                }
                 MapLayerKind::Heatmap { ramp, .. } => {
                     let stops = ramp.colors(3);
                     legends.push((
@@ -2169,7 +2182,9 @@ impl TerritoriaApp {
         let overlay = |kind: &MapLayerKind| {
             if matches!(
                 kind,
-                MapLayerKind::Symbols { .. } | MapLayerKind::Rings { .. }
+                MapLayerKind::Symbols { .. }
+                    | MapLayerKind::Rings { .. }
+                    | MapLayerKind::Charts { .. }
             ) {
                 return true;
             }
@@ -2387,14 +2402,69 @@ impl TerritoriaApp {
         Some(id)
     }
 
+    /// A chart layer on `layer` of several values, each a slice or bar.
+    pub(crate) fn add_charts(
+        &mut self,
+        layer: LayerId,
+        shape: territoria_model::ChartShape,
+        values: Vec<(String, territoria_model::ValueSource)>,
+    ) {
+        let before = self.project.clone();
+        let map = self.ensure_map();
+        let n = self.project.layer(layer).map_or(0, |l| l.len());
+        let parts: Vec<territoria_model::ChartPart> = values
+            .into_iter()
+            .enumerate()
+            .map(|(i, (label, source))| territoria_model::ChartPart {
+                label,
+                source,
+                color: territoria_model::ChartPart::color_for(i),
+            })
+            .collect();
+        let name = match parts.as_slice() {
+            [one] => one.label.clone(),
+            [a, b] => format!("{} and {}", a.label, b.label),
+            [a, rest @ ..] => format!("{} and {} more", a.label, rest.len()),
+            [] => return,
+        };
+        let id = self.project.new_map_layer_id();
+        let added = self.push_map_layer(
+            map,
+            MapLayer {
+                id,
+                name,
+                visible: true,
+                opacity: 1.0,
+                kind: MapLayerKind::Charts {
+                    layer,
+                    parts,
+                    chart: territoria_model::ChartStyle::for_count(shape, n),
+                    style: BoundaryStyle::default(),
+                },
+            },
+        );
+        self.history.push("Add charts", before);
+        if let Some(id) = added {
+            self.selection = Selection::MapLayer(map, id);
+            self.right_tab = RightTab::Properties;
+        }
+    }
+
     fn apply_color_by(&mut self, outcome: ColorByOutcome) {
-        let ColorByOutcome::Create {
-            layer,
-            name,
-            what,
-            circles,
-            heat,
-        } = outcome;
+        let (layer, name, what, circles, heat) = match outcome {
+            ColorByOutcome::Create {
+                layer,
+                name,
+                what,
+                circles,
+                heat,
+            } => (layer, name, what, circles, heat),
+            ColorByOutcome::Chart {
+                layer,
+                shape,
+                values,
+            } => return self.add_charts(layer, shape, values),
+        };
         let before = self.project.clone();
         let map = self.ensure_map();
         let id = match what {

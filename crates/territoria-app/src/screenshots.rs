@@ -2613,3 +2613,90 @@ fn heat_map() {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Pie and bar charts of three values per region, on screen and in exports.
+#[test]
+fn charts_per_area() {
+    use crate::app::Export;
+    use crate::export_map::Format;
+    use territoria_model::{ChartShape, MapLayerKind, ValueSource};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    let key = app
+        .project
+        .layer(layer)
+        .unwrap()
+        .key_column
+        .clone()
+        .unwrap();
+    app.merge_areas_for_test(layer, &key, Some(2), "Regions");
+    let regions = app.project.layers.last().unwrap().id;
+    let r = app.project.layer_mut(regions).unwrap();
+    let n = r.len();
+    let wave = |f: usize, k: f64| ((f as f64 * k).sin() * 0.5 + 0.6) * 100.0;
+    for (name, k) in [("Software", 1.3), ("Hardware", 2.9), ("Services", 0.7)] {
+        std::sync::Arc::make_mut(&mut r.attributes)
+            .columns
+            .push(Column::number(
+                name,
+                (0..n)
+                    .map(|f| Some((wave(f, k) * (1.0 + f as f64 % 3.0)).round()))
+                    .collect(),
+            ));
+    }
+    let values: Vec<(String, ValueSource)> = ["Software", "Hardware", "Services"]
+        .iter()
+        .map(|c| {
+            (
+                c.to_string(),
+                ValueSource::Attribute {
+                    column: c.to_string(),
+                },
+            )
+        })
+        .collect();
+    app.add_charts(regions, ChartShape::Pie, values);
+    settle(&mut h);
+    save(&mut h, "charts-pie");
+    let app = h.state_mut();
+    let map = app.project.maps[0].id;
+    let ml = app.project.maps[0].layers.last().unwrap();
+    assert!(matches!(ml.kind, MapLayerKind::Charts { .. }));
+    assert_eq!(ml.name, "Software and 2 more");
+    let id = ml.id;
+    if let Some(MapLayerKind::Charts { chart, .. }) = app
+        .project
+        .map_mut(map)
+        .and_then(|m| m.layer_mut(id))
+        .map(|l| &mut l.kind)
+    {
+        chart.shape = ChartShape::Bars;
+    }
+    settle(&mut h);
+    save(&mut h, "charts-bars");
+
+    let dir = std::env::temp_dir().join(format!("territoria-charts-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("charts.svg");
+    let app = h.state_mut();
+    app.set_map_export_for_test(crate::dialogs::MapExportSettings {
+        format: Format::Svg,
+        scale: 1.0,
+        title: String::new(),
+        legend: true,
+        scale_bar: false,
+    });
+    app.export(Export::Map(Format::Svg), path.clone());
+    settle(&mut h);
+    let svg = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        svg.matches("<rect").count() > 3 * (n / 2),
+        "bars in the export"
+    );
+    assert!(svg.contains("Hardware"), "legend names the values");
+    let _ = std::fs::remove_dir_all(dir);
+}
