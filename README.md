@@ -84,6 +84,7 @@ Exports run without a window, for scripts and scheduled jobs:
 territoria --export-map map.pdf project.territoria          # .png .svg .pdf .html
 territoria --export-report report.pdf --plan "Sales" project.territoria
 territoria --export-plan territories.xlsx project.territoria
+territoria --export-atlas atlas.pdf --per Region --separate --tables project.territoria
 ```
 
 ## Development

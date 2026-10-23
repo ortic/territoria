@@ -918,6 +918,28 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
         ("Like the system", "Wie das System"),
         ("Light", "Hell"),
         ("Dark", "Dunkel"),
+        ("and per", "und pro"),
+        (
+            "Within each, a page per value of a second column, e.g. per region and customer segment",
+            "Darin eine Seite pro Wert einer zweiten Spalte, z. B. pro Region und Kundensegment",
+        ),
+        ("Files", "Dateien"),
+        ("One PDF", "Ein PDF"),
+        ("A PDF per page", "Ein PDF pro Seite"),
+        (
+            "Named after the file and the page, e.g. “Atlas – Region 01.pdf”, to hand out one by one",
+            "Benannt nach Datei und Seite, z. B. «Atlas – Region 01.pdf», zum einzeln Weitergeben",
+        ),
+        (
+            "and an Excel workbook with each page's areas",
+            "und eine Excel-Mappe mit den Flächen jeder Seite",
+        ),
+        (
+            "A sheet per page with its areas and their columns, beside the PDF",
+            "Ein Blatt pro Seite mit seinen Flächen und deren Spalten, neben dem PDF",
+        ),
+        ("{n} pages", "{n} Seiten"),
+        ("{text}: at most 300", "{text}: höchstens 300"),
         ("Version {version}", "Version {version}"),
         (
             "{column}: drop on the map or its layer list",

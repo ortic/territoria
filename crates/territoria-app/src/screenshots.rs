@@ -3612,12 +3612,15 @@ fn map_atlas() {
     let d = crate::dialogs::AtlasDialog::new(&app.project, app.project.map(map).unwrap());
     assert_eq!(d.layer, Some(layer));
     assert_eq!(d.column.as_deref(), Some("Region"));
-    let groups = app.atlas_groups(layer, Some("Region"));
+    let groups = app.atlas_groups(layer, &["Region"]);
     assert!(groups.len() >= 2);
     let dir = std::env::temp_dir().join(format!("territoria-atlas-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("atlas.pdf");
-    app.export(Export::Atlas(layer, Some("Region".into())), path.clone());
+    app.export(
+        Export::Atlas(crate::app::AtlasSpec::new(layer, Some("Region"))),
+        path.clone(),
+    );
     settle(&mut h);
     let pdf = std::fs::read(&path).unwrap();
     assert!(pdf.starts_with(b"%PDF"));
@@ -3634,6 +3637,11 @@ fn map_atlas() {
         std::fs::write(out.join("atlas-page.png"), png).unwrap();
     }
     let _ = std::fs::remove_dir_all(dir);
+    // The dialog, with a second column.
+    h.state_mut()
+        .run_command_for_test(crate::commands::Command::ExportAtlas);
+    h.run_steps(3);
+    save(&mut h, "atlas-dialog");
 }
 
 /// Classes kept by name and used again on another map layer.

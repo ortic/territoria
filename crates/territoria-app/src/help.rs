@@ -125,7 +125,7 @@ Everything can be undone (Ctrl+Z). The command palette (Ctrl+Shift+P) finds ever
         body: "- Map → Export Map: PNG, SVG or PDF with title, legend and scale bar, as on screen or on an A4/A3 page with the legend beside the map, a north arrow, an overview map and a footer ({project}, {map}, {date}); Copy Map puts it on the clipboard.
 - Export as Web Page: one HTML file that zooms, pans and shows hover cards, to send to anyone.
 - Territory report: a PDF with an overview and a page per territory; Excel with a sheet per territory.
-- Map → Export Atlas: the map as a PDF with a page per region, rep or area, each zoomed to it with the rest veiled.
+- Map → Export Atlas: the map as a PDF with a page per region, rep or area, each zoomed to it with the rest veiled; also per two columns together (region and segment), as a PDF per page to hand out, and with an Excel workbook of each page's areas.
 - Plan exports: the assignment as CSV or Excel, changes between scenarios, territory figures.
 - Settings → Company puts your company's name and logo on exported maps, web pages and reports.
 - Command line: territoria project.territoria --export-map map.png (see --help).",
@@ -248,7 +248,7 @@ Alles lässt sich rückgängig machen (Ctrl+Z). Die Befehlspalette (Ctrl+Shift+P
         "- Karte → Karte exportieren: PNG, SVG oder PDF mit Titel, Legende und Massstab, wie am Bildschirm oder auf einer A4/A3-Seite mit der Legende neben der Karte, Nordpfeil, Übersichtskarte und Fusszeile ({project}, {map}, {date}); Karte als Bild kopieren legt sie in die Zwischenablage.
 - Als Webseite exportieren: eine HTML-Datei, die zoomt, verschiebt und Infokarten zeigt, zum Versenden an alle.
 - Gebietsbericht: ein PDF mit Übersicht und einer Seite pro Gebiet; Excel mit einem Blatt pro Gebiet.
-- Karte → Atlas exportieren: die Karte als PDF mit einer Seite pro Region, Vertreter oder Gebiet, jede darauf gezoomt und der Rest abgeblendet.
+- Karte → Atlas exportieren: die Karte als PDF mit einer Seite pro Region, Vertreter oder Gebiet, jede darauf gezoomt und der Rest abgeblendet; auch pro zwei Spalten zusammen (Region und Segment), als ein PDF pro Seite zum Weitergeben und mit einer Excel-Mappe der Flächen jeder Seite.
 - Exporte der Planung: die Zuteilung als CSV oder Excel, Änderungen zwischen Szenarien, Kennzahlen der Gebiete.
 - Einstellungen → Firma setzt Firmenname und Logo auf exportierte Karten, Webseiten und Berichte.
 - Befehlszeile: territoria projekt.territoria --export-map karte.png (siehe --help).",

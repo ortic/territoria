@@ -142,6 +142,32 @@ enum FileAction {
     Logo,
 }
 
+/// What a map atlas makes pages of, and how it is written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AtlasSpec {
+    pub layer: LayerId,
+    /// A page per combination of these columns' values (region, then
+    /// segment…); none: a page per area.
+    pub columns: Vec<String>,
+    /// A PDF per page beside the chosen file instead of one PDF.
+    pub separate: bool,
+    /// Also a workbook with each page's areas on a sheet of its own.
+    pub tables: bool,
+}
+
+impl AtlasSpec {
+    /// One PDF with a page per value of `column` (or per area).
+    #[cfg(test)]
+    pub fn new(layer: LayerId, column: Option<&str>) -> AtlasSpec {
+        AtlasSpec {
+            layer,
+            columns: column.into_iter().map(str::to_owned).collect(),
+            separate: false,
+            tables: false,
+        }
+    }
+}
+
 /// One page of a map atlas: its view and the areas it is about.
 pub struct AtlasPage {
     pub view: territoria_render::View,
@@ -179,9 +205,9 @@ pub enum Export {
     Data(DataRef, bool, Option<String>),
     /// A PDF with an overview and a page per territory.
     Report(PlanId),
-    /// The current map as a PDF with a page per value of a layer's column
-    /// (or per area), each zoomed to its areas.
-    Atlas(LayerId, Option<String>),
+    /// The current map as a PDF with a page per value of a layer's
+    /// columns (or per area), each zoomed to its areas.
+    Atlas(AtlasSpec),
 }
 
 struct Confirm {
@@ -581,10 +607,12 @@ impl TerritoriaApp {
                         "pdf",
                         self.project.plan(p).map(|p| format!("Report {}", p.name)),
                     ),
-                    Export::Atlas(l, _) => (
+                    Export::Atlas(a) => (
                         "PDF document",
                         "pdf",
-                        self.project.layer(l).map(|l| format!("Atlas {}", l.name)),
+                        self.project
+                            .layer(a.layer)
+                            .map(|l| format!("Atlas {}", l.name)),
                     ),
                     Export::Data(d, excel, segment) => (
                         if excel { "Excel workbook" } else { "CSV" },
@@ -707,21 +735,31 @@ impl TerritoriaApp {
             });
             return;
         }
-        if let Export::Atlas(layer, column) = &what {
-            let pages = match self.atlas_pages(*layer, column.as_deref()) {
+        if let Export::Atlas(spec) = &what {
+            let columns: Vec<&str> = spec.columns.iter().map(String::as_str).collect();
+            let pages = match self.atlas_pages(spec.layer, &columns) {
                 Ok(p) => p,
                 Err(e) => {
                     self.error(e);
                     return;
                 }
             };
+            // Each page's areas with their attributes, for the workbook.
+            let sheets: Vec<(String, territoria_data::Table)> = match self.project.layer(spec.layer)
+            {
+                Some(l) if spec.tables => pages
+                    .iter()
+                    .map(|p| (p.title.clone(), l.attributes.take_rows(&p.members)))
+                    .collect(),
+                _ => Vec::new(),
+            };
             let font = egui::FontDefinitions::default().font_data["Ubuntu-Light"]
                 .font
                 .to_vec();
+            let separate = spec.separate;
             let label = format!("Writing {}", file_name(&path));
             self.jobs.spawn(label, move |_| {
-                let result = crate::export_map::pdf_pages(&pages, &font)
-                    .and_then(|bytes| std::fs::write(&path, bytes).map_err(|e| e.to_string()));
+                let result = write_atlas(&path, &pages, &sheets, separate, &font);
                 JobResult::Exported { path, result }
             });
             return;
@@ -904,7 +942,7 @@ impl TerritoriaApp {
                         .map_err(err)
                     }
                     // Written on the UI thread's request above.
-                    Export::Map(_) | Export::Report(_) | Export::Html | Export::Atlas(..) => Ok(()),
+                    Export::Map(_) | Export::Report(_) | Export::Html | Export::Atlas(_) => Ok(()),
                 }
             })();
             JobResult::Exported { path, result }
@@ -1697,9 +1735,10 @@ impl TerritoriaApp {
 
     #[cfg(test)]
     pub fn atlas_page_for_test(&mut self, layer: LayerId, column: &str, page: usize) -> String {
-        self.atlas_pages(layer, Some(column))
+        self.atlas_pages(layer, &[column])
             .unwrap()
             .swap_remove(page)
+            .svg
     }
 
     #[cfg(test)]
@@ -4001,35 +4040,60 @@ impl TerritoriaApp {
         })
     }
 
-    /// The groups of an atlas: per value of `column` (each feature without
-    /// one), its name and features, by name.
-    pub(crate) fn atlas_groups(
-        &self,
-        layer: LayerId,
-        column: Option<&str>,
-    ) -> Vec<(String, Vec<usize>)> {
+    /// The groups of an atlas: per combination of the `columns`' values
+    /// (features missing one are left out), or per feature without
+    /// columns; their names and features, by name.
+    pub(crate) fn atlas_groups(&self, layer: LayerId, columns: &[&str]) -> Vec<AtlasGroup> {
         let Some(l) = self.project.layer(layer) else {
             return Vec::new();
         };
-        let mut groups: std::collections::BTreeMap<String, Vec<usize>> = Default::default();
-        let c = column.and_then(|c| l.attributes.column(c));
-        for f in 0..l.len() {
-            let name = match c {
-                Some(c) => match c.get(f).to_text() {
-                    Some(t) if !t.trim().is_empty() => t,
-                    _ => continue,
-                },
-                None => l.display_name(f),
-            };
-            groups.entry(name).or_default().push(f);
+        let mut groups: std::collections::BTreeMap<Vec<String>, Vec<usize>> = Default::default();
+        let cols: Vec<_> = columns
+            .iter()
+            .filter_map(|c| l.attributes.column(c))
+            .collect();
+        'features: for f in 0..l.len() {
+            let mut key = Vec::new();
+            for c in &cols {
+                match c.get(f).to_text() {
+                    Some(t) if !t.trim().is_empty() => key.push(t),
+                    _ => continue 'features,
+                }
+            }
+            if cols.is_empty() {
+                key.push(l.display_name(f));
+            }
+            groups.entry(key).or_default().push(f);
         }
-        groups.into_iter().collect()
+        groups
+            .into_iter()
+            .map(|(values, members)| {
+                // Bare numbers say little alone: "Region 02".
+                let title = values
+                    .iter()
+                    .zip(
+                        cols.iter()
+                            .map(|c| c.name.as_str())
+                            .chain(std::iter::repeat("")),
+                    )
+                    .map(|(v, c)| {
+                        if !c.is_empty() && v.chars().all(|ch| ch.is_ascii_digit()) {
+                            format!("{c} {v}")
+                        } else {
+                            v.clone()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" · ");
+                AtlasGroup { title, members }
+            })
+            .collect()
     }
 
     /// The current map's pages for an atlas, as SVG (A4 landscape).
-    fn atlas_pages(&mut self, layer: LayerId, column: Option<&str>) -> Result<Vec<String>, String> {
+    fn atlas_pages(&mut self, layer: LayerId, columns: &[&str]) -> Result<Vec<AtlasSheet>, String> {
         const MAX_PAGES: usize = 300;
-        let groups = self.atlas_groups(layer, column);
+        let groups = self.atlas_groups(layer, columns);
         if groups.is_empty() {
             return Err("Nothing to make pages of.".into());
         }
@@ -4050,7 +4114,7 @@ impl TerritoriaApp {
             .ok_or("The map is still being prepared; try again in a moment.")?;
         let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(842.0, 595.0));
         let mut pages = Vec::new();
-        for (name, members) in groups {
+        for AtlasGroup { title, members } in groups {
             let mut extent = territoria_render::Bounds::EMPTY;
             for &f in &members {
                 if let Some(b) = mesh.bounds.get(f).filter(|b| !b.is_empty()) {
@@ -4071,17 +4135,12 @@ impl TerritoriaApp {
             view.scale *= 1.15;
             let page = AtlasPage {
                 view,
-                veil: Some((layer, members.into_iter().collect())),
-            };
-            // Bare numbers say little alone: "Region 02".
-            let title = match column {
-                Some(c) if name.chars().all(|ch| ch.is_ascii_digit()) => format!("{c} {name}"),
-                _ => name,
+                veil: Some((layer, members.iter().copied().collect())),
             };
             let settings = crate::dialogs::MapExportSettings {
                 format: crate::export_map::Format::Pdf,
                 scale: 1.0,
-                title,
+                title: title.clone(),
                 legend: true,
                 scale_bar: true,
                 page: Default::default(),
@@ -4089,7 +4148,12 @@ impl TerritoriaApp {
                 overview: false,
                 figures: false,
             };
-            pages.push(self.map_render(&settings, false, Some(&page))?);
+            let svg = self.map_render(&settings, false, Some(&page))?;
+            pages.push(AtlasSheet {
+                title,
+                members,
+                svg,
+            });
         }
         Ok(pages)
     }
@@ -5662,8 +5726,8 @@ impl TerritoriaApp {
         if let Some(mut d) = self.atlas.take() {
             let mut open = true;
             if d.show(ctx, &self.project, &mut open) {
-                if let Some(layer) = d.layer {
-                    self.ask_file(FileAction::Export(Export::Atlas(layer, d.column.clone())));
+                if let Some(spec) = d.spec() {
+                    self.ask_file(FileAction::Export(Export::Atlas(spec)));
                 }
             } else if open {
                 self.atlas = Some(d);
@@ -6465,6 +6529,70 @@ pub fn with_territories(
         }
     }
     Some((data_name(project, data)?, out))
+}
+
+/// A group of an atlas: its title and features.
+pub(crate) struct AtlasGroup {
+    pub title: String,
+    pub members: Vec<usize>,
+}
+
+/// A page of an atlas, drawn.
+struct AtlasSheet {
+    title: String,
+    members: Vec<usize>,
+    svg: String,
+}
+
+/// An atlas as one PDF at `path`, or a PDF per page beside it ("Atlas –
+/// Region 01.pdf"); with sheets, also a workbook beside it.
+fn write_atlas(
+    path: &Path,
+    pages: &[AtlasSheet],
+    sheets: &[(String, territoria_data::Table)],
+    separate: bool,
+    font: &[u8],
+) -> Result<(), String> {
+    let stem = path
+        .file_stem()
+        .map_or_else(|| "Atlas".to_owned(), |s| s.to_string_lossy().into_owned());
+    let beside = |name: &str, ext: &str| path.with_file_name(format!("{name}.{ext}"));
+    if separate {
+        let mut used = std::collections::HashSet::new();
+        for p in pages {
+            // Characters no file system takes.
+            let clean: String = p
+                .title
+                .chars()
+                .map(|c| {
+                    if "/\\:*?\"<>|".contains(c) || c.is_control() {
+                        '_'
+                    } else {
+                        c
+                    }
+                })
+                .collect();
+            let mut name = format!("{stem} – {}", clean.trim());
+            let mut i = 2;
+            while !used.insert(name.to_lowercase()) {
+                name = format!("{stem} – {} ({i})", clean.trim());
+                i += 1;
+            }
+            let bytes = crate::export_map::pdf_pages(std::slice::from_ref(&p.svg), font)?;
+            std::fs::write(beside(&name, "pdf"), bytes).map_err(|e| e.to_string())?;
+        }
+    } else {
+        let svgs: Vec<String> = pages.iter().map(|p| p.svg.clone()).collect();
+        let bytes = crate::export_map::pdf_pages(&svgs, font)?;
+        std::fs::write(path, bytes).map_err(|e| e.to_string())?;
+    }
+    if !sheets.is_empty() {
+        let sheets: Vec<(&str, &territoria_data::Table)> =
+            sheets.iter().map(|(n, t)| (n.as_str(), t)).collect();
+        territoria_io::export::write_xlsx(&beside(&stem, "xlsx"), &sheets)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 /// Linked tables and points of a plan with their territories, for the

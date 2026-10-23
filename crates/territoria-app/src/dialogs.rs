@@ -4498,25 +4498,41 @@ impl FlowDialog {
 // ---------------------------------------------------------------------------
 // Atlas
 
-/// A PDF of the map with a page per value of a column (region, rep…).
+/// A PDF of the map with a page per value of a column (region, rep…), or
+/// per combination of two columns' values.
 pub struct AtlasDialog {
     pub layer: Option<LayerId>,
     /// `None`: a page per area.
     pub column: Option<String>,
+    /// Within each value of `column`, a page per value of this one.
+    pub then: Option<String>,
+    /// A PDF per page instead of one.
+    pub separate: bool,
+    /// A workbook with a sheet of areas per page.
+    pub tables: bool,
 }
 
-/// How many pages: distinct values of `column` (or areas).
-fn atlas_count(project: &Project, layer: LayerId, column: Option<&str>) -> usize {
+/// How many pages: distinct combinations of the `columns`' values (or
+/// areas without columns).
+fn atlas_count(project: &Project, layer: LayerId, columns: &[&str]) -> usize {
     let Some(l) = project.layer(layer) else {
         return 0;
     };
-    match column.and_then(|c| l.attributes.column(c)) {
-        Some(c) => (0..l.len())
-            .filter_map(|f| c.get(f).to_text().filter(|t| !t.trim().is_empty()))
-            .collect::<std::collections::HashSet<_>>()
-            .len(),
-        None => l.len(),
+    let cols: Vec<_> = columns
+        .iter()
+        .filter_map(|c| l.attributes.column(c))
+        .collect();
+    if cols.is_empty() {
+        return l.len();
     }
+    (0..l.len())
+        .filter_map(|f| {
+            cols.iter()
+                .map(|c| c.get(f).to_text().filter(|t| !t.trim().is_empty()))
+                .collect::<Option<Vec<_>>>()
+        })
+        .collect::<std::collections::HashSet<_>>()
+        .len()
 }
 
 impl AtlasDialog {
@@ -4543,12 +4559,37 @@ impl AtlasDialog {
                 .columns
                 .iter()
                 .filter(|c| !c.kind.is_numeric())
-                .map(|c| (c.name.clone(), atlas_count(project, l, Some(&c.name))))
+                .map(|c| (c.name.clone(), atlas_count(project, l, &[&c.name])))
                 .filter(|(_, n)| (2..=60).contains(n))
                 .min_by_key(|(_, n)| n.abs_diff(20))
                 .map(|(c, _)| c)
         });
-        AtlasDialog { layer, column }
+        AtlasDialog {
+            layer,
+            column,
+            then: None,
+            separate: false,
+            tables: false,
+        }
+    }
+
+    fn columns(&self) -> Vec<&str> {
+        match &self.column {
+            Some(c) => std::iter::once(c.as_str())
+                .chain(self.then.as_deref())
+                .collect(),
+            None => Vec::new(),
+        }
+    }
+
+    /// What to export, once a layer is chosen.
+    pub fn spec(&self) -> Option<crate::app::AtlasSpec> {
+        Some(crate::app::AtlasSpec {
+            layer: self.layer?,
+            columns: self.columns().into_iter().map(str::to_owned).collect(),
+            separate: self.separate,
+            tables: self.tables,
+        })
     }
 
     pub fn show(&mut self, ctx: &egui::Context, project: &Project, open: &mut bool) -> bool {
@@ -4575,34 +4616,59 @@ impl AtlasDialog {
                         Some(GeometryKind::Area),
                     ) {
                         self.column = None;
+                        self.then = None;
                     }
                     ui.end_row();
-                    ui.label(tr("A page per"));
                     if let Some(l) = self.layer.and_then(|l| project.layer(l)) {
+                        let choices: Vec<&str> = l
+                            .attributes
+                            .columns
+                            .iter()
+                            .filter(|c| !c.kind.is_numeric() || c.kind == ColumnKind::Integer)
+                            .map(|c| c.name.as_str())
+                            .collect();
+                        ui.label(tr("A page per"));
                         ComboBox::from_id_salt("atlas-column")
                             .width(220.0)
-                            .selected_text(self.column.clone().unwrap_or_else(|| "area".into()))
+                            .selected_text(self.column.clone().unwrap_or_else(|| tr("area").into()))
                             .show_ui(ui, |ui| {
                                 ui.selectable_value(&mut self.column, None, tr("area"));
-                                for c in l.attributes.columns.iter().filter(|c| {
-                                    !c.kind.is_numeric() || c.kind == ColumnKind::Integer
-                                }) {
-                                    ui.selectable_value(
-                                        &mut self.column,
-                                        Some(c.name.clone()),
-                                        &c.name,
-                                    );
+                                for c in &choices {
+                                    ui.selectable_value(&mut self.column, Some((*c).to_owned()), *c);
                                 }
                             });
+                        ui.end_row();
+                        if self.column.is_some() {
+                            ui.label(tr("and per"))
+                                .on_hover_text(tr("Within each, a page per value of a second column, e.g. per region and customer segment"));
+                            ComboBox::from_id_salt("atlas-then")
+                                .width(220.0)
+                                .selected_text(self.then.clone().unwrap_or_else(|| "—".into()))
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(&mut self.then, None, "—");
+                                    for c in choices.iter().filter(|c| self.column.as_deref() != Some(**c)) {
+                                        ui.selectable_value(&mut self.then, Some((*c).to_owned()), *c);
+                                    }
+                                });
+                            ui.end_row();
+                        }
                     }
+                    ui.label(tr("Files"));
+                    ui.vertical(|ui| {
+                        ui.radio_value(&mut self.separate, false, tr("One PDF"));
+                        ui.radio_value(&mut self.separate, true, tr("A PDF per page"))
+                            .on_hover_text(tr("Named after the file and the page, e.g. “Atlas – Region 01.pdf”, to hand out one by one"));
+                        ui.checkbox(&mut self.tables, tr("and an Excel workbook with each page's areas"))
+                            .on_hover_text(tr("A sheet per page with its areas and their columns, beside the PDF"));
+                    });
                     ui.end_row();
                     let pages = self
                         .layer
-                        .map_or(0, |l| atlas_count(project, l, self.column.as_deref()));
+                        .map_or(0, |l| atlas_count(project, l, &self.columns()));
                     ui.label("");
-                    let text = format!("{} pages", format_value(pages as f64));
+                    let text = trf("{n} pages", &[("n", &format_value(pages as f64))]);
                     if pages > 300 {
-                        ui.colored_label(theme::WARN, format!("{text}: at most 300"));
+                        ui.colored_label(theme::WARN, trf("{text}: at most 300", &[("text", &text)]));
                     } else {
                         ui.label(RichText::new(text).weak());
                     }

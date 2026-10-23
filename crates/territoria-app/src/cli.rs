@@ -5,6 +5,7 @@
 //! territoria --export-map OUT [--map NAME] PROJECT     (.png .svg .pdf .html)
 //! territoria --export-report OUT [--plan NAME] PROJECT (.pdf)
 //! territoria --export-plan OUT [--plan NAME] PROJECT   (.xlsx)
+//! territoria --export-atlas OUT [--per COLUMN[,COLUMN]] [--separate] [--tables] PROJECT
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -20,15 +21,22 @@ Usage:
   territoria --export-map OUT [--map NAME] PROJECT     the map as .png, .svg, .pdf or .html
   territoria --export-report OUT [--plan NAME] PROJECT a territory report (.pdf)
   territoria --export-plan OUT [--plan NAME] PROJECT   territories and assignment (.xlsx)
+  territoria --export-atlas OUT [--map NAME] [--per COLUMN[,COLUMN]] [--separate] [--tables] PROJECT
+                                                       the map as a PDF with a page per value
+                                                       of the columns (or per area); --separate
+                                                       writes a PDF per page, --tables a workbook
+                                                       with each page's areas
   territoria --help
 
-Without --map or --plan, the first one in the project is used.";
+Without --map or --plan, the first one in the project is used. Without
+--per, the atlas picks a column of a few dozen values like the dialog.";
 
 #[derive(Debug, Clone, PartialEq)]
 enum Task {
     Map(PathBuf),
     Report(PathBuf),
     Plan(PathBuf),
+    Atlas(PathBuf),
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -36,6 +44,10 @@ struct Args {
     tasks: Vec<Task>,
     map: Option<String>,
     plan: Option<String>,
+    /// Atlas pages per these columns' values; empty: as the dialog picks.
+    per: Vec<String>,
+    separate: bool,
+    tables: bool,
     project: Option<PathBuf>,
     help: bool,
 }
@@ -50,6 +62,16 @@ fn parse(args: &[String]) -> Result<Args, String> {
             "--export-map" => out.tasks.push(Task::Map(value(a)?.into())),
             "--export-report" => out.tasks.push(Task::Report(value(a)?.into())),
             "--export-plan" => out.tasks.push(Task::Plan(value(a)?.into())),
+            "--export-atlas" => out.tasks.push(Task::Atlas(value(a)?.into())),
+            "--per" => {
+                out.per = value(a)?
+                    .split(',')
+                    .map(|c| c.trim().to_owned())
+                    .filter(|c| !c.is_empty())
+                    .collect();
+            }
+            "--separate" => out.separate = true,
+            "--tables" => out.tables = true,
             "--map" => out.map = Some(value(a)?),
             "--plan" => out.plan = Some(value(a)?),
             s if s.starts_with("--") => return Err(format!("unknown option {s}")),
@@ -177,6 +199,27 @@ fn export(path: &Path, a: &Args) -> Result<Vec<String>, String> {
                 Export::PlanExcel(plan.ok_or("the project has no plan")?),
                 out.clone(),
             ),
+            Task::Atlas(out) => {
+                let map = app.project.map(map).ok_or("the map was removed")?;
+                let d = crate::dialogs::AtlasDialog::new(&app.project, map);
+                let layer = d.layer.ok_or("the map has no areas for an atlas")?;
+                let columns = if a.per.is_empty() {
+                    d.column.into_iter().collect()
+                } else {
+                    let l = app.project.layer(layer).ok_or("the layer was removed")?;
+                    if let Some(c) = a.per.iter().find(|c| l.attributes.column(c).is_none()) {
+                        return Err(format!("{} has no column “{c}”", l.name));
+                    }
+                    a.per.clone()
+                };
+                let spec = crate::app::AtlasSpec {
+                    layer,
+                    columns,
+                    separate: a.separate,
+                    tables: a.tables,
+                };
+                app.export(Export::Atlas(spec), out.clone());
+            }
         }
         app.finish_jobs(Duration::from_secs(600));
     }
@@ -220,7 +263,9 @@ mod tests {
         for i in 0..6 {
             let (x, y) = ((i % 3) as f64 * 0.1, (i / 3) as f64 * 0.1);
             features.push(format!(
-                r#"{{"type":"Feature","properties":{{"code":"A{i}"}},"geometry":{{"type":"Polygon","coordinates":[[[{x},{y}],[{},{y}],[{},{}],[{x},{}],[{x},{y}]]]}}}}"#,
+                r#"{{"type":"Feature","properties":{{"code":"A{i}","zone":"{}","kind":"{}"}},"geometry":{{"type":"Polygon","coordinates":[[[{x},{y}],[{},{y}],[{},{}],[{x},{}],[{x},{y}]]]}}}}"#,
+                if i < 3 { "North" } else { "South" },
+                if i % 2 == 0 { "shop" } else { "office" },
                 x + 0.1, x + 0.1, y + 0.1, y + 0.1
             ));
         }
@@ -258,6 +303,45 @@ mod tests {
         assert_eq!(&std::fs::read(&png).unwrap()[1..4], b"PNG");
         assert_eq!(&std::fs::read(&pdf).unwrap()[..5], b"%PDF-");
         assert!(std::fs::metadata(&xlsx).unwrap().len() > 1000);
+        // An atlas per zone and kind: a PDF per page and a workbook.
+        let atlas = dir.join("atlas.pdf");
+        let code = run(&[
+            "--export-atlas".into(),
+            p(&atlas),
+            "--per".into(),
+            "zone,kind".into(),
+            "--separate".into(),
+            "--tables".into(),
+            p(&project),
+        ]);
+        assert_eq!(code, Some(0));
+        let mut pdfs: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok()?.file_name().into_string().ok())
+            .filter(|n| n.starts_with("atlas – ") && n.ends_with(".pdf"))
+            .collect();
+        pdfs.sort();
+        assert_eq!(
+            pdfs,
+            [
+                "atlas – North · office.pdf",
+                "atlas – North · shop.pdf",
+                "atlas – South · office.pdf",
+                "atlas – South · shop.pdf"
+            ]
+        );
+        assert!(!atlas.exists(), "pages only, no merged PDF");
+        assert!(std::fs::metadata(dir.join("atlas.xlsx")).unwrap().len() > 1000);
+        assert_eq!(
+            run(&[
+                "--export-atlas".into(),
+                p(&atlas),
+                "--per".into(),
+                "nope".into(),
+                p(&project)
+            ]),
+            Some(1)
+        );
         // A missing project fails cleanly.
         assert_eq!(
             run(&[
