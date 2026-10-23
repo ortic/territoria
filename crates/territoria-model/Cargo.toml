@@ -12,6 +12,7 @@ serde.workspace = true
 serde_json.workspace = true
 territoria-analysis.workspace = true
 territoria-data.workspace = true
+territoria-expr.workspace = true
 territoria-geo.workspace = true
 territoria-io.workspace = true
 thiserror.workspace = true

@@ -149,6 +149,9 @@ pub struct BoundaryStyle {
     /// Point symbol radius in screen points.
     pub point_size: f32,
     pub labels: LabelMode,
+    /// Text of the hover card, a template like `{Name}: {[Revenue]}`.
+    #[serde(default)]
+    pub tooltip: Option<String>,
 }
 
 impl Default for BoundaryStyle {
@@ -159,6 +162,7 @@ impl Default for BoundaryStyle {
             stroke_width: 0.6,
             point_size: 3.5,
             labels: LabelMode::None,
+            tooltip: None,
         }
     }
 }
@@ -170,6 +174,8 @@ pub enum LabelMode {
     Key,
     Name,
     Column(String),
+    /// Text with formulas in braces, e.g. `{Name}` and `{[Revenue]}` on two lines.
+    Template(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

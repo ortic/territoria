@@ -281,23 +281,38 @@ fn labels(s: &mut String, r: &Resolved, view: &View, occupied: &mut Vec<Rect>) {
             order.sort_by(|a, b| b.1.total_cmp(&a.1));
             for (i, width) in order.into_iter().take(800) {
                 let t = texts[i].as_deref().unwrap_or_default();
-                let tw = text_width(t, size);
+                // Templates may give several lines: one tspan each.
+                let lines: Vec<&str> = t.lines().collect();
+                let tw = lines
+                    .iter()
+                    .map(|l| text_width(l, size))
+                    .fold(0.0, f32::max);
                 if mesh.kind == GeometryKind::Area && tw > width * 1.15 {
                     continue;
                 }
                 let (x, y) = f.xy(mesh.label_points[i].unwrap());
-                let rect = Rect::from_center_size(pos2(x, y), vec2(tw + 4.0, size + 4.0));
+                let line_height = size * 1.2;
+                let height = line_height * lines.len() as f32;
+                let rect = Rect::from_center_size(pos2(x, y), vec2(tw + 4.0, height + 4.0));
                 if !view.rect.contains(rect.center()) || occupied.iter().any(|o| o.intersects(rect))
                 {
                     continue;
                 }
                 occupied.push(rect);
+                let top = y - height / 2.0 + line_height / 2.0 + size * 0.35;
                 let _ = write!(
                     s,
-                    r##"<text x="{x:.2}" y="{:.2}" font-size="{size}" text-anchor="middle" fill="#202328" stroke="#ffffff" stroke-opacity="0.8" stroke-width="2.5" paint-order="stroke">{}</text>"##,
-                    y + size * 0.35,
-                    escape(t)
+                    r##"<text font-size="{size}" text-anchor="middle" fill="#202328" stroke="#ffffff" stroke-opacity="0.8" stroke-width="2.5" paint-order="stroke">"##
                 );
+                for (k, line) in lines.iter().enumerate() {
+                    let _ = write!(
+                        s,
+                        r#"<tspan x="{x:.2}" y="{:.2}">{}</tspan>"#,
+                        top + k as f32 * line_height,
+                        escape(line)
+                    );
+                }
+                s.push_str("</text>");
             }
         }
         Labels::Territories(names) => {

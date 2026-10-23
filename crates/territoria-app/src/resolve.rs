@@ -17,7 +17,7 @@ use crate::meshes::AnalysisCache;
 pub enum Labels {
     None,
     /// Per feature, its label.
-    Features(Vec<Option<String>>),
+    Features(Arc<Vec<Option<String>>>),
     /// Territory names at a unit each: (unit, name).
     Territories(Vec<(u32, String)>),
 }
@@ -121,7 +121,13 @@ fn resolve_one(
             };
             let labels = match &style.labels {
                 LabelMode::None => Labels::None,
-                mode => Labels::Features((0..n).map(|f| label_text(l, mode, f)).collect()),
+                LabelMode::Template(t) => cx
+                    .values
+                    .template_texts(project, *layer, t)
+                    .map_or(Labels::None, Labels::Features),
+                mode => {
+                    Labels::Features(Arc::new((0..n).map(|f| label_text(l, mode, f)).collect()))
+                }
             };
             Some(vec![Resolved {
                 mesh,
@@ -275,5 +281,7 @@ pub fn label_text(
             name.or_else(|| Some(layer.key(feature)))
         }
         LabelMode::Column(c) => layer.attributes.column(c).map(|c| c.display(feature)),
+        // Templates need the caches: see `Cache::template_texts`.
+        LabelMode::Template(_) => None,
     }
 }

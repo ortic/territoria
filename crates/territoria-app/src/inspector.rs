@@ -293,8 +293,80 @@ fn layer(ui: &mut Ui, project: &Project, id: LayerId, actions: &mut Vec<Action>)
     });
 }
 
+/// Edits a text template for a layer's features: shows mistakes and
+/// offers the columns to insert. Returns the new text when it changed.
+fn template_editor(
+    ui: &mut Ui,
+    project: &Project,
+    values: &mut Cache,
+    layer: LayerId,
+    text: &str,
+    salt: &str,
+) -> Option<String> {
+    let mut edited = text.to_owned();
+    let mut changed = ui
+        .add(
+            egui::TextEdit::multiline(&mut edited)
+                .id_salt(salt)
+                .font(egui::TextStyle::Monospace)
+                .desired_rows(2)
+                .desired_width(f32::INFINITY),
+        )
+        .changed();
+    let table = values.feature_table(project, layer);
+    ui.horizontal(|ui| {
+        if let Some(table) = &table {
+            ui.menu_button("➕ Insert", |ui| {
+                egui::ScrollArea::vertical()
+                    .max_height(300.0)
+                    .show(ui, |ui| {
+                        for c in &table.columns {
+                            if ui.button(&c.name).clicked() {
+                                let simple =
+                                    c.name.chars().all(|ch| ch.is_alphanumeric() || ch == '_');
+                                let name = if simple {
+                                    c.name.clone()
+                                } else {
+                                    format!("[{}]", c.name.replace(']', "]]"))
+                                };
+                                if !edited.is_empty() && !edited.ends_with([' ', '\n']) {
+                                    edited.push(' ');
+                                }
+                                edited.push_str(&format!("{{{name}}}"));
+                                changed = true;
+                                ui.close();
+                            }
+                        }
+                    });
+            })
+            .response
+            .on_hover_text("Columns of the layer, of linked tables and of points inside");
+            match territoria_expr::Template::compile(&edited, table) {
+                Ok(_) => {
+                    ui.label(
+                        RichText::new("Formulas in {braces}, e.g. {format([Revenue] / 1000, 0)}k")
+                            .weak()
+                            .small(),
+                    );
+                }
+                Err(e) => {
+                    ui.label(
+                        RichText::new(format!("⚠ {}", e.message))
+                            .color(crate::theme::DANGER)
+                            .small(),
+                    );
+                }
+            }
+        }
+    });
+    changed.then_some(edited)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn style_ui(
     ui: &mut Ui,
+    project: &Project,
+    values: &mut Cache,
     style: &BoundaryStyle,
     layer: Option<&territoria_model::Layer>,
     fill: bool,
@@ -352,7 +424,24 @@ fn style_ui(
                     LabelMode::Key => "Key".to_owned(),
                     LabelMode::Name => "Name".to_owned(),
                     LabelMode::Column(c) => c.clone(),
+                    LabelMode::Template(_) => "Template…".to_owned(),
                 };
+                let first = if layer.name_column.is_some() {
+                    "{Name}"
+                } else {
+                    "{Key}"
+                };
+                let default_template = layer
+                    .name_column
+                    .clone()
+                    .or_else(|| layer.key_column.clone())
+                    .map_or(first.to_owned(), |c| {
+                        if c.chars().all(|ch| ch.is_alphanumeric() || ch == '_') {
+                            format!("{{{c}}}")
+                        } else {
+                            format!("{{[{c}]}}")
+                        }
+                    });
                 ComboBox::from_id_salt("labels")
                     .selected_text(text)
                     .show_ui(ui, |ui| {
@@ -368,6 +457,17 @@ fn style_ui(
                                 &c.name,
                             );
                         }
+                        ui.separator();
+                        if ui
+                            .selectable_label(matches!(labels, LabelMode::Template(_)), "Template…")
+                            .on_hover_text(
+                                "Your own text with values, e.g. the name and the revenue below it",
+                            )
+                            .clicked()
+                            && !matches!(labels, LabelMode::Template(_))
+                        {
+                            labels = LabelMode::Template(default_template.clone());
+                        }
                     });
                 if labels != style.labels {
                     actions.push(edit_layer(map, id, "Change labels", move |l| {
@@ -379,6 +479,44 @@ fn style_ui(
                 ui.end_row();
             }
         });
+    let Some(layer) = layer else { return };
+    if let LabelMode::Template(text) = &style.labels {
+        ui.add_space(4.0);
+        ui.label(RichText::new("Label template").strong());
+        if let Some(new) = template_editor(ui, project, values, layer.id, text, "label-template") {
+            actions.push(edit_layer(map, id, "Change label template", move |l| {
+                if let Some(s) = l.kind.style_mut() {
+                    s.labels = LabelMode::Template(new);
+                }
+            }));
+        }
+    }
+    ui.add_space(4.0);
+    let mut custom = style.tooltip.is_some();
+    if ui
+        .checkbox(&mut custom, "Own text in the hover card")
+        .on_hover_text("What the card under the mouse shows for this layer")
+        .changed()
+    {
+        let text = custom.then(|| match &style.labels {
+            LabelMode::Template(t) => t.clone(),
+            _ => "{Name}".to_owned(),
+        });
+        actions.push(edit_layer(map, id, "Change hover text", move |l| {
+            if let Some(s) = l.kind.style_mut() {
+                s.tooltip = text;
+            }
+        }));
+    }
+    if let Some(text) = &style.tooltip
+        && let Some(new) = template_editor(ui, project, values, layer.id, text, "tooltip-template")
+    {
+        actions.push(edit_layer(map, id, "Change hover text", move |l| {
+            if let Some(s) = l.kind.style_mut() {
+                s.tooltip = Some(new);
+            }
+        }));
+    }
 }
 
 /// A row of ramp swatches to pick from.
@@ -547,7 +685,17 @@ fn map_layer(
     ui.separator();
     match &ml.kind {
         MapLayerKind::Boundaries { layer, style } => {
-            style_ui(ui, style, project.layer(*layer), true, map, id, actions);
+            style_ui(
+                ui,
+                project,
+                values,
+                style,
+                project.layer(*layer),
+                true,
+                map,
+                id,
+                actions,
+            );
         }
         MapLayerKind::Choropleth {
             layer,
@@ -635,7 +783,17 @@ fn map_layer(
                 );
             }
             ui.separator();
-            style_ui(ui, style, project.layer(*layer), false, map, id, actions);
+            style_ui(
+                ui,
+                project,
+                values,
+                style,
+                project.layer(*layer),
+                false,
+                map,
+                id,
+                actions,
+            );
         }
         MapLayerKind::Categories {
             layer,
@@ -663,7 +821,17 @@ fn map_layer(
                 }
             });
             ui.separator();
-            style_ui(ui, style, project.layer(*layer), false, map, id, actions);
+            style_ui(
+                ui,
+                project,
+                values,
+                style,
+                project.layer(*layer),
+                false,
+                map,
+                id,
+                actions,
+            );
         }
         MapLayerKind::Territories { style, plan } => {
             let edit =

@@ -207,7 +207,7 @@ territoria/
 - [x] Spatial functions: `distance(lat1, lon1, lat2, lon2)`, `dms(text)`
 - [x] Typed checking with clear error messages pointing at the position (underlined in the editor, with "did you mean")
 - [x] Autocomplete for columns and functions; live preview on the first rows (suggestions under the editor, Tab takes the first; syntax colours)
-- [ ] Text templates for labels, tooltips, legend titles: `{Name}: {sum([Sales])}`
+- [x] Text templates for labels, tooltips, legend titles: `{Name}: {sum([Sales])}` (labels and hover cards, with the layer's columns, linked tables (summed) and points inside; not legend titles yet)
 
 ### 5.6 Linking data to geometry (M2)
 
@@ -237,7 +237,7 @@ territoria/
 - [ ] Lines: style a line layer by data
 - [ ] Flows: origin–destination lines with width/colour by data, curved, arrows
 - [ ] Radius/catchment circles around points, several rings; count and sum of what lies inside
-- [ ] Data-driven labels (text templates, font size/colour by data)
+- [ ] Data-driven labels (text templates, font size/colour by data) (templates done, several lines also in exports; size/colour not yet)
 - [x] Tooltips: rich cards from a template; several analyses at one spot listed together (no templates)
 - [x] Legends generated from the analysis; a few templates (list, bar, histogram, size); edited labels stay in sync (list and gradient in Contents, histogram in Properties)
 - [ ] Analysis-wide filter (segment) and "ignore filter"

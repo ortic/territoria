@@ -168,6 +168,107 @@ impl Formula {
     }
 }
 
+/// Text with formulas in braces: `{Name}: {format([Revenue] / 1000, 0)}k`.
+/// `{{` and `}}` stand for braces.
+#[derive(Debug, Clone)]
+pub struct Template {
+    parts: Vec<Part>,
+}
+
+#[derive(Debug, Clone)]
+enum Part {
+    Text(String),
+    Formula(Formula),
+}
+
+impl Template {
+    pub fn compile(source: &str, table: &Table) -> Result<Template, Error> {
+        let mut parts = Vec::new();
+        let mut text = String::new();
+        let mut chars = source.char_indices().peekable();
+        while let Some((i, c)) = chars.next() {
+            match c {
+                '{' if chars.peek().is_some_and(|(_, d)| *d == '{') => {
+                    chars.next();
+                    text.push('{');
+                }
+                '}' if chars.peek().is_some_and(|(_, d)| *d == '}') => {
+                    chars.next();
+                    text.push('}');
+                }
+                '}' => {
+                    return Err(Error::new(
+                        "This } has no matching {; write }} for a brace",
+                        i..i + 1,
+                    ));
+                }
+                '{' => {
+                    // The formula runs to the next } outside text and brackets.
+                    let start = i + 1;
+                    let mut quote: Option<char> = None;
+                    let mut bracket = false;
+                    let mut end = None;
+                    for (j, d) in chars.by_ref() {
+                        match (quote, d) {
+                            (Some(q), d) if d == q => quote = None,
+                            (Some(_), _) => {}
+                            (None, '"' | '\'') if !bracket => quote = Some(d),
+                            (None, '[') => bracket = true,
+                            (None, ']') => bracket = false,
+                            (None, '}') if !bracket => {
+                                end = Some(j);
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    let end = end.ok_or_else(|| {
+                        Error::new("This { is not closed: a } is missing", i..source.len())
+                    })?;
+                    let formula =
+                        Formula::compile(&source[start..end], table).map_err(|e| Error {
+                            message: e.message,
+                            span: e.span.start + start..e.span.end + start,
+                        })?;
+                    if !text.is_empty() {
+                        parts.push(Part::Text(std::mem::take(&mut text)));
+                    }
+                    parts.push(Part::Formula(formula));
+                }
+                c => text.push(c),
+            }
+        }
+        if !text.is_empty() {
+            parts.push(Part::Text(text));
+        }
+        Ok(Template { parts })
+    }
+
+    /// The text for every row; `None` where it comes out empty. `format`
+    /// writes values (e.g. numbers with thousands separators).
+    pub fn render(&self, table: &Table, format: &dyn Fn(&Val) -> String) -> Vec<Option<String>> {
+        let mut out = vec![String::new(); table.rows()];
+        for part in &self.parts {
+            match part {
+                Part::Text(t) => out.iter_mut().for_each(|o| o.push_str(t)),
+                Part::Formula(f) => {
+                    for (o, v) in out.iter_mut().zip(f.evaluate(table)) {
+                        if v != Val::Null {
+                            o.push_str(&format(&v));
+                        }
+                    }
+                }
+            }
+        }
+        out.into_iter()
+            .map(|o| {
+                let o = o.trim();
+                (!o.is_empty()).then(|| o.to_owned())
+            })
+            .collect()
+    }
+}
+
 /// Recomputes the calculated columns of a table in order, e.g. after the
 /// columns they use changed. Formulas that no longer work are left as
 /// they were; their names are returned.
@@ -626,6 +727,35 @@ mod tests {
             .unwrap()
             .column("Is Bern", "", &t);
         assert_eq!(c.kind, ColumnKind::Bool);
+    }
+
+    #[test]
+    fn templates() {
+        let t = table();
+        let tpl = Template::compile("{Name}: {[Revenue] / 100} {{x}}", &t).unwrap();
+        let out = tpl.render(&t, &|v| v.text().unwrap_or_default());
+        assert_eq!(out[0].as_deref(), Some("Zürich Nord: 1 {x}"));
+        assert_eq!(
+            out[2].as_deref(),
+            Some(": 6 {x}"),
+            "empty values leave nothing"
+        );
+        let tpl = Template::compile("{Name}", &t).unwrap();
+        assert_eq!(tpl.render(&t, &|v| v.text().unwrap_or_default())[2], None);
+        let tpl = Template::compile("{if([Revenue] > 200, \"}\", \"-\")}", &t).unwrap();
+        assert_eq!(
+            tpl.render(&t, &|v| v.text().unwrap_or_default())[1].as_deref(),
+            Some("}")
+        );
+        let e = Template::compile("Total {[Revenu]}", &t).unwrap_err();
+        assert_eq!(e.span, 7..15, "positions point into the template");
+        assert!(
+            Template::compile("{Name", &t)
+                .unwrap_err()
+                .message
+                .contains("not closed")
+        );
+        assert!(Template::compile("a } b", &t).is_err());
     }
 
     #[test]

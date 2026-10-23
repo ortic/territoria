@@ -529,9 +529,29 @@ fn hover_rows(
     let Some(layer) = project.layer(h.layer) else {
         return Vec::new();
     };
-    let mut rows = vec![(String::new(), layer.display_name(h.feature))];
+    // A layer's own hover text replaces the name and the values.
+    let custom = map
+        .layers
+        .iter()
+        .rev()
+        .filter(|l| l.visible && l.kind.layer() == Some(h.layer))
+        .find_map(|l| l.kind.style().and_then(|s| s.tooltip.clone()));
+    let mut rows = match &custom {
+        Some(t) => {
+            let text = values
+                .template_texts(project, h.layer, t)
+                .and_then(|texts| texts.get(h.feature).cloned().flatten())
+                .unwrap_or_else(|| layer.display_name(h.feature));
+            text.lines()
+                .map(|l| (String::new(), l.to_owned()))
+                .collect()
+        }
+        None => vec![(String::new(), layer.display_name(h.feature))],
+    };
     for ml in map.layers.iter().rev().filter(|l| l.visible) {
         match &ml.kind {
+            MapLayerKind::Choropleth { .. } | MapLayerKind::Categories { .. }
+                if custom.is_some() => {}
             MapLayerKind::Choropleth {
                 layer: l, source, ..
             } if *l == h.layer => {

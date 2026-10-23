@@ -920,3 +920,92 @@ fn customers_know_their_territory() {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Labels and hover cards from a template, with values of a linked table;
+/// several lines survive the SVG export.
+#[test]
+fn label_templates() {
+    use crate::app::Export;
+    use crate::export_map::Format;
+    use territoria_model::LabelMode;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    h.state_mut()
+        .add_linked_table_now("Sales 2026", table, "Area", layer, Some("Revenue"));
+    let app = h.state_mut();
+    let l = app.project.layer(layer).unwrap();
+    let name = l.name_column.clone().or(l.key_column.clone()).unwrap();
+    let template = format!("{{[{name}]}}\n{{format([Revenue] / 1000, 0)}}k");
+    let map = app.project.maps[0].id;
+    for ml in &mut app.project.map_mut(map).unwrap().layers {
+        if ml.kind.layer() == Some(layer)
+            && let Some(s) = ml.kind.style_mut()
+        {
+            s.labels = LabelMode::Template(template.clone());
+            s.tooltip = Some(template.clone());
+        }
+    }
+    let mut values = territoria_model::Cache::default();
+    let ft = values.feature_table(&app.project, layer).unwrap();
+    for c in ["Revenue", "Customers", "Sales 2026 rows", "Area km2"] {
+        assert!(ft.column(c).is_some(), "{c} in the feature table");
+    }
+    let texts = values
+        .template_texts(&app.project, layer, &template)
+        .unwrap();
+    let f = (0..ft.rows())
+        .find(|&f| ft.column("Revenue").unwrap().f64(f).is_some())
+        .unwrap();
+    let revenue = ft.column("Revenue").unwrap().f64(f).unwrap();
+    assert_eq!(
+        texts[f].as_deref(),
+        Some(
+            format!(
+                "{}\n{:.0}k",
+                ft.column(&name).unwrap().display(f),
+                revenue / 1000.0
+            )
+            .as_str()
+        )
+    );
+    let app = h.state_mut();
+    let ml = app.project.maps[0]
+        .layers
+        .iter()
+        .find(|l| matches!(l.kind, territoria_model::MapLayerKind::Choropleth { .. }))
+        .unwrap()
+        .id;
+    app.selection = crate::app::Selection::MapLayer(map, ml);
+    settle(&mut h);
+    save(&mut h, "label-templates");
+
+    // Short lines, so they fit the areas at this zoom.
+    let app = h.state_mut();
+    for ml in &mut app.project.map_mut(map).unwrap().layers {
+        if ml.kind.layer() == Some(layer)
+            && let Some(s) = ml.kind.style_mut()
+        {
+            s.labels =
+                LabelMode::Template("{round([Customers] / 10)}\n{round([Customers] / 100)}".into());
+        }
+    }
+    let dir = std::env::temp_dir().join(format!("territoria-labels-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("map.svg");
+    app.set_map_export_for_test(crate::dialogs::MapExportSettings {
+        format: Format::Svg,
+        scale: 1.0,
+        title: String::new(),
+        legend: true,
+        scale_bar: true,
+    });
+    app.export(Export::Map(Format::Svg), path.clone());
+    settle(&mut h);
+    let svg = std::fs::read_to_string(&path).unwrap();
+    assert!(svg.contains("<tspan"), "labels on two lines");
+    let _ = std::fs::remove_dir_all(dir);
+}

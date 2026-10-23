@@ -6,7 +6,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use territoria_data::{Aggregate, KeyIndex, Matching, keys};
+use territoria_data::{Aggregate, Column, ColumnKind, KeyIndex, Matching, Table, keys};
+use territoria_io::GeometryKind;
 
 use crate::{LayerId, LinkId, Project};
 
@@ -100,12 +101,188 @@ pub struct Cache {
     matchings: HashMap<LinkId, (u64, u64, Arc<Matching>)>,
     /// Per (point layer, area layer): the area each point lies in.
     point_areas: HashMap<(LayerId, LayerId), (u64, u64, PointAreas)>,
+    feature_tables: HashMap<LayerId, (u64, Arc<Table>)>,
+    templates: HashMap<(LayerId, String), (u64, Texts)>,
+}
+
+/// A text per feature.
+pub type Texts = Arc<Vec<Option<String>>>;
+
+/// Changes when anything a layer's feature table is made of changes.
+fn feature_key(project: &Project, layer: &crate::Layer) -> u64 {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    layer.rev.hash(&mut h);
+    for link in project.links_to(layer.id) {
+        format!("{link:?}").hash(&mut h);
+        if let Some(t) = project.table(link.table) {
+            t.rev.hash(&mut h);
+        }
+    }
+    if layer.kind() == GeometryKind::Area {
+        for p in project
+            .layers
+            .iter()
+            .filter(|l| l.kind() == GeometryKind::Point)
+        {
+            (p.id, p.rev).hash(&mut h);
+        }
+    }
+    h.finish()
+}
+
+/// Numbers with thousands separators, other values as text.
+fn template_value(v: &territoria_expr::Val) -> String {
+    match v {
+        territoria_expr::Val::Num(n) => territoria_analysis::format::format_value(*n),
+        v => v.text().unwrap_or_default(),
+    }
 }
 
 /// Per point feature, the area it lies in.
 pub type PointAreas = Arc<Vec<Option<u32>>>;
 
 impl Cache {
+    /// Everything known per feature, for templates: the layer's own
+    /// columns, its area, linked tables (numbers summed, other values from
+    /// the first row, a row count) and points inside (counted, numbers
+    /// summed).
+    pub fn feature_table(&mut self, project: &Project, layer: LayerId) -> Option<Arc<Table>> {
+        let l = project.layer(layer)?;
+        let key = feature_key(project, l);
+        if let Some((k, t)) = self.feature_tables.get(&layer)
+            && *k == key
+        {
+            return Some(t.clone());
+        }
+        let n = l.len();
+        let mut t = if l.attributes.rows() == n {
+            (*l.attributes).clone()
+        } else {
+            Table::with_rows(n)
+        };
+        let push = |t: &mut Table, mut c: Column| {
+            c.name = t.unique_name(&c.name);
+            let _ = t.push_column(c);
+        };
+        if l.kind() == GeometryKind::Area {
+            push(
+                &mut t,
+                Column::number(
+                    "Area km2",
+                    l.geometry.areas.iter().map(|a| Some(*a)).collect(),
+                ),
+            );
+        }
+        for link in project.links_to(layer) {
+            let (Some(ds), Some(m)) = (project.table(link.table), self.matching(project, link.id))
+            else {
+                continue;
+            };
+            let mut rows = vec![0.0; n];
+            for f in m.row_target.iter().flatten() {
+                rows[*f as usize] += 1.0;
+            }
+            push(
+                &mut t,
+                Column::number(
+                    format!("{} rows", ds.name),
+                    rows.into_iter().map(Some).collect(),
+                ),
+            );
+            for c in ds.table.columns.iter().filter(|c| c.name != link.column) {
+                let name = if t.column(&c.name).is_some() {
+                    format!("{} ({})", c.name, ds.name)
+                } else {
+                    c.name.clone()
+                };
+                if c.kind.is_numeric() {
+                    let v = territoria_data::aggregate::group(
+                        (0..ds.table.rows()).map(|r| c.f64(r)),
+                        m.row_target.iter().copied(),
+                        n,
+                        Aggregate::Sum,
+                    );
+                    push(&mut t, Column::number(name, v));
+                } else {
+                    let mut v: Vec<Option<String>> = vec![None; n];
+                    for (r, f) in m.row_target.iter().enumerate() {
+                        if let Some(f) = f
+                            && v[*f as usize].is_none()
+                        {
+                            v[*f as usize] = c.get(r).to_text();
+                        }
+                    }
+                    push(&mut t, Column::text(name, ColumnKind::Text, v));
+                }
+            }
+        }
+        if l.kind() == GeometryKind::Area {
+            let points: Vec<LayerId> = project
+                .layers
+                .iter()
+                .filter(|p| p.kind() == GeometryKind::Point)
+                .map(|p| p.id)
+                .collect();
+            for p in points {
+                let (Some(hits), Some(pl)) =
+                    (self.point_areas(project, p, layer), project.layer(p))
+                else {
+                    continue;
+                };
+                let mut count = vec![0.0; n];
+                for f in hits.iter().flatten() {
+                    count[*f as usize] += 1.0;
+                }
+                push(
+                    &mut t,
+                    Column::number(pl.name.clone(), count.into_iter().map(Some).collect()),
+                );
+                for c in pl.attributes.columns.iter().filter(|c| c.kind.is_numeric()) {
+                    let v = territoria_data::aggregate::group(
+                        (0..pl.len()).map(|r| c.f64(r)),
+                        hits.iter().copied(),
+                        n,
+                        Aggregate::Sum,
+                    );
+                    push(
+                        &mut t,
+                        Column::number(format!("{} ({})", c.name, pl.name), v),
+                    );
+                }
+            }
+        }
+        let t = Arc::new(t);
+        self.feature_tables.insert(layer, (key, t.clone()));
+        Some(t)
+    }
+
+    /// A template's text per feature (labels, hover cards); `None` when the
+    /// template has a mistake.
+    pub fn template_texts(
+        &mut self,
+        project: &Project,
+        layer: LayerId,
+        source: &str,
+    ) -> Option<Texts> {
+        let table = self.feature_table(project, layer)?;
+        let key = self.feature_tables.get(&layer)?.0;
+        let id = (layer, source.to_owned());
+        if let Some((k, texts)) = self.templates.get(&id)
+            && *k == key
+        {
+            return Some(texts.clone());
+        }
+        let template = territoria_expr::Template::compile(source, &table).ok()?;
+        let texts = Arc::new(template.render(&table, &template_value));
+        // Keep what was typed lately, not every version ever.
+        if self.templates.len() > 64 {
+            self.templates.clear();
+        }
+        self.templates.insert(id, (key, texts.clone()));
+        Some(texts)
+    }
+
     /// Rows of the link's table matched to the layer's features.
     pub fn matching(&mut self, project: &Project, link: LinkId) -> Option<Arc<Matching>> {
         let l = project.link(link)?;
