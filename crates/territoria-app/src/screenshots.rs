@@ -3631,3 +3631,64 @@ fn class_sets() {
     };
     assert_eq!(scale, &kept);
 }
+
+/// Labels sized by a number, on screen and in exports.
+#[test]
+fn labels_sized_by_value() {
+    use crate::app::Export;
+    use crate::export_map::Format;
+    use territoria_model::{LabelMode, MapLayerKind};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    let app = h.state_mut();
+    app.add_linked_table_now("Sales 2026", table, "Area", layer, None);
+    let link = app.project.links[0].id;
+    let map = app.project.maps[0].id;
+    let m = app.project.map_mut(map).unwrap();
+    for ml in &mut m.layers {
+        if let MapLayerKind::Boundaries { style, .. } = &mut ml.kind {
+            style.labels = LabelMode::Key;
+            style.label_size = Some(territoria_model::map::LabelSize {
+                source: territoria_model::ValueSource::Linked {
+                    link,
+                    column: "Revenue".into(),
+                    agg: territoria_data::Aggregate::Sum,
+                },
+                min: 7.0,
+                max: 20.0,
+            });
+        }
+    }
+    settle(&mut h);
+    // Close enough for the areas to take labels.
+    let (center, scale) = h.state().view_for_test().unwrap();
+    h.state_mut()
+        .apply_action_for_test(crate::app::Action::GoToView(map, center, scale / 2.5));
+    settle(&mut h);
+    save(&mut h, "labels-sized");
+    let dir = std::env::temp_dir().join(format!("territoria-labelsize-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("labels.svg");
+    let app = h.state_mut();
+    app.set_map_export_for_test(crate::dialogs::MapExportSettings {
+        format: Format::Svg,
+        scale: 1.0,
+        title: String::new(),
+        legend: false,
+        scale_bar: false,
+    });
+    app.export(Export::Map(Format::Svg), path.clone());
+    settle(&mut h);
+    let svg = std::fs::read_to_string(&path).unwrap();
+    let sizes: std::collections::BTreeSet<String> = svg
+        .split("<text font-size=\"")
+        .skip(1)
+        .filter_map(|t| t.split('"').next().map(str::to_owned))
+        .collect();
+    assert!(sizes.len() > 3, "labels of several sizes: {sizes:?}");
+    let _ = std::fs::remove_dir_all(dir);
+}

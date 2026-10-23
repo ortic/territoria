@@ -1450,6 +1450,23 @@ fn draw_labels(
                 texts.get(f).cloned().flatten()
             });
         }
+        Labels::Sized(texts, sizes) => {
+            let ls = LabelStyle {
+                font: FontId::proportional(11.0),
+                color: text,
+                halo,
+                min_width: 28.0,
+            };
+            paint::labels_sized(
+                painter,
+                &r.mesh,
+                view,
+                &ls,
+                occupied,
+                |f| texts.get(f).cloned().flatten(),
+                |f| sizes.get(f).copied().unwrap_or(11.0),
+            );
+        }
         Labels::Territories(names) => {
             let font = FontId::proportional(13.0);
             for (unit, name) in names {

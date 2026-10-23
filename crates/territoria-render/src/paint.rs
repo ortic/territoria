@@ -246,6 +246,21 @@ pub fn labels(
     occupied: &mut Vec<Rect>,
     text: impl Fn(usize) -> Option<String>,
 ) {
+    let base = style.font.size;
+    labels_sized(painter, mesh, view, style, occupied, text, |_| base);
+}
+
+/// Labels of their own sizes (font size in points per feature): bigger
+/// ones are placed first.
+pub fn labels_sized(
+    painter: &egui::Painter,
+    mesh: &LayerMesh,
+    view: &View,
+    style: &LabelStyle,
+    occupied: &mut Vec<Rect>,
+    text: impl Fn(usize) -> Option<String>,
+    size: impl Fn(usize) -> f32,
+) {
     let f = Frame::new(mesh, view);
     // Bigger areas first: they get the space.
     let mut order: Vec<(usize, f32)> = mesh
@@ -271,7 +286,7 @@ pub fn labels(
             (w >= style.min_width).then_some((i, w))
         })
         .collect();
-    order.sort_by(|a, b| b.1.total_cmp(&a.1));
+    order.sort_by(|a, b| size(b.0).total_cmp(&size(a.0)).then(b.1.total_cmp(&a.1)));
     let max_labels = 600;
     let mut placed = 0;
     for (i, width) in order {
@@ -282,7 +297,8 @@ pub fn labels(
         if t.is_empty() {
             continue;
         }
-        let galley = painter.layout_no_wrap(t, style.font.clone(), style.color);
+        let font = egui::FontId::new(size(i), style.font.family.clone());
+        let galley = painter.layout_no_wrap(t, font, style.color);
         let size = galley.size();
         if mesh.kind == territoria_io::GeometryKind::Area && size.x > width * 1.15 {
             continue;

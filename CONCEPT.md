@@ -237,7 +237,7 @@ territoria/
 - [ ] Lines: style a line layer by data
 - [x] Flows: origin–destination lines with width/colour by data, curved, arrows (rows of a table or layer; each end the row's own point or a column naming a feature by key or name, guessed; equal pairs add up; width by a number or row count; one colour; in exports)
 - [x] Radius/catchment circles around points, several rings; count and sum of what lies inside (around points or territory sites; points counted and summed, areas' values summed; a results table; labelled rings in exports)
-- [ ] Data-driven labels (text templates, font size/colour by data) (templates done, several lines also in exports; size/colour not yet)
+- [x] Data-driven labels (text templates, font size/colour by data) (templates with several lines; font size by any number between two sizes, bigger labels placed first, on screen and in exports; no colour by data yet)
 - [x] Tooltips: rich cards from a template; several analyses at one spot listed together (no templates)
 - [x] Legends generated from the analysis; a few templates (list, bar, histogram, size); edited labels stay in sync (list and gradient in Contents, histogram in Properties)
 - [x] Analysis-wide filter (segment) and "ignore filter" (per analysis: "Only where" with a formula over the linked table's or points' rows; no shared named segments yet)

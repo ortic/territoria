@@ -518,6 +518,68 @@ fn style_ui(
             }
         });
     let Some(layer) = layer else { return };
+    // Label sizes from a number: bigger values, bigger labels.
+    if style.labels != LabelMode::None {
+        let numbers: Vec<(String, ValueSource)> = colorables(project, layer.id)
+            .into_iter()
+            .filter_map(|(label, c)| match c {
+                Colorable::Number(s) => Some((label, s)),
+                _ => None,
+            })
+            .collect();
+        ui.horizontal(|ui| {
+            ui.label("Label size");
+            let current = style.label_size.as_ref().map(|s| s.source.clone());
+            let mut chosen = current.clone();
+            let text = current.as_ref().map_or("All alike".to_owned(), |s| {
+                format!("By {}", s.label(project))
+            });
+            ComboBox::from_id_salt("label-size")
+                .width(170.0)
+                .selected_text(text)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut chosen, None, "All alike");
+                    for (label, s) in &numbers {
+                        ui.selectable_value(&mut chosen, Some(s.clone()), format!("By {label}"));
+                    }
+                });
+            if chosen != current {
+                actions.push(edit_layer(map, id, "Label sizes", move |l| {
+                    if let Some(s) = l.kind.style_mut() {
+                        s.label_size = chosen.map(|source| territoria_model::map::LabelSize {
+                            source,
+                            min: 8.0,
+                            max: 18.0,
+                        });
+                    }
+                }));
+            }
+            if let Some(size) = &style.label_size {
+                let (mut lo, mut hi) = (size.min, size.max);
+                let a = ui.add(
+                    egui::DragValue::new(&mut lo)
+                        .range(5.0..=40.0)
+                        .suffix(" pt"),
+                );
+                ui.label("to");
+                let b = ui.add(
+                    egui::DragValue::new(&mut hi)
+                        .range(5.0..=60.0)
+                        .suffix(" pt"),
+                );
+                if a.changed() || b.changed() {
+                    actions.push(edit_layer(map, id, "Label sizes", move |l| {
+                        if let Some(s) = l.kind.style_mut()
+                            && let Some(size) = &mut s.label_size
+                        {
+                            size.min = lo;
+                            size.max = hi.max(lo);
+                        }
+                    }));
+                }
+            }
+        });
+    }
     if let LabelMode::Template(text) = &style.labels {
         ui.add_space(4.0);
         ui.label(RichText::new("Label template").strong());

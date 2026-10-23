@@ -18,6 +18,8 @@ pub enum Labels {
     None,
     /// Per feature, its label.
     Features(Arc<Vec<Option<String>>>),
+    /// Per feature, its label and font size in points.
+    Sized(Arc<Vec<Option<String>>>, Vec<f32>),
     /// Territory names at a unit each: (unit, name).
     Territories(Vec<(u32, String)>),
 }
@@ -246,16 +248,7 @@ fn resolve_one(
             } else {
                 Vec::new()
             };
-            let labels = match &style.labels {
-                LabelMode::None => Labels::None,
-                LabelMode::Template(t) => cx
-                    .values
-                    .template_texts(project, *layer, t)
-                    .map_or(Labels::None, Labels::Features),
-                mode => {
-                    Labels::Features(Arc::new((0..n).map(|f| label_text(l, mode, f)).collect()))
-                }
-            };
+            let labels = feature_labels(cx, l, style);
             Some(vec![Resolved {
                 mesh,
                 fills,
@@ -427,16 +420,7 @@ fn resolve_one(
             let l = project.layer(*layer)?;
             let mesh = meshes.get(layer)?.clone();
             let n = l.len();
-            let labels = match &style.labels {
-                LabelMode::None => Labels::None,
-                LabelMode::Template(t) => cx
-                    .values
-                    .template_texts(project, *layer, t)
-                    .map_or(Labels::None, Labels::Features),
-                mode => {
-                    Labels::Features(Arc::new((0..n).map(|f| label_text(l, mode, f)).collect()))
-                }
-            };
+            let labels = feature_labels(cx, l, style);
             Some(vec![Resolved {
                 mesh,
                 fills: vec![None; n],
@@ -491,16 +475,7 @@ fn resolve_one(
             } else {
                 Vec::new()
             };
-            let labels = match &style.labels {
-                LabelMode::None => Labels::None,
-                LabelMode::Template(t) => cx
-                    .values
-                    .template_texts(project, *layer, t)
-                    .map_or(Labels::None, Labels::Features),
-                mode => {
-                    Labels::Features(Arc::new((0..n).map(|f| label_text(l, mode, f)).collect()))
-                }
-            };
+            let labels = feature_labels(cx, l, style);
             Some(vec![Resolved {
                 mesh,
                 fills: vec![None; n],
@@ -616,6 +591,29 @@ fn charts(
         out.sort_by(|a, b| b.size.total_cmp(&a.size));
     }
     out
+}
+
+/// A layer's labels as its style says: texts, sized by a number if so.
+fn feature_labels(
+    cx: &mut Context,
+    l: &territoria_model::Layer,
+    style: &territoria_model::BoundaryStyle,
+) -> Labels {
+    let texts = match &style.labels {
+        LabelMode::None => return Labels::None,
+        LabelMode::Template(t) => match cx.values.template_texts(cx.project, l.id, t) {
+            Some(t) => t,
+            None => return Labels::None,
+        },
+        mode => Arc::new((0..l.len()).map(|f| label_text(l, mode, f)).collect()),
+    };
+    match &style.label_size {
+        Some(size) => {
+            let v = cx.values.values(cx.project, l.id, &size.source);
+            Labels::Sized(texts, size.sizes(&v))
+        }
+        None => Labels::Features(texts),
+    }
 }
 
 pub fn label_text(

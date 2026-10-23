@@ -423,6 +423,40 @@ pub struct BoundaryStyle {
     /// Text of the hover card, a template like `{Name}: {[Revenue]}`.
     #[serde(default)]
     pub tooltip: Option<String>,
+    /// Labels sized by a number instead of all alike.
+    #[serde(default)]
+    pub label_size: Option<LabelSize>,
+}
+
+/// Label font sizes from a number: the smallest value gets `min` points,
+/// the largest `max`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LabelSize {
+    pub source: ValueSource,
+    pub min: f32,
+    pub max: f32,
+}
+
+impl LabelSize {
+    /// Font size per feature for `values` (`None`: the smallest).
+    pub fn sizes(&self, values: &[Option<f64>]) -> Vec<f32> {
+        let (lo, hi) = values
+            .iter()
+            .flatten()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), v| {
+                (a.min(*v), b.max(*v))
+            });
+        values
+            .iter()
+            .map(|v| match v {
+                Some(v) if hi > lo => {
+                    self.min + (self.max - self.min) * ((v - lo) / (hi - lo)) as f32
+                }
+                Some(_) => (self.min + self.max) / 2.0,
+                None => self.min,
+            })
+            .collect()
+    }
 }
 
 impl Default for BoundaryStyle {
@@ -434,6 +468,7 @@ impl Default for BoundaryStyle {
             point_size: 3.5,
             labels: LabelMode::None,
             tooltip: None,
+            label_size: None,
         }
     }
 }
