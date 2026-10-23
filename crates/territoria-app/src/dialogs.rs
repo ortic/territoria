@@ -3410,3 +3410,203 @@ impl JoinDialog {
         apply
     }
 }
+
+/// A new table with one row per group of rows.
+pub struct SummariseDialog {
+    pub data: crate::app::DataRef,
+    pub by: Vec<String>,
+    /// Numbers to add up and how.
+    pub measures: Vec<(String, Aggregate)>,
+    pub filter: String,
+    pub name: String,
+}
+
+impl SummariseDialog {
+    pub fn new(project: &Project, data: crate::app::DataRef) -> SummariseDialog {
+        let (table, _) = data_table(project, data).expect("a table");
+        let by = territoria_data::suggest::name_column(table)
+            .or_else(|| {
+                table
+                    .columns
+                    .iter()
+                    .position(|c| c.kind == ColumnKind::Text)
+            })
+            .map(|c| vec![table.columns[c].name.clone()])
+            .unwrap_or_default();
+        let measures = table
+            .columns
+            .iter()
+            .filter(|c| c.kind.is_numeric())
+            .map(|c| (c.name.clone(), Aggregate::Sum))
+            .collect();
+        SummariseDialog {
+            data,
+            by,
+            measures,
+            filter: String::new(),
+            name: String::new(),
+        }
+    }
+
+    pub fn show(&mut self, ctx: &egui::Context, project: &Project, open: &mut bool) -> bool {
+        let mut apply = false;
+        let mut cancel = false;
+        let Some((table, _)) = data_table(project, self.data) else {
+            *open = false;
+            return false;
+        };
+        *open = modal(ctx, "summarise", "Summarise", 520.0, |ui| {
+            ui.label(RichText::new("A new table with one row per group: e.g. sales per rep, customers per segment.").weak());
+            ui.add_space(6.0);
+            egui::Grid::new("sum-grid")
+                .num_columns(2)
+                .spacing([12.0, 8.0])
+                .show(ui, |ui| {
+                    ui.label("Per");
+                    ui.vertical(|ui| {
+                        egui::ScrollArea::vertical()
+                            .id_salt("sum-by")
+                            .max_height(120.0)
+                            .show(ui, |ui| {
+                                for c in table.columns.iter().filter(|c| {
+                                    !c.kind.is_numeric() || c.kind == ColumnKind::Integer
+                                }) {
+                                    let mut on = self.by.contains(&c.name);
+                                    if ui.checkbox(&mut on, &c.name).changed() {
+                                        if on {
+                                            self.by.push(c.name.clone());
+                                        } else {
+                                            self.by.retain(|x| x != &c.name);
+                                        }
+                                    }
+                                }
+                            });
+                    });
+                    ui.end_row();
+                    ui.label("Numbers");
+                    ui.vertical(|ui| {
+                        egui::ScrollArea::vertical()
+                            .id_salt("sum-measures")
+                            .max_height(140.0)
+                            .show(ui, |ui| {
+                                for c in table.columns.iter().filter(|c| c.kind.is_numeric()) {
+                                    ui.horizontal(|ui| {
+                                        let pos =
+                                            self.measures.iter().position(|(n, _)| n == &c.name);
+                                        let mut on = pos.is_some();
+                                        if ui.checkbox(&mut on, &c.name).changed() {
+                                            if on {
+                                                self.measures
+                                                    .push((c.name.clone(), Aggregate::Sum));
+                                            } else {
+                                                self.measures.retain(|(n, _)| n != &c.name);
+                                            }
+                                        }
+                                        if let Some(i) =
+                                            self.measures.iter().position(|(n, _)| n == &c.name)
+                                        {
+                                            let a = &mut self.measures[i].1;
+                                            ComboBox::from_id_salt(("sum-agg", &c.name))
+                                                .selected_text(a.label())
+                                                .show_ui(ui, |ui| {
+                                                    for x in Aggregate::ALL {
+                                                        ui.selectable_value(a, x, x.label());
+                                                    }
+                                                });
+                                        }
+                                    });
+                                }
+                            });
+                    });
+                    ui.end_row();
+                    ui.label("Only where");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.filter)
+                            .hint_text("all rows, or e.g. [Year] = 2026")
+                            .desired_width(260.0),
+                    );
+                    ui.end_row();
+                    ui.label("Name");
+                    let default = format!(
+                        "{} per {}",
+                        project_name(project, self.data),
+                        self.by.join(", ")
+                    );
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.name)
+                            .hint_text(default)
+                            .desired_width(260.0),
+                    );
+                    ui.end_row();
+                });
+            let filter_error = (!self.filter.trim().is_empty())
+                .then(|| {
+                    territoria_expr::Formula::compile(&self.filter, table)
+                        .err()
+                        .map(|e| e.message)
+                })
+                .flatten();
+            if let Some(e) = &filter_error {
+                ui.label(RichText::new(format!("⚠ {e}")).color(theme::WARN));
+            }
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                let ok = !self.by.is_empty() && filter_error.is_none();
+                if ui
+                    .add_enabled(
+                        ok,
+                        egui::Button::new(RichText::new("Create table").strong()),
+                    )
+                    .clicked()
+                {
+                    if self.name.trim().is_empty() {
+                        self.name = format!(
+                            "{} per {}",
+                            project_name(project, self.data),
+                            self.by.join(", ")
+                        );
+                    }
+                    apply = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    cancel = true;
+                }
+            });
+        });
+        if cancel || apply {
+            *open = false;
+        }
+        apply
+    }
+
+    /// The summary table.
+    pub fn table(&self, project: &Project) -> Option<Table> {
+        let (t, _) = data_table(project, self.data)?;
+        let by: Vec<usize> = self.by.iter().filter_map(|n| t.column_index(n)).collect();
+        let measures: Vec<(usize, Aggregate)> = self
+            .measures
+            .iter()
+            .filter_map(|(n, a)| t.column_index(n).map(|i| (i, *a)))
+            .collect();
+        let keep: Option<Vec<bool>> = (!self.filter.trim().is_empty()).then(|| {
+            territoria_expr::Formula::compile(&self.filter, t)
+                .map(|f| {
+                    f.evaluate(t)
+                        .iter()
+                        .map(|v| matches!(v, territoria_expr::Val::Bool(true)))
+                        .collect()
+                })
+                .unwrap_or_default()
+        });
+        Some(territoria_data::aggregate::summarise(
+            t,
+            &by,
+            &measures,
+            keep.as_deref(),
+        ))
+    }
+}
+
+fn project_name(project: &Project, data: crate::app::DataRef) -> String {
+    crate::app::data_name(project, data).unwrap_or_default()
+}

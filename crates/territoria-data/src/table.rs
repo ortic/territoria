@@ -522,4 +522,34 @@ mod tests {
         assert_eq!(t.rows(), 2);
         assert_eq!(t.columns[0].display(0), "007");
     }
+
+    #[test]
+    fn summarise_by_column() {
+        use crate::aggregate::{Aggregate, summarise};
+        let t = Table::new(vec![
+            Column::text(
+                "Rep",
+                ColumnKind::Text,
+                ["Ann", "Bob", "Ann", "Ann"]
+                    .map(|s| Some(s.to_owned()))
+                    .to_vec(),
+            ),
+            Column::number("Sales", vec![Some(1.0), Some(2.0), Some(3.0), Some(10.0)]),
+        ])
+        .unwrap();
+        let s = summarise(&t, &[0], &[(1, Aggregate::Sum), (1, Aggregate::Max)], None);
+        assert_eq!(s.rows(), 2);
+        assert_eq!(s.column("Rep").unwrap().display(0), "Ann");
+        assert_eq!(s.column("Rows").unwrap().f64(0), Some(3.0));
+        assert_eq!(s.column("Sales").unwrap().f64(0), Some(14.0));
+        assert_eq!(s.column("Sales (maximum)").unwrap().f64(1), Some(2.0));
+        // Only some rows.
+        let s = summarise(
+            &t,
+            &[0],
+            &[(1, Aggregate::Sum)],
+            Some(&[true, true, false, false]),
+        );
+        assert_eq!(s.column("Sales").unwrap().f64(0), Some(1.0));
+    }
 }

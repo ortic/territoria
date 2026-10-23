@@ -111,6 +111,13 @@ pub fn show(
                 actions.push(Action::AddRow(data));
             }
             if ui
+                .button("Σ Summarise…")
+                .on_hover_text("A new table with one row per group, e.g. sales per rep")
+                .clicked()
+            {
+                actions.push(Action::Summarise(data));
+            }
+            if ui
                 .button("⊕ Columns from…")
                 .on_hover_text("Values from the map (the area a point lies in, points in an area, the nearest point) or another table by key")
                 .clicked()

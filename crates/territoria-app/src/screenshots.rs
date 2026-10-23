@@ -2452,3 +2452,58 @@ fn lat_lon_in_one_column() {
         "{p:?}"
     );
 }
+
+/// A summary table: sales per segment.
+#[test]
+fn summarise_table() {
+    use crate::app::DataRef;
+    use crate::dialogs::{Placement, SummariseDialog};
+    let (mut h, _lock) = harness(false);
+    let table = Table::new(vec![
+        Column::text(
+            "Customer",
+            ColumnKind::Key,
+            ["1", "2", "3", "4"].map(|s| Some(s.to_owned())).to_vec(),
+        ),
+        Column::text(
+            "Segment",
+            ColumnKind::Text,
+            ["Retail", "Retail", "Wholesale", "Retail"]
+                .map(|s| Some(s.to_owned()))
+                .to_vec(),
+        ),
+        Column::number("Sales", vec![Some(1.0), Some(2.0), Some(30.0), Some(4.0)]),
+    ])
+    .unwrap();
+    let app = h.state_mut();
+    app.add_table(
+        "Customers".into(),
+        table,
+        PathBuf::from("c.csv"),
+        Placement::None,
+        None,
+    );
+    let data = DataRef::Table(app.project.tables[0].id);
+    let mut d = SummariseDialog::new(&app.project, data);
+    d.by = vec!["Segment".into()];
+    d.filter = "[Sales] > 1".into();
+    d.name = "Sales per segment".into();
+    app.create_summary(&d);
+    let t = &app.project.tables.last().unwrap();
+    assert_eq!(t.name, "Sales per segment");
+    let s = &t.table;
+    assert_eq!(s.rows(), 2);
+    assert_eq!(
+        s.column("Sales").unwrap().f64(0),
+        Some(6.0),
+        "Retail without the 1"
+    );
+    assert_eq!(s.column("Rows").unwrap().f64(1), Some(1.0));
+    assert!(
+        h.state()
+            .open_tabs_for_test()
+            .contains(&crate::app::Tab::Table(DataRef::Table(
+                h.state().project.tables[1].id
+            )))
+    );
+}

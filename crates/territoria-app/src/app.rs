@@ -89,6 +89,8 @@ pub enum Action {
     ReloadTable(TableId),
     /// Open the dialog for columns from the map or another table.
     Join(DataRef),
+    /// Open the dialog for a summary table.
+    Summarise(DataRef),
     /// Set a cell from text: row, column name, text.
     EditCell(DataRef, usize, String, String),
     AddRow(DataRef),
@@ -230,6 +232,7 @@ pub struct TerritoriaApp {
     sites: Option<crate::dialogs::SitesDialog>,
     catchment: Option<crate::dialogs::CatchmentDialog>,
     join: Option<crate::dialogs::JoinDialog>,
+    summarise: Option<crate::dialogs::SummariseDialog>,
     /// The search box: query and what it found.
     search: String,
     search_hits: Vec<crate::search::Hit>,
@@ -366,6 +369,7 @@ impl TerritoriaApp {
             sites: None,
             catchment: None,
             join: None,
+            summarise: None,
             search: String::new(),
             search_hits: Vec::new(),
             search_focus: false,
@@ -1863,6 +1867,20 @@ impl TerritoriaApp {
         self.selection = Selection::Data(DataRef::Layer(id));
     }
 
+    /// A new table from a summary dialog, opened.
+    pub(crate) fn create_summary(&mut self, d: &crate::dialogs::SummariseDialog) {
+        let Some(table) = d.table(&self.project) else {
+            return;
+        };
+        let before = self.project.clone();
+        let name = self.project.unique_table_name(d.name.trim());
+        let id = self.project.add_table(&name, table, SourceInfo::default());
+        self.history.push("Summarise", before);
+        self.dock
+            .push_to_focused_leaf(Tab::Table(DataRef::Table(id)));
+        self.selection = Selection::Data(DataRef::Table(id));
+    }
+
     /// Adds the columns a join dialog gives.
     pub(crate) fn apply_join(&mut self, d: &crate::dialogs::JoinDialog) {
         let Some(columns) = d.columns_for(&self.project, &mut self.values) else {
@@ -3025,6 +3043,9 @@ impl TerritoriaApp {
             Action::Join(data) => {
                 self.join = Some(crate::dialogs::JoinDialog::new(&self.project, data))
             }
+            Action::Summarise(data) => {
+                self.summarise = Some(crate::dialogs::SummariseDialog::new(&self.project, data))
+            }
             Action::EditCell(data, row, column, text) => {
                 let Some(col) = crate::dialogs::data_table(&self.project, data)
                     .and_then(|(t, _)| t.column(&column))
@@ -3809,6 +3830,14 @@ impl TerritoriaApp {
                 None => {}
             }
         }
+        if let Some(mut d) = self.summarise.take() {
+            let mut open = true;
+            if d.show(ctx, &self.project, &mut open) {
+                self.create_summary(&d);
+            } else if open {
+                self.summarise = Some(d);
+            }
+        }
         if let Some(mut d) = self.join.take() {
             let mut open = true;
             if d.show(ctx, &self.project, &mut open) {
@@ -4280,6 +4309,7 @@ impl eframe::App for TerritoriaApp {
             || self.sites.is_some()
             || self.catchment.is_some()
             || self.join.is_some()
+            || self.summarise.is_some()
             || self.settings_dialog.is_some()
             || self.select_list.is_some()
             || self.download.is_some()

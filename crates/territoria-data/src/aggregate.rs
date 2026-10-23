@@ -120,6 +120,80 @@ pub fn group(
         .collect()
 }
 
+/// One row per group of rows with the same values in `by` (in the order
+/// groups first appear): the group's values, its number of rows, and each
+/// of `measures` aggregated. Rows `keep` rules out are left out.
+pub fn summarise(
+    table: &crate::Table,
+    by: &[usize],
+    measures: &[(usize, Aggregate)],
+    keep: Option<&[bool]>,
+) -> crate::Table {
+    use crate::{Column, ColumnKind};
+    let mut index: std::collections::HashMap<Vec<String>, u32> = Default::default();
+    let mut first_rows: Vec<usize> = Vec::new();
+    let groups: Vec<Option<u32>> = (0..table.rows())
+        .map(|r| {
+            if keep.is_some_and(|k| !k.get(r).copied().unwrap_or(false)) {
+                return None;
+            }
+            let key: Vec<String> = by.iter().map(|&c| table.columns[c].display(r)).collect();
+            let next = index.len() as u32;
+            Some(*index.entry(key).or_insert_with(|| {
+                first_rows.push(r);
+                next
+            }))
+        })
+        .collect();
+    let n = first_rows.len();
+    let mut columns: Vec<Column> = by
+        .iter()
+        .map(|&c| {
+            let src = &table.columns[c];
+            let values: Vec<Option<String>> =
+                first_rows.iter().map(|&r| src.get(r).to_text()).collect();
+            let kind = if src.kind.is_textual() {
+                src.kind
+            } else {
+                ColumnKind::Text
+            };
+            let mut col = Column::text(src.name.clone(), kind, values);
+            if !src.kind.is_textual() {
+                // Numbers, dates, yes/no grouped by: back to their kind.
+                col.convert(src.kind);
+            }
+            col
+        })
+        .collect();
+    let mut rows = vec![0.0; n];
+    for g in groups.iter().flatten() {
+        rows[*g as usize] += 1.0;
+    }
+    columns.push(Column::number("Rows", rows.into_iter().map(Some).collect()));
+    for &(c, agg) in measures {
+        let src = &table.columns[c];
+        let name = match agg {
+            Aggregate::Sum => src.name.clone(),
+            a => format!("{} ({})", src.name, a.label().to_lowercase()),
+        };
+        columns.push(Column::number(
+            name,
+            group(
+                (0..table.rows()).map(|r| src.f64(r)),
+                groups.iter().copied(),
+                n,
+                agg,
+            ),
+        ));
+    }
+    let mut out = crate::Table::with_rows(n);
+    for mut c in columns {
+        c.name = out.unique_name(&c.name);
+        let _ = out.push_column(c);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
