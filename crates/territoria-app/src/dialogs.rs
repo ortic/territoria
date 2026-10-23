@@ -3610,3 +3610,130 @@ impl SummariseDialog {
 fn project_name(project: &Project, data: crate::app::DataRef) -> String {
     crate::app::data_name(project, data).unwrap_or_default()
 }
+
+/// How the parts of a score are made comparable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScoreScale {
+    /// Each as its share of the column's total.
+    Share,
+    /// Each as its rank among all rows, 0 to 1.
+    Percentile,
+    /// As they are.
+    Raw,
+}
+
+/// A weighted score of several columns, written as a formula.
+pub struct ScoreDialog {
+    pub data: crate::app::DataRef,
+    pub weights: Vec<(String, f64)>,
+    pub scale: ScoreScale,
+}
+
+impl ScoreDialog {
+    pub fn new(project: &Project, data: crate::app::DataRef) -> ScoreDialog {
+        let weights = data_table(project, data)
+            .map(|(t, _)| {
+                t.columns
+                    .iter()
+                    .filter(|c| c.kind.is_numeric())
+                    .take(2)
+                    .map(|c| (c.name.clone(), 1.0))
+                    .collect()
+            })
+            .unwrap_or_default();
+        ScoreDialog {
+            data,
+            weights,
+            scale: ScoreScale::Share,
+        }
+    }
+
+    /// The score as a formula.
+    pub fn formula(&self) -> String {
+        let total: f64 = self
+            .weights
+            .iter()
+            .map(|(_, w)| w.abs())
+            .sum::<f64>()
+            .max(1e-9);
+        self.weights
+            .iter()
+            .filter(|(_, w)| *w != 0.0)
+            .map(|(c, w)| {
+                let col = format!("[{}]", c.replace(']', "]]"));
+                let part = match self.scale {
+                    ScoreScale::Share => format!("share({col})"),
+                    ScoreScale::Percentile => format!("percentile({col})"),
+                    ScoreScale::Raw => col,
+                };
+                let weight =
+                    territoria_data::table::format_number((w / total * 1000.0).round() / 1000.0);
+                format!("{part} * {weight}")
+            })
+            .collect::<Vec<_>>()
+            .join(" + ")
+    }
+
+    /// `true` when the formula should go to the editor.
+    pub fn show(&mut self, ctx: &egui::Context, project: &Project, open: &mut bool) -> bool {
+        let mut done = false;
+        let mut cancel = false;
+        let Some((table, _)) = data_table(project, self.data) else {
+            *open = false;
+            return false;
+        };
+        *open = modal(ctx, "score", "Score", 460.0, |ui| {
+            ui.label(RichText::new("One figure from several, weighted: e.g. 60 % revenue and 40 % customers. The weights are made to add up to 1.").weak());
+            ui.add_space(6.0);
+            for c in table.columns.iter().filter(|c| c.kind.is_numeric()) {
+                ui.horizontal(|ui| {
+                    let pos = self.weights.iter().position(|(n, _)| n == &c.name);
+                    let mut on = pos.is_some();
+                    if ui.checkbox(&mut on, &c.name).changed() {
+                        if on {
+                            self.weights.push((c.name.clone(), 1.0));
+                        } else {
+                            self.weights.retain(|(n, _)| n != &c.name);
+                        }
+                    }
+                    if let Some(i) = self.weights.iter().position(|(n, _)| n == &c.name) {
+                        ui.add(
+                            egui::DragValue::new(&mut self.weights[i].1)
+                                .speed(0.05)
+                                .range(-100.0..=100.0)
+                                .prefix("× "),
+                        );
+                    }
+                });
+            }
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label("Each as");
+                ui.radio_value(&mut self.scale, ScoreScale::Share, "share of the total");
+                ui.radio_value(&mut self.scale, ScoreScale::Percentile, "rank (0–1)");
+                ui.radio_value(&mut self.scale, ScoreScale::Raw, "as it is");
+            });
+            ui.add_space(4.0);
+            ui.label(RichText::new(self.formula()).monospace().weak());
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(
+                        !self.weights.is_empty(),
+                        egui::Button::new(RichText::new("Continue").strong()),
+                    )
+                    .clicked()
+                {
+                    done = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    cancel = true;
+                }
+            });
+        });
+        if cancel || done {
+            *open = false;
+        }
+        done
+    }
+}

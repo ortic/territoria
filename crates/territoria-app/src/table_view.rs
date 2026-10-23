@@ -111,6 +111,13 @@ pub fn show(
                 actions.push(Action::AddRow(data));
             }
             if ui
+                .button("⚖ Score…")
+                .on_hover_text("A weighted mix of several figures, as a calculated column")
+                .clicked()
+            {
+                actions.push(Action::Score(data));
+            }
+            if ui
                 .button("Σ Summarise…")
                 .on_hover_text("A new table with one row per group, e.g. sales per rep")
                 .clicked()

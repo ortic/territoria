@@ -91,6 +91,8 @@ pub enum Action {
     Join(DataRef),
     /// Open the dialog for a summary table.
     Summarise(DataRef),
+    /// Open the dialog for a weighted score column.
+    Score(DataRef),
     /// Set a cell from text: row, column name, text.
     EditCell(DataRef, usize, String, String),
     AddRow(DataRef),
@@ -233,6 +235,7 @@ pub struct TerritoriaApp {
     catchment: Option<crate::dialogs::CatchmentDialog>,
     join: Option<crate::dialogs::JoinDialog>,
     summarise: Option<crate::dialogs::SummariseDialog>,
+    score: Option<crate::dialogs::ScoreDialog>,
     /// The search box: query and what it found.
     search: String,
     search_hits: Vec<crate::search::Hit>,
@@ -370,6 +373,7 @@ impl TerritoriaApp {
             catchment: None,
             join: None,
             summarise: None,
+            score: None,
             search: String::new(),
             search_hits: Vec::new(),
             search_focus: false,
@@ -3043,6 +3047,9 @@ impl TerritoriaApp {
             Action::Join(data) => {
                 self.join = Some(crate::dialogs::JoinDialog::new(&self.project, data))
             }
+            Action::Score(data) => {
+                self.score = Some(crate::dialogs::ScoreDialog::new(&self.project, data))
+            }
             Action::Summarise(data) => {
                 self.summarise = Some(crate::dialogs::SummariseDialog::new(&self.project, data))
             }
@@ -3830,6 +3837,18 @@ impl TerritoriaApp {
                 None => {}
             }
         }
+        if let Some(mut d) = self.score.take() {
+            let mut open = true;
+            if d.show(ctx, &self.project, &mut open) {
+                // On to the formula editor, to see and adjust it.
+                let mut f = crate::dialogs::FormulaDialog::new(&self.project, d.data, None);
+                f.name = "Score".into();
+                f.source = d.formula();
+                self.formula = Some(f);
+            } else if open {
+                self.score = Some(d);
+            }
+        }
         if let Some(mut d) = self.summarise.take() {
             let mut open = true;
             if d.show(ctx, &self.project, &mut open) {
@@ -4310,6 +4329,7 @@ impl eframe::App for TerritoriaApp {
             || self.catchment.is_some()
             || self.join.is_some()
             || self.summarise.is_some()
+            || self.score.is_some()
             || self.settings_dialog.is_some()
             || self.select_list.is_some()
             || self.download.is_some()

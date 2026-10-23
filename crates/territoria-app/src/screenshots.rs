@@ -2507,3 +2507,39 @@ fn summarise_table() {
             )))
     );
 }
+
+/// A score of two figures, weighted 3:1, as shares of their totals.
+#[test]
+fn score_column() {
+    use crate::app::DataRef;
+    use crate::dialogs::{Placement, ScoreDialog, ScoreScale};
+    let (mut h, _lock) = harness(false);
+    let table = Table::new(vec![
+        Column::text(
+            "Area",
+            ColumnKind::Key,
+            vec![Some("A".into()), Some("B".into())],
+        ),
+        Column::number("Revenue", vec![Some(75.0), Some(25.0)]),
+        Column::number("Customers", vec![Some(1.0), Some(3.0)]),
+    ])
+    .unwrap();
+    let app = h.state_mut();
+    app.add_table(
+        "T".into(),
+        table,
+        PathBuf::from("t.csv"),
+        Placement::None,
+        None,
+    );
+    let data = DataRef::Table(app.project.tables[0].id);
+    let mut d = ScoreDialog::new(&app.project, data);
+    d.weights = vec![("Revenue".into(), 3.0), ("Customers".into(), 1.0)];
+    d.scale = ScoreScale::Share;
+    let f = d.formula();
+    assert_eq!(f, "share([Revenue]) * 0.75 + share([Customers]) * 0.25");
+    app.apply_formula_for_test(data, "Score", &f);
+    let s = app.project.tables[0].table.column("Score").unwrap();
+    // A: 0.75·0.75 + 0.25·0.25 = 0.625
+    assert!((s.f64(0).unwrap() - 0.625).abs() < 1e-12);
+}
