@@ -87,6 +87,10 @@ pub enum Action {
     GoToView(MapId, [f64; 2], f64),
     /// Read a table again from its file.
     ReloadTable(TableId),
+    /// Draw a map in another projection.
+    SetMapCrs(MapId, territoria_geo::Crs),
+    /// Show a message.
+    Notify(String),
     /// Open the dialog for sites from a point layer.
     SitesFromPoints(PlanId),
     /// Select the features of table rows (adding to the selection: `true`).
@@ -2955,6 +2959,21 @@ impl TerritoriaApp {
                 }
             }
             Action::ReloadTable(id) => self.reload_table(id),
+            Action::Notify(text) => self.toast(text),
+            Action::SetMapCrs(map, crs) => {
+                self.edit("Change projection", |p| {
+                    if let Some(m) = p.map_mut(map) {
+                        m.crs = crs;
+                        // Views are in the old projection's units.
+                        m.view = None;
+                        m.views.clear();
+                    }
+                });
+                if let Some(s) = self.map_states.get_mut(&map) {
+                    s.view = None;
+                    s.fit_requested = true;
+                }
+            }
             Action::GoToView(map, center, scale) => {
                 self.current_map = Some(map);
                 self.map_states.entry(map).or_default().go_to_view = Some((center, scale));

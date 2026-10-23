@@ -2234,3 +2234,31 @@ fn territory_table_tab() {
             .contains(&crate::app::Tab::Plan(plan))
     );
 }
+
+/// A map in another projection: national grid, then back.
+#[test]
+fn map_projection() {
+    use crate::app::Action;
+    let (mut h, _lock) = harness(false);
+    h.state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries");
+    settle(&mut h);
+    let app = h.state_mut();
+    let map = app.project.maps[0].id;
+    let lv95 = territoria_geo::Crs::parse("EPSG:2056").unwrap();
+    app.apply_action_for_test(Action::SetMapCrs(map, lv95.clone()));
+    settle(&mut h);
+    let app = h.state_mut();
+    assert_eq!(app.project.maps[0].crs, lv95);
+    // Drawn and fitted in metres of the national grid.
+    let (center, _) = app.view_for_test().expect("a view");
+    assert!(
+        center[0] > 2_000_000.0 || center[0].abs() < 1e6,
+        "{center:?}"
+    );
+    save(&mut h, "projection");
+    h.state_mut()
+        .run_command_for_test(crate::commands::Command::Undo);
+    assert!(h.state().project.maps[0].crs.is_web_mercator());
+}

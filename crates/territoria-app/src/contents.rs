@@ -46,6 +46,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
             if let Some(map) = cx.current_map.and_then(|m| project.map(m)) {
                 section(ui, &format!("MAP · {}", map.name.to_uppercase()));
                 background_ui(ui, map, &mut actions);
+                projection_ui(ui, project, map, &mut actions);
                 views_ui(ui, map, &mut actions);
                 let count = map.layers.len();
                 for (pos, ml) in map.layers.iter().enumerate().rev() {
@@ -628,4 +629,94 @@ fn views_ui(ui: &mut Ui, map: &territoria_model::Map, actions: &mut Vec<Action>)
             },
         );
     });
+}
+
+/// The projection the map is drawn in.
+fn projection_ui(
+    ui: &mut Ui,
+    project: &territoria_model::Project,
+    map: &territoria_model::Map,
+    actions: &mut Vec<Action>,
+) {
+    use territoria_geo::Crs;
+    let map_id = map.id;
+    let local = map.crs.proj.contains("+proj=laea") && map.crs.epsg.is_none();
+    let current = if map.crs.is_web_mercator() {
+        "Web Mercator".to_owned()
+    } else if local {
+        "Equal area (local)".to_owned()
+    } else {
+        map.crs.label()
+    };
+    // The middle of all layers, for a local projection.
+    let centre = project
+        .layers
+        .iter()
+        .filter(|l| l.geometry.geographic)
+        .filter_map(|l| l.geometry.bbox)
+        .reduce(|a, b| {
+            geo_types::Rect::new(
+                geo_types::Coord {
+                    x: a.min().x.min(b.min().x),
+                    y: a.min().y.min(b.min().y),
+                },
+                geo_types::Coord {
+                    x: a.max().x.max(b.max().x),
+                    y: a.max().y.max(b.max().y),
+                },
+            )
+        })
+        .map(|b| b.center());
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Projection").small());
+        egui::ComboBox::from_id_salt("projection")
+            .width(118.0)
+            .selected_text(&current)
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(map.crs.is_web_mercator(), "Web Mercator")
+                    .on_hover_text("As web maps: needed for background maps; areas far from the equator look bigger")
+                    .clicked()
+                {
+                    actions.push(Action::SetMapCrs(map_id, Crs::web_mercator()));
+                }
+                if let Some(c) = centre
+                    && ui
+                        .selectable_label(local, "Equal area (local)")
+                        .on_hover_text("Lambert equal-area around your data: true sizes, for print and comparisons")
+                        .clicked()
+                    && let Ok(crs) = Crs::from_proj(&format!(
+                        "+proj=laea +lat_0={:.4} +lon_0={:.4} +x_0=0 +y_0=0 +ellps=WGS84 +units=m +no_defs",
+                        c.y, c.x
+                    ))
+                {
+                    actions.push(Action::SetMapCrs(map_id, crs));
+                }
+            });
+        let id = ui.id().with("epsg");
+        let mut text: String = ui.data_mut(|d| d.get_temp(id)).unwrap_or_default();
+        let r = ui
+            .add(egui::TextEdit::singleline(&mut text).hint_text("EPSG").desired_width(46.0))
+            .on_hover_text("Any EPSG code, e.g. 2056 (Switzerland), 25832 (Germany), 2154 (France); Enter applies");
+        if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && !text.trim().is_empty() {
+            match Crs::parse(&text) {
+                Ok(crs) => actions.push(Action::SetMapCrs(map_id, crs)),
+                Err(e) => actions.push(Action::Notify(format!("{text}: {e}"))),
+            }
+            text.clear();
+        }
+        ui.data_mut(|d| d.insert_temp(id, text));
+    });
+    if !map.crs.is_web_mercator()
+        && matches!(
+            map.background,
+            territoria_model::map::Background::Tiles { .. }
+        )
+    {
+        ui.label(
+            RichText::new("Background maps show in Web Mercator only.")
+                .small()
+                .color(crate::theme::WARN),
+        );
+    }
 }

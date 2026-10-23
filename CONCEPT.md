@@ -164,7 +164,7 @@ territoria/
 
 - [x] Map tabs; several maps per project
 - [x] Pan (drag), zoom (wheel, pinch, double-click, box zoom with Shift), zoom to layer/selection/all (no box zoom; zoom to all and to a territory)
-- [ ] Display projection: Web Mercator by default, any EPSG code per map
+- [x] Display projection: Web Mercator by default, any EPSG code per map (Web Mercator, local equal-area around the data, or any EPSG code; background maps in Web Mercator only)
 - [x] Level-of-detail rendering: simplified arcs per zoom level, GPU meshes, viewport culling
 - [x] Hover highlight with a tooltip card (name, key, data values)
 - [x] Selection: click, Ctrl+click, rectangle, lasso, radius; by list (ranges like `01-09, 15`) (Select tool: click, Shift/Ctrl+click toggles, drag a rectangle, Alt+drag a lasso; list dialog with ranges and wildcards; no radius yet)
