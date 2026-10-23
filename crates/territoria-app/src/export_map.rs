@@ -1049,13 +1049,13 @@ impl PageSize {
     ];
 
     pub fn label(self) -> &'static str {
-        match self {
+        crate::i18n::tr(match self {
             PageSize::Screen => "As on screen",
             PageSize::A4Landscape => "A4 landscape",
             PageSize::A4Portrait => "A4 portrait",
             PageSize::A3Landscape => "A3 landscape",
             PageSize::A3Portrait => "A3 portrait",
-        }
+        })
     }
 
     /// The page in points; `None` for the screen's size.

@@ -96,7 +96,7 @@ pub fn show(
         ui.label("🔍");
         ui.add(
             egui::TextEdit::singleline(&mut state.filter)
-                .hint_text("Find in all columns")
+                .hint_text(tr("Find in all columns"))
                 .desired_width(220.0),
         );
         // Segments: the table's yes/no columns, e.g. a calculated [Key account].

@@ -4917,7 +4917,7 @@ impl TerritoriaApp {
                 ui.label(RichText::new(&t.name).strong());
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.button("⌘").on_hover_text("All commands (Ctrl+Shift+P)").clicked() {
+                if ui.button("⌘").on_hover_text(tr("All commands (Ctrl+Shift+P)")).clicked() {
                     commands.push(Command::ShowPalette);
                 }
                 self.search_ui(ui);

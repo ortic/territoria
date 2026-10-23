@@ -569,7 +569,7 @@ impl TerritoriesPanel {
                 });
             if ui
                 .button("➕")
-                .on_hover_text("New territory plan")
+                .on_hover_text(tr("New territory plan"))
                 .clicked()
             {
                 actions.push(Action::Command(crate::commands::Command::NewPlan));
@@ -1439,7 +1439,7 @@ impl TerritoriesPanel {
                             let current = t.region.and_then(|r| plan.region(r)).map_or("None".to_owned(), |r| r.name.clone());
                             let mut region = t.region;
                             ComboBox::from_id_salt("territory-region").selected_text(current).show_ui(ui, |ui| {
-                                ui.selectable_value(&mut region, None, "None");
+                                ui.selectable_value(&mut region, None, tr("None"));
                                 for r in &plan.regions {
                                     ui.selectable_value(&mut region, Some(r.id), &r.name);
                                 }
@@ -1562,8 +1562,8 @@ impl TerritoriesPanel {
                 .spacing([10.0, 3.0])
                 .striped(true)
                 .show(ui, |ui| {
-                    ui.label(RichText::new("Territory").weak());
-                    ui.label(RichText::new("Areas").weak());
+                    ui.label(RichText::new(tr("Territory")).weak());
+                    ui.label(RichText::new(tr("Areas")).weak());
                     ui.label(RichText::new(&r.measure).weak());
                     ui.label("");
                     ui.end_row();

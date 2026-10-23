@@ -154,7 +154,7 @@ pub fn show(
                     });
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("Columns").strong());
+                        ui.label(RichText::new(tr("Columns")).strong());
                         if ui
                             .small_button(tr("ƒ Calculated column…"))
                             .on_hover_text("A new column computed from the others with a formula")
@@ -266,7 +266,7 @@ fn layer(ui: &mut Ui, project: &Project, id: LayerId, actions: &mut Vec<Action>)
             ComboBox::from_id_salt("lname")
                 .selected_text(name.clone().unwrap_or("None".into()))
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut name, None, "None");
+                    ui.selectable_value(&mut name, None, tr("None"));
                     for c in l.attributes.columns.iter().filter(|c| c.kind.is_textual()) {
                         ui.selectable_value(&mut name, Some(c.name.clone()), &c.name);
                     }
@@ -1193,7 +1193,7 @@ fn map_layer(
                 .spacing([10.0, 6.0])
                 .show(ui, |ui| {
                     for (which, end) in [(0, from), (1, to)] {
-                        ui.label(if which == 0 { "From" } else { "To" });
+                        ui.label(if which == 0 { tr("From") } else { "To" });
                         let mut chosen = end.clone();
                         ui.horizontal(|ui| {
                             let text = match end {
@@ -1254,7 +1254,7 @@ fn map_layer(
                         }
                         ui.end_row();
                     }
-                    ui.label("Widths follow");
+                    ui.label(tr("Widths follow"));
                     let mut v = value.clone();
                     ComboBox::from_id_salt("flow-value")
                         .width(180.0)
@@ -1567,7 +1567,7 @@ fn map_layer(
                     }
                 })
             };
-            ui.label(RichText::new("Values").strong());
+            ui.label(RichText::new(tr("Values")).strong());
             for (i, p) in parts.iter().enumerate() {
                 ui.horizontal(|ui| {
                     if let Some(c) = rgba_button(ui, p.color) {
@@ -1726,7 +1726,7 @@ fn map_layer(
                 .num_columns(2)
                 .spacing([10.0, 6.0])
                 .show(ui, |ui| {
-                    ui.label("Radii");
+                    ui.label(tr("Radii"));
                     let text: Vec<String> = radii_km
                         .iter()
                         .map(|r| territoria_data::table::format_number(*r))

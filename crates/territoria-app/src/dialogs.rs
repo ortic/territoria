@@ -31,7 +31,7 @@ fn modal(
     egui::Modal::new(egui::Id::new(id)).show(ctx, |ui| {
         ui.set_width(width);
         ui.horizontal(|ui| {
-            ui.heading(title);
+            ui.heading(crate::i18n::tr_str(title));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.small_button("✖").on_hover_text("Close (Esc)").clicked() {
                     open = false;
@@ -299,7 +299,7 @@ impl ImportLayers {
             {
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    ui.label("Coordinate system:");
+                    ui.label(tr("Coordinate system:"));
                     ui.add(
                         egui::TextEdit::singleline(&mut self.crs_text)
                             .hint_text("EPSG code, e.g. 2056, 25832, 27700")
@@ -541,7 +541,7 @@ impl ImportTable {
             // Reading options.
             ui.horizontal(|ui| {
                 if !self.info.sheets.is_empty() {
-                    ui.label("Sheet");
+                    ui.label(tr("Sheet"));
                     let mut sheet = self.info.sheet.clone();
                     ComboBox::from_id_salt("sheet")
                         .selected_text(sheet.clone().unwrap_or_default())
@@ -557,7 +557,7 @@ impl ImportTable {
                     }
                 }
                 if let Some(d) = self.info.delimiter {
-                    ui.label("Separator");
+                    ui.label(tr("Separator"));
                     let mut sel = d;
                     ComboBox::from_id_salt("delim")
                         .selected_text(delimiter_label(d))
@@ -573,7 +573,7 @@ impl ImportTable {
                     }
                 }
                 if let Some(enc) = &self.info.encoding {
-                    ui.label("Encoding");
+                    ui.label(tr("Encoding"));
                     let mut sel = enc.clone();
                     ComboBox::from_id_salt("enc")
                         .selected_text(&sel)
@@ -597,7 +597,7 @@ impl ImportTable {
                 }
                 let mut header = self.info.header;
                 if ui
-                    .checkbox(&mut header, "First row has column names")
+                    .checkbox(&mut header, tr("First row has column names"))
                     .changed()
                 {
                     let mut o = self.options.clone();
@@ -683,7 +683,7 @@ impl ImportTable {
             if let Placement::LatLon(column) = &mut self.placement {
                 ui.indent("latlon", |ui| {
                     ui.horizontal(|ui| {
-                        ui.label("Column");
+                        ui.label(tr("Column"));
                         let mut c = Some(column.clone());
                         column_combo(
                             ui,
@@ -717,7 +717,7 @@ impl ImportTable {
                     ui.horizontal(|ui| {
                         let mut xs = Some(x.clone());
                         let mut ys = Some(y.clone());
-                        ui.label("Longitude / x");
+                        ui.label(tr("Longitude / x"));
                         column_combo(
                             ui,
                             "coord-x",
@@ -726,7 +726,7 @@ impl ImportTable {
                             |k| k.is_numeric(),
                             None,
                         );
-                        ui.label("Latitude / y");
+                        ui.label(tr("Latitude / y"));
                         column_combo(
                             ui,
                             "coord-y",
@@ -739,7 +739,7 @@ impl ImportTable {
                         *y = ys.unwrap_or_default();
                     });
                     ui.horizontal(|ui| {
-                        ui.label("Coordinate system");
+                        ui.label(tr("Coordinate system"));
                         if self.crs_text == "?" {
                             self.crs_text.clear();
                             self.crs_error = Some(
@@ -762,7 +762,7 @@ impl ImportTable {
             if ui
                 .radio(
                     as_address,
-                    "Rows have addresses: find their coordinates (geocoding)",
+                    tr("Rows have addresses: find their coordinates (geocoding)"),
                 )
                 .on_hover_text("Each address is looked up with the geocoding service set in the settings; results are kept, so repeated addresses cost nothing")
                 .clicked()
@@ -777,20 +777,20 @@ impl ImportTable {
                         .spacing([8.0, 4.0])
                         .show(ui, |ui| {
                             let texts = |k: ColumnKind| k != ColumnKind::Number && k != ColumnKind::Bool;
-                            ui.label("Street");
+                            ui.label(tr("Street"));
                             column_combo(ui, "addr-street", &self.table, &mut a.street, texts, Some("—"));
-                            ui.label("Postcode");
+                            ui.label(tr("Postcode"));
                             column_combo(ui, "addr-postcode", &self.table, &mut a.postcode, texts, Some("—"));
                             ui.end_row();
-                            ui.label("Town");
+                            ui.label(tr("Town"));
                             column_combo(ui, "addr-city", &self.table, &mut a.city, texts, Some("—"));
-                            ui.label("Country");
+                            ui.label(tr("Country"));
                             column_combo(ui, "addr-country", &self.table, &mut a.country, texts, Some("—"));
                             ui.end_row();
-                            ui.label("Or all in");
+                            ui.label(tr("Or all in"));
                             column_combo(ui, "addr-text", &self.table, &mut a.text, texts, Some("—"));
                             if a.country.is_none() {
-                                ui.label("Country for all");
+                                ui.label(tr("Country for all"));
                                 ui.add(
                                     egui::TextEdit::singleline(&mut a.default_country)
                                         .hint_text("e.g. Switzerland")
@@ -820,7 +820,10 @@ impl ImportTable {
             ui.horizontal(|ui| {
                 let ready = !matches!(&self.placement, Placement::Address(a) if !a.is_usable());
                 if ui
-                    .add_enabled(ready, egui::Button::new(RichText::new("Add data").strong()))
+                    .add_enabled(
+                        ready,
+                        egui::Button::new(RichText::new(tr("Add data")).strong()),
+                    )
                     .clicked()
                 {
                     let crs = if self.crs_text.trim().is_empty() {
@@ -1031,13 +1034,13 @@ impl LinkDialog {
                 .num_columns(2)
                 .spacing([12.0, 8.0])
                 .show(ui, |ui| {
-                    ui.label("Areas");
+                    ui.label(tr("Areas"));
                     if layer_combo(ui, "link-layer", project, &mut self.layer, None) {
                         changed = true;
                         auto = true;
                     }
                     ui.end_row();
-                    ui.label("Key in the table");
+                    ui.label(tr("Key in the table"));
                     if column_combo(
                         ui,
                         "link-col",
@@ -1050,7 +1053,7 @@ impl LinkDialog {
                         auto = true;
                     }
                     ui.end_row();
-                    ui.label("Compare keys");
+                    ui.label(tr("Compare keys"));
                     let before = self.mode;
                     ComboBox::from_id_salt("link-mode")
                         .width(220.0)
@@ -1096,7 +1099,7 @@ impl LinkDialog {
             ui.separator();
             ui.horizontal(|ui| {
                 let mut color = self.color_by.is_some();
-                ui.checkbox(&mut color, "Colour the areas by");
+                ui.checkbox(&mut color, tr("Colour the areas by"));
                 if !color {
                     self.color_by = None;
                 } else if self.color_by.is_none() {
@@ -1136,7 +1139,7 @@ impl LinkDialog {
                     .as_ref()
                     .is_some_and(|m| m.stats.rows_matched > 0);
                 if ui
-                    .add_enabled(ok, egui::Button::new(RichText::new("Link").strong()))
+                    .add_enabled(ok, egui::Button::new(RichText::new(tr("Link")).strong()))
                     .clicked()
                     && let (Some(layer), Some(column)) = (self.layer, self.column.clone())
                 {
@@ -1328,7 +1331,7 @@ impl ColorByDialog {
                 .num_columns(2)
                 .spacing([12.0, 8.0])
                 .show(ui, |ui| {
-                    ui.label("Areas");
+                    ui.label(tr("Areas"));
                     if layer_combo(ui, "cb-layer", project, &mut self.layer, None) {
                         self.choice = 0;
                         self.chart_values.clear();
@@ -1340,7 +1343,7 @@ impl ColorByDialog {
                         .unwrap_or_default();
                     if self.chart.is_some() {
                         // Charts: several numbers, each a slice or bar.
-                        ui.label("Values");
+                        ui.label(tr("Values"));
                         ui.vertical(|ui| {
                             egui::ScrollArea::vertical()
                                 .max_height(180.0)
@@ -1383,7 +1386,7 @@ impl ColorByDialog {
                             });
                         ui.end_row();
                         if let Some(second) = &mut self.second {
-                            ui.label("and");
+                            ui.label(tr("and"));
                             ComboBox::from_id_salt("cb-second")
                                 .width(280.0)
                                 .selected_text(options.get(*second).map_or("", |o| o.0.as_str()))
@@ -1420,7 +1423,7 @@ impl ColorByDialog {
                                 self.second = None;
                             }
                             if ui
-                                .radio(single && circles && !self.heat, "Circles sized by value")
+                                .radio(single && circles && !self.heat, tr("Circles sized by value"))
                                 .on_hover_text(
                                     "A circle on each area or point; its area grows with the value",
                                 )
@@ -1668,17 +1671,17 @@ impl NewPlanDialog {
                     ui.label(tr("Name"));
                     ui.add(egui::TextEdit::singleline(&mut self.name).desired_width(260.0));
                     ui.end_row();
-                    ui.label("Built from").on_hover_text(
+                    ui.label(tr("Built from")).on_hover_text(
                         "The areas territories consist of: postcodes, municipalities, …",
                     );
                     changed |= layer_combo(ui, "np-layer", project, &mut self.layer, None);
                     ui.end_row();
-                    ui.label("Start");
+                    ui.label(tr("Start"));
                     ui.vertical(|ui| {
                         ui.radio_value(
                             &mut self.start,
                             PlanStart::Empty,
-                            "With empty territories to paint",
+                            tr("With empty territories to paint"),
                         );
                         let has_tables = !project.tables.is_empty();
                         ui.add_enabled_ui(has_tables, |ui| {
@@ -1686,7 +1689,7 @@ impl NewPlanDialog {
                                 .radio_value(
                                     &mut self.start,
                                     PlanStart::FromTable,
-                                    "From an assignment table (area → territory)",
+                                    tr("From an assignment table (area → territory)"),
                                 )
                                 .on_disabled_hover_text("Add a table first: File → Add Data")
                                 .changed();
@@ -1705,7 +1708,7 @@ impl NewPlanDialog {
                     .num_columns(2)
                     .spacing([12.0, 8.0])
                     .show(ui, |ui| {
-                        ui.label("Table");
+                        ui.label(tr("Table"));
                         let text = self
                             .table
                             .and_then(|t| project.table(t))
@@ -1737,7 +1740,7 @@ impl NewPlanDialog {
                                         .map(|(c, _)| t.table.columns[c].name.clone());
                                 changed = true;
                             }
-                            ui.label("Area key");
+                            ui.label(tr("Area key"));
                             changed |= column_combo(
                                 ui,
                                 "np-unit",
@@ -1747,7 +1750,7 @@ impl NewPlanDialog {
                                 None,
                             );
                             ui.end_row();
-                            ui.label("Territory");
+                            ui.label(tr("Territory"));
                             changed |= column_combo(
                                 ui,
                                 "np-terr",
@@ -1757,7 +1760,7 @@ impl NewPlanDialog {
                                 None,
                             );
                             ui.end_row();
-                            ui.label("Territory name");
+                            ui.label(tr("Territory name"));
                             changed |= column_combo(
                                 ui,
                                 "np-tname",
@@ -1888,7 +1891,7 @@ impl MergeDialog {
                 .num_columns(2)
                 .spacing([12.0, 8.0])
                 .show(ui, |ui| {
-                    ui.label("Areas");
+                    ui.label(tr("Areas"));
                     if layer_combo(
                         ui,
                         "merge-layer",
@@ -1903,7 +1906,7 @@ impl MergeDialog {
                     }
                     ui.end_row();
                     if let Some(l) = self.layer.and_then(|l| project.layer(l)) {
-                        ui.label("Merge by");
+                        ui.label(tr("Merge by"));
                         column_combo(
                             ui,
                             "merge-col",
@@ -1920,7 +1923,7 @@ impl MergeDialog {
                                 self.use_prefix,
                                 egui::DragValue::new(&mut self.prefix).range(1..=12),
                             );
-                            ui.label("characters");
+                            ui.label(tr("characters"));
                         });
                         ui.end_row();
                         if let Some(c) = self
@@ -1930,7 +1933,7 @@ impl MergeDialog {
                         {
                             let prefix = self.use_prefix.then_some(self.prefix);
                             let groups = l.attributes.groups_by(c, prefix).len();
-                            ui.label("Result");
+                            ui.label(tr("Result"));
                             ui.label(format!(
                                 "{} areas become {}",
                                 format_value(l.len() as f64),
@@ -2024,7 +2027,7 @@ impl DownloadDialog {
                 None => {
                     ui.horizontal(|ui| {
                         ui.spinner();
-                        ui.label("Loading the list of countries…");
+                        ui.label(tr("Loading the list of countries…"));
                     });
                     return;
                 }
@@ -2152,7 +2155,7 @@ impl DownloadDialog {
                 if ui
                     .add_enabled(
                         set.is_some(),
-                        egui::Button::new(RichText::new("Download").strong()),
+                        egui::Button::new(RichText::new(tr("Download")).strong()),
                     )
                     .clicked()
                     && let Some(set) = set
@@ -2227,15 +2230,15 @@ impl ExportMapDialog {
                 .num_columns(2)
                 .spacing([12.0, 8.0])
                 .show(ui, |ui| {
-                    ui.label("Format");
+                    ui.label(tr("Format"));
                     ui.horizontal(|ui| {
-                        ui.selectable_value(&mut s.format, Format::Png, "PNG image");
+                        ui.selectable_value(&mut s.format, Format::Png, tr("PNG image"));
                         ui.selectable_value(&mut s.format, Format::Pdf, "PDF");
                         ui.selectable_value(&mut s.format, Format::Svg, "SVG");
                     });
                     ui.end_row();
                     if s.format == Format::Png {
-                        ui.label("Resolution");
+                        ui.label(tr("Resolution"));
                         ui.horizontal(|ui| {
                             for (k, label) in
                                 [(1.0, "Screen"), (2.0, "Sharp (2×)"), (4.0, "Print (4×)")]
@@ -2245,7 +2248,7 @@ impl ExportMapDialog {
                         });
                         ui.end_row();
                     }
-                    ui.label("Page");
+                    ui.label(tr("Page"));
                     ComboBox::from_id_salt("export-page")
                         .selected_text(s.page.label())
                         .show_ui(ui, |ui| {
@@ -2256,11 +2259,11 @@ impl ExportMapDialog {
                         .response
                         .on_hover_text("A printed page puts the legend beside the map, with a north arrow and a footer");
                     ui.end_row();
-                    ui.label("Title");
+                    ui.label(tr("Title"));
                     ui.add(egui::TextEdit::singleline(&mut s.title).desired_width(260.0));
                     ui.end_row();
                     if s.page != crate::export_map::PageSize::Screen {
-                        ui.label("Footer");
+                        ui.label(tr("Footer"));
                         ui.add(
                             egui::TextEdit::singleline(&mut s.footer)
                                 .desired_width(260.0)
@@ -2270,10 +2273,10 @@ impl ExportMapDialog {
                         ui.end_row();
                     }
                     ui.label("");
-                    ui.checkbox(&mut s.legend, "Legend");
+                    ui.checkbox(&mut s.legend, tr("Legend"));
                     ui.end_row();
                     ui.label("");
-                    ui.checkbox(&mut s.scale_bar, "Scale bar");
+                    ui.checkbox(&mut s.scale_bar, tr("Scale bar"));
                     ui.end_row();
                 });
             ui.label(
@@ -2283,7 +2286,7 @@ impl ExportMapDialog {
             );
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                if ui.button(RichText::new("Export…").strong()).clicked() {
+                if ui.button(RichText::new(tr("Export…")).strong()).clicked() {
                     outcome = Some(self.settings.clone());
                 }
                 if ui.button(tr("Cancel")).clicked() {
@@ -2705,7 +2708,7 @@ impl SelectListDialog {
             ui.label(RichText::new("Keys of areas, separated by commas, semicolons or lines. Ranges like 8000-8099 and wildcards like 81* work too.").weak());
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                ui.label("Areas");
+                ui.label(tr("Areas"));
                 layer_combo(ui, "select-layer", project, &mut self.layer, None);
             });
             ui.add(
@@ -2736,7 +2739,10 @@ impl SelectListDialog {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 if ui
-                    .add_enabled(n > 0, egui::Button::new(RichText::new("Select").strong()))
+                    .add_enabled(
+                        n > 0,
+                        egui::Button::new(RichText::new(tr("Select")).strong()),
+                    )
                     .clicked()
                 {
                     outcome = units;
@@ -2839,7 +2845,7 @@ impl SettingsDialog {
                     ui.end_row();
                     ui.label(tr("Autosave"));
                     ui.horizontal(|ui| {
-                        ui.label("every");
+                        ui.label(tr("every"));
                         ui.add(egui::DragValue::new(&mut settings.autosave_minutes).range(0..=60));
                         ui.label(if settings.autosave_minutes == 0 { "minutes (off)" } else { "minutes" });
                     })
@@ -2892,7 +2898,7 @@ impl SettingsDialog {
                             .on_hover_text("The public service or your own installation");
                         ui.add(egui::TextEdit::singleline(&mut g.email).hint_text("Your e-mail (public services ask for it)").desired_width(260.0));
                         ui.horizontal(|ui| {
-                            ui.label("Pause");
+                            ui.label(tr("Pause"));
                             ui.add(egui::DragValue::new(&mut g.interval_ms).range(0..=5000).suffix(" ms"));
                         })
                         .response
@@ -2954,7 +2960,7 @@ impl SettingsDialog {
                                         }
                                     }
                                 });
-                            ui.label("Pause");
+                            ui.label(tr("Pause"));
                             ui.add(egui::DragValue::new(&mut r.interval_ms).range(0..=5000).suffix(" ms"));
                         });
                     });
@@ -3176,7 +3182,7 @@ impl HexGridDialog {
                 .num_columns(2)
                 .spacing([12.0, 8.0])
                 .show(ui, |ui| {
-                    ui.label("Over");
+                    ui.label(tr("Over"));
                     layer_combo(ui, "hex-cover", project, &mut self.cover, None);
                     ui.end_row();
                     ui.label("");
@@ -3193,7 +3199,7 @@ impl HexGridDialog {
                         .weak(),
                     );
                     ui.end_row();
-                    ui.label("Cell size");
+                    ui.label(tr("Cell size"));
                     ui.horizontal(|ui| {
                         ui.add(
                             egui::DragValue::new(&mut self.width_km)
@@ -3204,7 +3210,7 @@ impl HexGridDialog {
                         ui.label(RichText::new("across").weak());
                     });
                     ui.end_row();
-                    ui.label("Count");
+                    ui.label(tr("Count"));
                     let text = self
                         .count
                         .and_then(|l| project.layer(l))
@@ -3306,7 +3312,7 @@ impl SitesDialog {
         let territories = project.plan(self.plan).map_or(0, |p| p.territories.len());
         *open = modal(ctx, "sites-from", "Sites from points", 480.0, |ui| {
             ui.horizontal(|ui| {
-                ui.label("Points");
+                ui.label(tr("Points"));
                 layer_combo(
                     ui,
                     "sites-layer",
@@ -3327,7 +3333,7 @@ impl SitesDialog {
             ui.radio_value(&mut self.best, true, format!("Choose the best {territories} of them (possible locations)"))
                 .on_hover_text("Those that serve the areas best, weighted by the plan's measure; Balance → Start over then draws territories around them");
             if !self.best {
-                ui.checkbox(&mut self.rename, "Name the territories after them");
+                ui.checkbox(&mut self.rename, tr("Name the territories after them"));
             }
             let n = self
                 .layer
@@ -3349,7 +3355,7 @@ impl SitesDialog {
                 if ui
                     .add_enabled(
                         n > 0,
-                        egui::Button::new(RichText::new("Place sites").strong()),
+                        egui::Button::new(RichText::new(tr("Place sites")).strong()),
                     )
                     .clicked()
                 {
@@ -3422,7 +3428,7 @@ impl CatchmentDialog {
                 .num_columns(2)
                 .spacing([12.0, 8.0])
                 .show(ui, |ui| {
-                    ui.label("Around");
+                    ui.label(tr("Around"));
                     let text = self
                         .centres
                         .map_or("Choose…".to_owned(), |c| c.label(project));
@@ -3454,13 +3460,13 @@ impl CatchmentDialog {
                             }
                         });
                     ui.end_row();
-                    ui.label("Radii");
+                    ui.label(tr("Radii"));
                     ui.horizontal(|ui| {
                         ui.add(egui::TextEdit::singleline(&mut self.radii).desired_width(120.0));
                         ui.label("km");
                     });
                     ui.end_row();
-                    ui.label("Count");
+                    ui.label(tr("Count"));
                     let text = self
                         .points
                         .and_then(|l| project.layer(l))
@@ -3481,7 +3487,7 @@ impl CatchmentDialog {
                         .response
                         .on_hover_text("Points within each ring, and the sums of their numbers");
                     ui.end_row();
-                    ui.label("Sum of areas");
+                    ui.label(tr("Sum of areas"));
                     let text = self
                         .areas
                         .and_then(|l| project.layer(l))
@@ -3539,7 +3545,10 @@ impl CatchmentDialog {
             ui.horizontal(|ui| {
                 let ok = self.centres.is_some() && !radii.is_empty();
                 if ui
-                    .add_enabled(ok, egui::Button::new(RichText::new("Draw rings").strong()))
+                    .add_enabled(
+                        ok,
+                        egui::Button::new(RichText::new(tr("Draw rings")).strong()),
+                    )
                     .clicked()
                     && let Some(centres) = self.centres
                 {
@@ -3734,7 +3743,11 @@ impl JoinDialog {
                 )
                 .on_hover_text("Minutes and km by road from each area's centre or point, from the routing service in Settings");
             }
-            ui.radio_value(&mut self.mode, JoinMode::Lookup, "Another table, by key");
+            ui.radio_value(
+                &mut self.mode,
+                JoinMode::Lookup,
+                tr("Another table, by key"),
+            );
             if self.mode != before {
                 self.default_source(project);
             }
@@ -3743,7 +3756,7 @@ impl JoinDialog {
                 match self.mode {
                     JoinMode::AreaOf | JoinMode::PointsIn | JoinMode::Nearest | JoinMode::ByRoad => {
                         let want = if self.mode == JoinMode::AreaOf { GeometryKind::Area } else { GeometryKind::Point };
-                        ui.label("From");
+                        ui.label(tr("From"));
                         if layer_combo(ui, "join-layer", project, &mut self.layer, Some(want)) {
                             self.columns.clear();
                         }
@@ -3751,7 +3764,7 @@ impl JoinDialog {
                         if self.mode == JoinMode::AreaOf
                             && let Some(l) = self.layer.and_then(|l| project.layer(l))
                         {
-                            ui.label("Columns");
+                            ui.label(tr("Columns"));
                             ui.vertical(|ui| {
                                 ui.label(RichText::new("The area's key always; tick more:").weak().small());
                                 egui::ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
@@ -3771,7 +3784,7 @@ impl JoinDialog {
                         }
                     }
                     JoinMode::Lookup => {
-                        ui.label("Table");
+                        ui.label(tr("Table"));
                         let text = self.table.and_then(|t| project.table(t)).map_or("Choose…".to_owned(), |t| t.name.clone());
                         ComboBox::from_id_salt("join-table").selected_text(text).show_ui(ui, |ui| {
                             for t in &project.tables {
@@ -3784,13 +3797,13 @@ impl JoinDialog {
                         });
                         ui.end_row();
                         if let (Some((target, _)), Some(source)) = (data_table(project, self.target), self.table.and_then(|t| project.table(t))) {
-                            ui.label("Key here");
+                            ui.label(tr("Key here"));
                             column_combo(ui, "join-tk", target, &mut self.target_key, |k| k != ColumnKind::Number, None);
                             ui.end_row();
-                            ui.label("Key there");
+                            ui.label(tr("Key there"));
                             column_combo(ui, "join-sk", &source.table, &mut self.source_key, |k| k != ColumnKind::Number, None);
                             ui.end_row();
-                            ui.label("Columns");
+                            ui.label(tr("Columns"));
                             egui::ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
                                 for c in source.table.columns.iter().filter(|c| Some(&c.name) != self.source_key.as_ref()) {
                                     let mut on = self.columns.contains(&c.name);
@@ -3804,7 +3817,7 @@ impl JoinDialog {
                                 }
                             });
                             ui.end_row();
-                            ui.label("Several rows");
+                            ui.label(tr("Several rows"));
                             ComboBox::from_id_salt("join-agg").selected_text(self.agg.label()).show_ui(ui, |ui| {
                                 for a in Aggregate::ALL {
                                     ui.selectable_value(&mut self.agg, a, a.label());
@@ -3831,7 +3844,7 @@ impl JoinDialog {
                 if ui
                     .add_enabled(
                         ready,
-                        egui::Button::new(RichText::new("Add columns").strong()),
+                        egui::Button::new(RichText::new(tr("Add columns")).strong()),
                     )
                     .clicked()
                 {
@@ -3900,7 +3913,7 @@ impl SummariseDialog {
                 .num_columns(2)
                 .spacing([12.0, 8.0])
                 .show(ui, |ui| {
-                    ui.label("Per");
+                    ui.label(tr("Per"));
                     ui.vertical(|ui| {
                         egui::ScrollArea::vertical()
                             .id_salt("sum-by")
@@ -3921,7 +3934,7 @@ impl SummariseDialog {
                             });
                     });
                     ui.end_row();
-                    ui.label("Numbers");
+                    ui.label(tr("Numbers"));
                     ui.vertical(|ui| {
                         egui::ScrollArea::vertical()
                             .id_salt("sum-measures")
@@ -3993,7 +4006,7 @@ impl SummariseDialog {
                 if ui
                     .add_enabled(
                         ok,
-                        egui::Button::new(RichText::new("Create table").strong()),
+                        egui::Button::new(RichText::new(tr("Create table")).strong()),
                     )
                     .clicked()
                 {
@@ -4146,7 +4159,7 @@ impl ScoreDialog {
             }
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.label("Each as");
+                ui.label(tr("Each as"));
                 ui.radio_value(&mut self.scale, ScoreScale::Share, "share of the total");
                 ui.radio_value(&mut self.scale, ScoreScale::Percentile, "rank (0–1)");
                 ui.radio_value(&mut self.scale, ScoreScale::Raw, "as it is");
@@ -4158,7 +4171,7 @@ impl ScoreDialog {
                 if ui
                     .add_enabled(
                         !self.weights.is_empty(),
-                        egui::Button::new(RichText::new("Continue").strong()),
+                        egui::Button::new(RichText::new(tr("Continue")).strong()),
                     )
                     .clicked()
                 {
@@ -4299,7 +4312,7 @@ impl FlowDialog {
                 .num_columns(2)
                 .spacing([12.0, 8.0])
                 .show(ui, |ui| {
-                    ui.label("Rows");
+                    ui.label(tr("Rows"));
                     let before = self.rows;
                     ComboBox::from_id_salt("flow-rows")
                         .width(260.0)
@@ -4326,7 +4339,7 @@ impl FlowDialog {
                     ui.end_row();
                     let own_ok = matches!(self.rows, Some(FlowRows::Layer(_)));
                     for which in 0..2 {
-                        ui.label(if which == 0 { "From" } else { "To" });
+                        ui.label(if which == 0 { tr("From") } else { "To" });
                         let end = if which == 0 {
                             &mut self.from
                         } else {
@@ -4381,7 +4394,7 @@ impl FlowDialog {
                         });
                         ui.end_row();
                     }
-                    ui.label("Widths follow");
+                    ui.label(tr("Widths follow"));
                     ComboBox::from_id_salt("flow-dlg-value")
                         .width(200.0)
                         .selected_text(
@@ -4513,7 +4526,7 @@ impl AtlasDialog {
                 .num_columns(2)
                 .spacing([12.0, 8.0])
                 .show(ui, |ui| {
-                    ui.label("Areas");
+                    ui.label(tr("Areas"));
                     if layer_combo(
                         ui,
                         "atlas-layer",
@@ -4524,7 +4537,7 @@ impl AtlasDialog {
                         self.column = None;
                     }
                     ui.end_row();
-                    ui.label("A page per");
+                    ui.label(tr("A page per"));
                     if let Some(l) = self.layer.and_then(|l| project.layer(l)) {
                         ComboBox::from_id_salt("atlas-column")
                             .width(220.0)
@@ -4559,7 +4572,7 @@ impl AtlasDialog {
                         if ui
                             .add_enabled(
                                 (1..=300).contains(&pages),
-                                egui::Button::new(RichText::new("Create PDF…").strong()),
+                                egui::Button::new(RichText::new(tr("Create PDF…")).strong()),
                             )
                             .clicked()
                         {
@@ -4721,7 +4734,7 @@ impl DriveZonesDialog {
                 .num_columns(2)
                 .spacing([12.0, 8.0])
                 .show(ui, |ui| {
-                    ui.label("Areas");
+                    ui.label(tr("Areas"));
                     layer_combo(
                         ui,
                         "dz-areas",
@@ -4730,7 +4743,7 @@ impl DriveZonesDialog {
                         Some(GeometryKind::Area),
                     );
                     ui.end_row();
-                    ui.label("Around");
+                    ui.label(tr("Around"));
                     let text = self
                         .centres
                         .map_or("Choose…".to_owned(), |c| c.label(project));
@@ -4762,10 +4775,10 @@ impl DriveZonesDialog {
                             }
                         });
                     ui.end_row();
-                    ui.label("Zones up to");
+                    ui.label(tr("Zones up to"));
                     ui.horizontal(|ui| {
                         ui.add(egui::TextEdit::singleline(&mut self.bands).desired_width(120.0));
-                        ui.label("minutes");
+                        ui.label(tr("minutes"));
                     });
                     ui.end_row();
                     ui.label("");
