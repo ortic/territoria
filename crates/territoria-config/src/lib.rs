@@ -67,6 +67,10 @@ pub struct Settings {
     pub geocoder: territoria_io::geocode::GeocoderSettings,
     /// The service that tells travel times by road.
     pub routing: territoria_io::routing::RoutingSettings,
+    /// Company name on exported maps and reports.
+    pub company: String,
+    /// Logo image (PNG, JPEG or SVG) on exported maps and reports.
+    pub logo: Option<PathBuf>,
     /// Keyboard shortcuts changed from the defaults: command → keys like
     /// `Ctrl+Shift+S` (empty: none).
     pub shortcuts: std::collections::BTreeMap<String, String>,
@@ -83,6 +87,8 @@ impl Default for Settings {
             background: None,
             geocoder: Default::default(),
             routing: Default::default(),
+            company: String::new(),
+            logo: None,
             shortcuts: Default::default(),
         }
     }

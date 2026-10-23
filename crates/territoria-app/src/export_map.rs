@@ -29,9 +29,64 @@ impl Format {
     }
 }
 
+/// A logo as an image for SVG, with its size in points.
+#[derive(Clone)]
+pub struct Logo {
+    pub uri: String,
+    pub width: f32,
+    pub height: f32,
+}
+
+impl Logo {
+    /// The image at `path` (PNG, JPEG or SVG), sized to fit `max_w` × `max_h`.
+    pub fn load(path: &std::path::Path, max_w: f32, max_h: f32) -> Option<Logo> {
+        let bytes = std::fs::read(path).ok()?;
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or_default()
+            .to_lowercase();
+        let (mime, (w, h)) = if ext == "svg" {
+            let tree = resvg::usvg::Tree::from_data(&bytes, &Default::default()).ok()?;
+            ("image/svg+xml", (tree.size().width(), tree.size().height()))
+        } else {
+            let reader = image::ImageReader::new(std::io::Cursor::new(&bytes))
+                .with_guessed_format()
+                .ok()?;
+            let mime = match reader.format()? {
+                image::ImageFormat::Png => "image/png",
+                image::ImageFormat::Jpeg => "image/jpeg",
+                _ => return None,
+            };
+            let (w, h) = reader.into_dimensions().ok()?;
+            (mime, (w as f32, h as f32))
+        };
+        if w <= 0.0 || h <= 0.0 {
+            return None;
+        }
+        let k = (max_w / w).min(max_h / h);
+        Some(Logo {
+            uri: format!("data:{mime};base64,{}", crate::heat::base64(&bytes)),
+            width: w * k,
+            height: h * k,
+        })
+    }
+
+    /// The logo as an SVG image with its top-left corner at `x`, `y`.
+    pub fn svg(&self, s: &mut String, x: f32, y: f32) {
+        let _ = write!(
+            s,
+            r#"<image x="{x:.1}" y="{y:.1}" width="{:.1}" height="{:.1}" href="{}"/>"#,
+            self.width, self.height, self.uri
+        );
+    }
+}
+
 /// What goes around the map.
 pub struct Decorations {
     pub title: String,
+    /// The company's logo, bottom left.
+    pub logo: Option<Logo>,
     pub legends: Vec<(String, Vec<LegendEntry>)>,
     /// Legends of two values at once, below the others.
     pub grids: Vec<GridLegend>,
@@ -192,6 +247,12 @@ pub fn html(svg_body: &str, view: &View, title: &str, deco: &Decorations) -> Str
         let _ = write!(legend, "</div><div>{} →</div></div>", escape(&g.x));
     }
     let credits = escape(&deco.credits.join(" · "));
+    let logo = deco.logo.as_ref().map_or(String::new(), |l| {
+        format!(
+            r#"<img src="{}" width="{:.0}" height="{:.0}" style="display:block;margin-bottom:8px">"#,
+            l.uri, l.width, l.height
+        )
+    });
     let title = escape(title);
     format!(
         r##"<!doctype html>
@@ -207,7 +268,7 @@ html,body{{margin:0;height:100%;font-family:system-ui,sans-serif;background:#f3f
 [data-tip]:hover{{stroke:#101216;stroke-width:1.5;stroke-opacity:1}}
 </style></head><body>
 <div id="map"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" font-family="sans-serif">{svg_body}</svg></div>
-<div id="side"><h1>{title}</h1>{legend}<div style="margin-top:8px;color:#888">Scroll to zoom, drag to move.</div></div>
+<div id="side">{logo}<h1>{title}</h1>{legend}<div style="margin-top:8px;color:#888">Scroll to zoom, drag to move.</div></div>
 <div id="tip"></div><div id="foot">{credits}</div>
 <script>
 const svg=document.querySelector('#map svg'),tip=document.getElementById('tip');
@@ -847,6 +908,14 @@ fn decorations(s: &mut String, view: &View, crs: &Crs, deco: &Decorations) {
                 );
             }
         }
+    }
+    if let Some(logo) = &deco.logo {
+        let bottom = if deco.credits.is_empty() {
+            h - 10.0
+        } else {
+            h - 30.0
+        };
+        logo.svg(s, 10.0, bottom - logo.height);
     }
     if !deco.credits.is_empty() {
         let text = deco.credits.join(" · ");

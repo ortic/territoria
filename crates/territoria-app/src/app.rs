@@ -129,6 +129,8 @@ enum FileAction {
     Export(Export),
     /// A newer version of this layer's boundaries.
     ReplaceLayer(LayerId),
+    /// The company logo for exports.
+    Logo,
 }
 
 /// What File → Export writes.
@@ -482,6 +484,9 @@ impl TerritoriaApp {
             FileAction::AddData => dialog
                 .add_filter("Tables (CSV, Excel)", territoria_io::TABLE_EXTENSIONS)
                 .add_filter("All files", &["*"]),
+            FileAction::Logo => {
+                dialog.add_filter("Images (PNG, JPEG, SVG)", &["png", "jpg", "jpeg", "svg"])
+            }
             FileAction::Export(e) => {
                 let (filter, ext, name) = match e.clone() {
                     Export::PlanExcel(p) => (
@@ -581,6 +586,17 @@ impl TerritoriaApp {
             FileAction::ReplaceLayer(layer) => self.read_replacement(layer, path),
             FileAction::AddData => self.import_table_file(path, TableOptions::default()),
             FileAction::Export(e) => self.export(e, path),
+            FileAction::Logo => {
+                if crate::export_map::Logo::load(&path, 140.0, 44.0).is_some() {
+                    self.settings.logo = Some(path);
+                    self.save_settings();
+                } else {
+                    self.error(format!(
+                        "{} isn't a PNG, JPEG or SVG image.",
+                        file_name(&path)
+                    ));
+                }
+            }
         }
     }
 
@@ -1913,8 +1929,17 @@ impl TerritoriaApp {
         // Legends top layer first, like the Contents panel.
         legends.reverse();
         grids.reverse();
+        let company = self.settings.company.trim();
+        if !company.is_empty() {
+            credits.insert(0, company.to_owned());
+        }
         let deco = crate::export_map::Decorations {
             title: settings.title.clone(),
+            logo: self
+                .settings
+                .logo
+                .as_deref()
+                .and_then(|p| crate::export_map::Logo::load(p, 140.0, 44.0)),
             legends: if settings.legend { legends } else { Vec::new() },
             grids: if settings.legend { grids } else { Vec::new() },
             credits,
@@ -3073,7 +3098,12 @@ impl TerritoriaApp {
             .map(|t| t.label_units.clone())
             .unwrap_or_default();
         let names = (0..layer.len()).map(|f| layer.display_name(f)).collect();
-        let credits = layer.source.attribution.iter().cloned().collect();
+        let company = self.settings.company.trim();
+        let credits = (!company.is_empty())
+            .then(|| company.to_owned())
+            .into_iter()
+            .chain(layer.source.attribution.iter().cloned())
+            .collect();
         let today = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| (d.as_secs() / 86_400) as i32);
@@ -3088,6 +3118,11 @@ impl TerritoriaApp {
             names,
             credits,
             date: territoria_data::date::format(today),
+            logo: self
+                .settings
+                .logo
+                .as_deref()
+                .and_then(|p| crate::export_map::Logo::load(p, 120.0, 36.0)),
             crs,
         })
     }
@@ -4603,6 +4638,9 @@ impl TerritoriaApp {
                 }
             }
             match outcome {
+                Some(crate::dialogs::SettingsOutcome::ChooseLogo) => {
+                    self.ask_file(FileAction::Logo);
+                }
                 Some(crate::dialogs::SettingsOutcome::ClearTiles) => {
                     let dir = self.tiles.cache_dir().to_owned();
                     let _ = std::fs::remove_dir_all(&dir);

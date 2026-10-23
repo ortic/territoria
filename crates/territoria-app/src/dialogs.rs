@@ -2733,6 +2733,7 @@ pub struct SettingsDialog {
 
 pub enum SettingsOutcome {
     ClearTiles,
+    ChooseLogo,
 }
 
 fn folder_size(dir: &std::path::Path) -> u64 {
@@ -2855,6 +2856,25 @@ impl SettingsDialog {
                         })
                         .response
                         .on_hover_text("Between requests: the public Nominatim allows one per second; your own server may allow 0");
+                    });
+                    ui.end_row();
+                    ui.label("Company");
+                    ui.vertical(|ui| {
+                        ui.add(egui::TextEdit::singleline(&mut settings.company).hint_text("Name on exported maps and reports").desired_width(260.0));
+                        ui.horizontal(|ui| {
+                            let logo = settings
+                                .logo
+                                .as_deref()
+                                .and_then(|p| p.file_name())
+                                .map_or("No logo".to_owned(), |n| n.to_string_lossy().into_owned());
+                            ui.label(RichText::new(logo).weak());
+                            if ui.button("Choose…").on_hover_text("A PNG, JPEG or SVG image for exported maps and reports").clicked() {
+                                outcome = Some(SettingsOutcome::ChooseLogo);
+                            }
+                            if settings.logo.is_some() && ui.button("Remove").clicked() {
+                                settings.logo = None;
+                            }
+                        });
                     });
                     ui.end_row();
                     ui.label("Routing");

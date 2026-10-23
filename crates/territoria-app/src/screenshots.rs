@@ -3360,3 +3360,53 @@ fn round_through_customers() {
     assert_eq!(ranks, (1..=12).collect::<Vec<u32>>());
     assert!(order.f64(1).is_none(), "others not in the round");
 }
+
+/// The company's name and logo on exported maps.
+#[test]
+fn company_logo_on_exports() {
+    use crate::app::Export;
+    use crate::export_map::Format;
+    let (mut h, _lock) = harness(false);
+    h.state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries");
+    let dir = std::env::temp_dir().join(format!("territoria-logo-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // A red logo, 200 × 50 pixels.
+    let logo = dir.join("logo.png");
+    image::RgbaImage::from_pixel(200, 50, image::Rgba([220, 20, 40, 255]))
+        .save(&logo)
+        .unwrap();
+    let app = h.state_mut();
+    app.settings.company = "Acme Sales AG".into();
+    app.settings.logo = Some(logo);
+    settle(&mut h);
+    let settings = || crate::dialogs::MapExportSettings {
+        format: Format::Png,
+        scale: 1.0,
+        title: String::new(),
+        legend: false,
+        scale_bar: false,
+    };
+    let svg_path = dir.join("map.svg");
+    h.state_mut().set_map_export_for_test(settings());
+    h.state_mut()
+        .export(Export::Map(Format::Svg), svg_path.clone());
+    settle(&mut h);
+    let svg = std::fs::read_to_string(&svg_path).unwrap();
+    assert!(svg.contains("Acme Sales AG"), "the company in the credits");
+    assert!(svg.contains("<image") && svg.contains("data:image/png;base64,"));
+    // Drawn into PNGs too: red bottom left.
+    let png_path = dir.join("map.png");
+    h.state_mut().set_map_export_for_test(settings());
+    h.state_mut()
+        .export(Export::Map(Format::Png), png_path.clone());
+    settle(&mut h);
+    let img = image::open(&png_path).unwrap().to_rgba8();
+    let found = (0..img.height())
+        .rev()
+        .take(80)
+        .any(|y| (10..60).any(|x| img.get_pixel(x, y).0[..3] == [220, 20, 40]));
+    assert!(found, "the logo in the PNG");
+    let _ = std::fs::remove_dir_all(dir);
+}

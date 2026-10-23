@@ -311,7 +311,7 @@ territoria/
 
 - [x] CLI: open a project, refresh linked data, export maps/reports/data, run an optimization (exports of maps (PNG, SVG, PDF, web page), reports and plan workbooks; no refresh or optimization from the command line yet)
 - [ ] Project templates (styles, layouts, analyses) and "new from template"
-- [ ] Theme/corporate profile: default colours, fonts, logos
+- [ ] Theme/corporate profile: default colours, fonts, logos (company name and logo (PNG, JPEG, SVG) on exported maps, web pages and reports; no colours or fonts yet)
 - [ ] German UI translation
 - [ ] Packages for Linux (`.deb`, AppImage), Windows (MSI), macOS (`.dmg`)
 - [ ] User guide with a tutorial project built from open data

@@ -38,6 +38,8 @@ pub struct ReportData {
     pub names: Vec<String>,
     pub credits: Vec<String>,
     pub date: String,
+    /// The company's logo, top right of each page.
+    pub logo: Option<crate::export_map::Logo>,
     /// The CRS `mesh` is in.
     pub crs: territoria_geo::Crs,
 }
@@ -72,11 +74,19 @@ fn swatch(s: &mut String, x: f32, y: f32, size: f32, c: Color32) {
     );
 }
 
-fn page_start(s: &mut String) {
+fn page_start(s: &mut String, d: &ReportData) {
     let _ = write!(
         s,
         r##"<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" font-family="sans-serif"><rect width="{W}" height="{H}" fill="#ffffff"/>"##
     );
+    if let Some(logo) = &d.logo {
+        logo.svg(s, W - MARGIN - logo.width, 28.0);
+    }
+}
+
+/// Room for the title beside the logo.
+fn title_width(d: &ReportData, left: f32) -> f32 {
+    W - MARGIN - left - d.logo.as_ref().map_or(0.0, |l| l.width + 16.0)
 }
 
 fn footer(s: &mut String, d: &ReportData, page: usize, pages: usize) {
@@ -302,7 +312,7 @@ fn deviation_text(dev: f64) -> String {
 
 fn overview(d: &ReportData, pages: usize) -> String {
     let mut s = String::new();
-    page_start(&mut s);
+    page_start(&mut s, d);
     text(
         &mut s,
         MARGIN,
@@ -311,7 +321,7 @@ fn overview(d: &ReportData, pages: usize) -> String {
         INK,
         "start",
         true,
-        &fit(&d.title, 20.0, W - 2.0 * MARGIN),
+        &fit(&d.title, 20.0, title_width(d, MARGIN)),
     );
     let subtitle = format!(
         "{} territories · {} areas",
@@ -420,7 +430,7 @@ fn territory_page(d: &ReportData, t: usize, page: usize, pages: usize) -> String
         .filter(|&u| p.assignment[u as usize] == Some(territory.id))
         .collect();
     let mut s = String::new();
-    page_start(&mut s);
+    page_start(&mut s, d);
     swatch(&mut s, MARGIN, 36.0, 18.0, color(territory.color));
     text(
         &mut s,
@@ -430,7 +440,7 @@ fn territory_page(d: &ReportData, t: usize, page: usize, pages: usize) -> String
         INK,
         "start",
         true,
-        &fit(&territory.name, 20.0, W - 2.0 * MARGIN - 26.0),
+        &fit(&territory.name, 20.0, title_width(d, MARGIN + 26.0)),
     );
     let mut subtitle = d.title.clone();
     if !territory.code.is_empty() && territory.code != territory.name {
