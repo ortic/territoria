@@ -18,6 +18,17 @@ pub struct Map {
     /// Last view: centre in display coordinates and units per screen point.
     pub view: Option<([f64; 2], f64)>,
     pub background: Background,
+    /// Views kept by name, to come back to.
+    #[serde(default)]
+    pub views: Vec<NamedView>,
+}
+
+/// A view kept by name: centre in display coordinates and units per point.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NamedView {
+    pub name: String,
+    pub center: [f64; 2],
+    pub scale: f64,
 }
 
 impl Map {
@@ -29,6 +40,7 @@ impl Map {
             crs: Crs::web_mercator(),
             view: None,
             background: Background::default(),
+            views: Vec::new(),
         }
     }
 

@@ -1959,3 +1959,45 @@ fn measure_distance() {
     settle(&mut h);
     save(&mut h, "measure");
 }
+
+/// Kept views, focus on a territory, and presentation mode.
+#[test]
+fn views_focus_presentation() {
+    use crate::app::Action;
+    use crate::map_view::MapEvent;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let plan = h.state_mut().add_balanced_plan_now(layer, 4);
+    settle(&mut h);
+    // Keep the view, move away, come back.
+    let app = h.state_mut();
+    let (center, scale) = app.view_for_test().expect("a view");
+    app.run_command_for_test(crate::commands::Command::SaveView);
+    let map = app.project.maps[0].id;
+    assert_eq!(app.project.maps[0].views.len(), 1);
+    let p = app.project.plan(plan).unwrap();
+    let units: Vec<u32> = (0..p.assignment.len() as u32)
+        .filter(|&u| p.assignment[u as usize] == Some(p.territories[0].id))
+        .collect();
+    app.apply_action_for_test(Action::SelectUnits(layer, units));
+    settle(&mut h);
+    assert_ne!(h.state().view_for_test().unwrap().1, scale, "zoomed in");
+    h.state_mut()
+        .apply_action_for_test(Action::GoToView(map, center, scale));
+    settle(&mut h);
+    assert_eq!(h.state().view_for_test().unwrap(), (center, scale));
+    // Focus on the selected territory.
+    h.state_mut()
+        .map_events_for_test(vec![MapEvent::Focus(true)]);
+    settle(&mut h);
+    save(&mut h, "focus");
+    // Presentation: the map alone.
+    h.state_mut()
+        .run_command_for_test(crate::commands::Command::Presentation);
+    assert!(h.state().presenting_for_test());
+    settle(&mut h);
+    save(&mut h, "presentation");
+}

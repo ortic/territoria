@@ -46,6 +46,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
             if let Some(map) = cx.current_map.and_then(|m| project.map(m)) {
                 section(ui, &format!("MAP · {}", map.name.to_uppercase()));
                 background_ui(ui, map, &mut actions);
+                views_ui(ui, map, &mut actions);
                 let count = map.layers.len();
                 for (pos, ml) in map.layers.iter().enumerate().rev() {
                     let selected = cx.selection == Selection::MapLayer(map.id, ml.id);
@@ -541,4 +542,72 @@ fn size_legend(ui: &mut Ui, symbol: &territoria_model::SymbolStyle, max: f64) {
             ui.visuals().text_color(),
         );
     }
+}
+
+/// Views kept by name: go to one, keep the current one, rename or forget.
+fn views_ui(ui: &mut Ui, map: &territoria_model::Map, actions: &mut Vec<Action>) {
+    let map_id = map.id;
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Views").small());
+        ui.menu_button(
+            if map.views.is_empty() {
+                "None kept".to_owned()
+            } else {
+                format!("{} kept", map.views.len())
+            },
+            |ui| {
+                for (i, v) in map.views.iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        if ui
+                            .button(&v.name)
+                            .on_hover_text("Go to this view")
+                            .clicked()
+                        {
+                            actions.push(Action::GoToView(map_id, v.center, v.scale));
+                            ui.close();
+                        }
+                        let mut name = v.name.clone();
+                        if ui
+                            .add(egui::TextEdit::singleline(&mut name).desired_width(100.0))
+                            .changed()
+                        {
+                            actions.push(Action::Edit(
+                                "Rename view".into(),
+                                Box::new(move |p| {
+                                    if let Some(v) =
+                                        p.map_mut(map_id).and_then(|m| m.views.get_mut(i))
+                                    {
+                                        v.name = name;
+                                    }
+                                }),
+                            ));
+                        }
+                        if ui
+                            .small_button("✖")
+                            .on_hover_text("Forget this view")
+                            .clicked()
+                        {
+                            actions.push(Action::Edit(
+                                "Forget view".into(),
+                                Box::new(move |p| {
+                                    if let Some(m) = p.map_mut(map_id)
+                                        && i < m.views.len()
+                                    {
+                                        m.views.remove(i);
+                                    }
+                                }),
+                            ));
+                        }
+                    });
+                }
+                if !map.views.is_empty() {
+                    ui.separator();
+                }
+                if ui.button("➕ Keep this view").clicked() {
+                    actions.push(Action::Command(Command::SaveView));
+                    ui.close();
+                }
+            },
+        );
+    });
 }

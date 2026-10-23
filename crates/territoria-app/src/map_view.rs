@@ -55,6 +55,8 @@ pub struct MapState {
     lasso: bool,
     /// Measure tool: the clicked points (longitude, latitude).
     pub(crate) measure: Vec<[f64; 2]>,
+    /// A view to go to on the next frame: centre and scale.
+    pub(crate) go_to_view: Option<([f64; 2], f64)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -104,6 +106,8 @@ pub enum MapEvent {
     },
     ZoomToSelection,
     ClearSelection,
+    /// Fade everything but the selection (or stop).
+    Focus(bool),
 }
 
 pub struct MapContext<'a> {
@@ -122,6 +126,8 @@ pub struct MapContext<'a> {
     pub highlight: Option<(LayerId, &'a [u32])>,
     /// Selected features.
     pub selection: Option<(LayerId, &'a [u32])>,
+    /// Dim everything but the selection.
+    pub focus: bool,
 }
 
 /// The rectangle (first and last point) or lasso of a drag, in screen points.
@@ -321,6 +327,10 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
         }
         state.fit_requested = false;
     }
+    if let Some((center, scale)) = state.go_to_view.take() {
+        view.center = center;
+        view.scale = scale;
+    }
     if let Some((layer, features)) = state.zoom_to.take()
         && let Some(m) = meshes.get(&layer)
     {
@@ -438,9 +448,28 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
         }
     }
 
+    // Focus: everything but the selection fades.
+    if cx.focus
+        && let Some((layer, units)) = cx.selection
+        && let Some(mesh) = cells.get(&layer).or(meshes.get(&layer))
+    {
+        let level = paint::level(mesh, &view, ppp);
+        let keep: std::collections::HashSet<usize> = units.iter().map(|&u| u as usize).collect();
+        let veil = if cx.dark {
+            Color32::from_black_alpha(190)
+        } else {
+            Color32::from_white_alpha(200)
+        };
+        if mesh.kind == GeometryKind::Area {
+            paint::fills(&mut shapes, mesh, level, &view, |f| {
+                (!keep.contains(&f)).then_some(veil)
+            });
+        }
+    }
     // The selection: tinted and outlined.
     if let Some((layer, units)) = cx.selection
         && let Some(mesh) = meshes.get(&layer)
+        && !cx.focus
     {
         let level = paint::level(mesh, &view, ppp);
         let c = crate::theme::ACCENT;
@@ -842,6 +871,16 @@ fn selection_bar(
                     ui.separator();
                     if ui.button("Zoom to").clicked() {
                         events.push(MapEvent::ZoomToSelection);
+                    }
+                    let mut focus = cx.focus;
+                    if ui
+                        .toggle_value(&mut focus, "Focus")
+                        .on_hover_text(
+                            "Fade everything else, e.g. to present one territory or region",
+                        )
+                        .clicked()
+                    {
+                        events.push(MapEvent::Focus(focus));
                     }
                     if ui
                         .button("✖")

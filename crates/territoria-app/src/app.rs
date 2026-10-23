@@ -81,6 +81,8 @@ pub enum Action {
     DiscardProposal,
     /// Select features and zoom to them.
     SelectUnits(LayerId, Vec<u32>),
+    /// Show a kept view of a map.
+    GoToView(MapId, [f64; 2], f64),
     /// Open the dialog for sites from a point layer.
     SitesFromPoints(PlanId),
     /// Select the features of table rows (adding to the selection: `true`).
@@ -215,6 +217,10 @@ pub struct TerritoriaApp {
     search_focus: bool,
     /// An image waiting to go to the clipboard (needs the context).
     to_clipboard: Option<egui::ColorImage>,
+    /// Full screen with only the map.
+    presenting: bool,
+    /// Fade everything but the selection.
+    focus: bool,
     settings_dialog: Option<crate::dialogs::SettingsDialog>,
     download: Option<DownloadDialog>,
     export_map: Option<crate::dialogs::ExportMapDialog>,
@@ -307,6 +313,8 @@ impl TerritoriaApp {
             search_hits: Vec::new(),
             search_focus: false,
             to_clipboard: None,
+            presenting: false,
+            focus: false,
             settings_dialog: None,
             download: None,
             export_map: None,
@@ -1115,6 +1123,17 @@ impl TerritoriaApp {
         self.tool = Tool::Measure;
         let map = self.ensure_map();
         self.map_states.entry(map).or_default().measure = points;
+    }
+
+    #[cfg(test)]
+    pub fn view_for_test(&self) -> Option<([f64; 2], f64)> {
+        let map = self.current_map?;
+        self.map_states.get(&map)?.view.map(|v| (v.center, v.scale))
+    }
+
+    #[cfg(test)]
+    pub fn presenting_for_test(&self) -> bool {
+        self.presenting
     }
 
     #[cfg(test)]
@@ -2212,6 +2231,31 @@ impl TerritoriaApp {
                 self.load_catalog();
             }
             Command::Find => self.search_focus = true,
+            Command::Presentation => {
+                self.presenting = !self.presenting;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.presenting));
+                if self.presenting {
+                    self.toast("Presentation: F11 or Esc to leave.");
+                }
+            }
+            Command::SaveView => {
+                if let Some(map) = self.current_map
+                    && let Some(view) = self.map_states.get(&map).and_then(|s| s.view)
+                {
+                    let n = self.project.map(map).map_or(0, |m| m.views.len()) + 1;
+                    self.edit("Keep view", |p| {
+                        if let Some(m) = p.map_mut(map) {
+                            m.views.push(territoria_model::map::NamedView {
+                                name: format!("View {n}"),
+                                center: view.center,
+                                scale: view.scale,
+                            });
+                        }
+                    });
+                } else {
+                    self.toast("Show a map first.");
+                }
+            }
             Command::Catchment => {
                 let d = crate::dialogs::CatchmentDialog::new(&self.project);
                 if d.centres.is_none() {
@@ -2522,6 +2566,10 @@ impl TerritoriaApp {
                     s.zoom_to = Some((layer, units));
                 }
             }
+            Action::GoToView(map, center, scale) => {
+                self.current_map = Some(map);
+                self.map_states.entry(map).or_default().go_to_view = Some((center, scale));
+            }
             Action::SitesFromPoints(plan) => {
                 self.sites = Some(crate::dialogs::SitesDialog::new(&self.project, plan));
             }
@@ -2685,7 +2733,19 @@ impl TerritoriaApp {
                         s.zoom_to = Some((layer, units));
                     }
                 }
-                MapEvent::ClearSelection => self.selected = None,
+                MapEvent::ClearSelection => {
+                    self.selected = None;
+                    self.focus = false;
+                }
+                MapEvent::Focus(on) => {
+                    self.focus = on;
+                    if on
+                        && let Some((layer, units)) = self.selected.clone()
+                        && let Some(s) = self.map_states.get_mut(&map)
+                    {
+                        s.zoom_to = Some((layer, units));
+                    }
+                }
                 MapEvent::ViewChanged(center, scale) => {
                     // Not an undo step: just remembered with the project.
                     if let Some(m) = self.project.map_mut(map) {
@@ -3632,6 +3692,7 @@ impl TabViewer for Viewer<'_> {
                     dark: ui.visuals().dark_mode,
                     highlight: app.territories_panel.highlight(app.active_plan),
                     selection: app.selected.as_ref().map(|(l, u)| (*l, u.as_slice())),
+                    focus: app.focus && app.selected.is_some(),
                 };
                 let map = map.clone();
                 let events = map_view::show(ui, &map, state, &mut cx);
@@ -3691,9 +3752,15 @@ impl eframe::App for TerritoriaApp {
         if self.tool == Tool::Site && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.tool = Tool::Navigate;
         }
-        if !modal_open && self.selected.is_some() && ctx.input(|i| i.key_pressed(egui::Key::Escape))
+        if self.presenting && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.presenting = false;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+        } else if !modal_open
+            && self.selected.is_some()
+            && ctx.input(|i| i.key_pressed(egui::Key::Escape))
         {
             self.selected = None;
+            self.focus = false;
         }
         if self.tool == Tool::Measure && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             for s in self.map_states.values_mut() {
@@ -3715,18 +3782,21 @@ impl eframe::App for TerritoriaApp {
         };
         let mut actions: Vec<Action> = Vec::new();
 
-        egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui, &mut commands));
-        egui::Panel::top("toolbar")
-            .frame(theme::toolbar_frame(ui.style()))
-            .show(ui, |ui| self.toolbar(ui, &mut commands));
-        egui::Panel::bottom("status")
-            .frame(theme::status_frame(ui.style()))
-            .show(ui, |ui| self.status_bar(ui));
+        if !self.presenting {
+            egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui, &mut commands));
+            egui::Panel::top("toolbar")
+                .frame(theme::toolbar_frame(ui.style()))
+                .show(ui, |ui| self.toolbar(ui, &mut commands));
+            egui::Panel::bottom("status")
+                .frame(theme::status_frame(ui.style()))
+                .show(ui, |ui| self.status_bar(ui));
+        }
 
         let has_content = !self.project.layers.is_empty()
             || !self.project.tables.is_empty()
             || !self.project.maps.is_empty();
-        if has_content && self.show_contents {
+        let panels = has_content && !self.presenting;
+        if panels && self.show_contents {
             egui::Panel::left("contents")
                 .resizable(true)
                 .default_size(270.0)
@@ -3744,7 +3814,7 @@ impl eframe::App for TerritoriaApp {
                     actions.extend(crate::contents::show(ui, cx));
                 });
         }
-        if has_content && self.show_inspector {
+        if panels && self.show_inspector {
             egui::Panel::right("inspector")
                 .resizable(true)
                 .default_size(360.0)

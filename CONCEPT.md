@@ -176,8 +176,8 @@ territoria/
 - [x] Scale bar, north arrow, coordinates in the status bar (decimal or DMS, any EPSG) (scale bar and decimal degrees)
 - [x] Measure distance and area (distance along clicked points; no area yet)
 - [x] Search box: areas by key or name, table rows, addresses (when a geocoder is set up) (areas, points and territories by key or name, Ctrl+F; no addresses yet)
-- [ ] Named views (bookmarks), "focus on" a set of areas (island view) with dimmed surroundings
-- [ ] Fullscreen presentation mode
+- [x] Named views (bookmarks), "focus on" a set of areas (island view) with dimmed surroundings (views kept per map; Focus in the selection bar fades the rest)
+- [x] Fullscreen presentation mode (F11: full screen, map only; Esc leaves)
 
 ### 5.4 Data (M2)
 
