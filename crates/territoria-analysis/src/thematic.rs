@@ -22,6 +22,12 @@ pub struct ColorScale {
     pub ramp: RampSpec,
     /// Areas that have data but no number.
     pub no_value: Rgba,
+    /// Own labels per class (empty: the class limits).
+    #[serde(default)]
+    pub labels: Vec<String>,
+    /// Colour for areas without data (`None`: not filled).
+    #[serde(default)]
+    pub no_data: Option<Rgba>,
 }
 
 impl Default for ColorScale {
@@ -34,6 +40,8 @@ impl Default for ColorScale {
             round: true,
             ramp: RampSpec::default(),
             no_value: Rgba::rgb(0xd4, 0xd4, 0xd8),
+            labels: Vec::new(),
+            no_data: None,
         }
     }
 }
@@ -86,10 +94,14 @@ impl ColorScale {
                 let colors = self.ramp.colors(n);
                 let mut counts = vec![0usize; n];
                 let mut no_value = 0;
+                let mut no_data = 0;
                 let out = values
                     .iter()
                     .map(|v| {
-                        let v = (*v)?;
+                        let Some(v) = *v else {
+                            no_data += 1;
+                            return self.no_data;
+                        };
                         match classify::class_of(v, &edges) {
                             Some(c) => {
                                 counts[c] += 1;
@@ -106,11 +118,18 @@ impl ColorScale {
                     .filter(|_| edges.len() >= 2)
                     .map(|c| LegendEntry {
                         color: colors[c],
-                        label: format!(
-                            "{} – {}",
-                            format_value(edges[c]),
-                            format_value(edges[c + 1])
-                        ),
+                        label: self
+                            .labels
+                            .get(c)
+                            .filter(|l| !l.trim().is_empty())
+                            .cloned()
+                            .unwrap_or_else(|| {
+                                format!(
+                                    "{} – {}",
+                                    format_value(edges[c]),
+                                    format_value(edges[c + 1])
+                                )
+                            }),
                         count: counts[c],
                     })
                     .collect();
@@ -119,6 +138,15 @@ impl ColorScale {
                         color: self.no_value,
                         label: "No value".into(),
                         count: no_value,
+                    });
+                }
+                if let Some(c) = self.no_data
+                    && no_data > 0
+                {
+                    legend.push(LegendEntry {
+                        color: c,
+                        label: "No data".into(),
+                        count: no_data,
                     });
                 }
                 Scaled {
@@ -139,7 +167,7 @@ impl ColorScale {
                 let colors = values
                     .iter()
                     .map(|v| {
-                        let v = (*v)?;
+                        let Some(v) = *v else { return self.no_data };
                         Some(if v.is_finite() {
                             crate::ramps::sample(&stops, ((v - min) / span) as f32)
                         } else {
@@ -277,5 +305,21 @@ mod tests {
         assert_eq!(r.colors[3], Some(s.other));
         assert_eq!(r.legend.last().unwrap().label, "Other (1 values)");
         assert_eq!(r.colors[4], None);
+    }
+
+    #[test]
+    fn manual_limits_labels_and_no_data() {
+        let scale = ColorScale {
+            method: Method::Manual,
+            manual: vec![10.0, 100.0],
+            labels: vec!["small".into(), String::new(), "large".into()],
+            no_data: Some(Rgba::rgb(1, 2, 3)),
+            ..Default::default()
+        };
+        let s = scale.apply(&[Some(1.0), Some(50.0), Some(500.0), None]);
+        assert_eq!(s.edges, vec![1.0, 10.0, 100.0, 500.0]);
+        let labels: Vec<&str> = s.legend.iter().map(|e| e.label.as_str()).collect();
+        assert_eq!(labels, vec!["small", "10 – 100", "large", "No data"]);
+        assert_eq!(s.colors[3], Some(Rgba::rgb(1, 2, 3)));
     }
 }

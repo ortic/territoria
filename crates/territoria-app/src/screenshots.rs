@@ -1844,3 +1844,42 @@ fn regions_above_territories() {
     settle(&mut h);
     save(&mut h, "regions");
 }
+
+/// The class editor: manual limits, own labels, a colour for no data.
+#[test]
+fn class_editor() {
+    use territoria_model::MapLayerKind;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    h.state_mut()
+        .add_linked_table_now("Sales 2026", table, "Area", layer, Some("Revenue"));
+    let app = h.state_mut();
+    let map = app.project.maps[0].id;
+    let mut ml_id = None;
+    for ml in &mut app.project.map_mut(map).unwrap().layers {
+        if let MapLayerKind::Choropleth { scale, .. } = &mut ml.kind {
+            scale.method = territoria_analysis::classify::Method::Manual;
+            scale.manual = vec![10_000.0, 50_000.0];
+            scale.labels = vec!["Low".into(), "Middle".into(), "High".into()];
+            scale.no_data = Some(territoria_analysis::Rgba::rgb(0xee, 0xee, 0xee));
+            ml_id = Some(ml.id);
+        }
+    }
+    app.selection = crate::app::Selection::MapLayer(map, ml_id.unwrap());
+    settle(&mut h);
+    save(&mut h, "class-editor");
+    let app = h.state_mut();
+    let ml = app.project.maps[0]
+        .layers
+        .iter()
+        .find(|l| Some(l.id) == ml_id)
+        .unwrap()
+        .clone();
+    let scaled = app.analyses_for_test(&ml);
+    let labels: Vec<&str> = scaled.legend.iter().map(|e| e.label.as_str()).collect();
+    assert_eq!(&labels[..3], &["Low", "Middle", "High"]);
+}

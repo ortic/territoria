@@ -1072,6 +1072,16 @@ impl TerritoriaApp {
     }
 
     #[cfg(test)]
+    pub fn analyses_for_test(
+        &mut self,
+        ml: &MapLayer,
+    ) -> std::sync::Arc<territoria_analysis::Scaled> {
+        self.analyses
+            .get(&self.project, &mut self.values, ml.id, &ml.kind)
+            .expect("an analysis")
+    }
+
+    #[cfg(test)]
     pub fn import_table_for_test(&self) -> Option<(&territoria_data::Table, &str)> {
         self.import_table
             .as_ref()

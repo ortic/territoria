@@ -223,8 +223,8 @@ territoria/
 
 - [ ] Drag a column onto the map → suggested analysis with defaults and legend; analysis gallery to switch type
 - [x] Choropleth (area colouring): classified, continuous, colour from a column, unique values (no colour from a column)
-- [x] Classification: quantiles, equal interval, natural breaks (Jenks), standard deviation, mean split, equal sum, unique values, manual; rounded breaks; class count; range limits (no manual-break editor or range limits yet)
-- [ ] Class editor with a live histogram and draggable breaks; class labels; "no data" and "not classified" styles
+- [x] Classification: quantiles, equal interval, natural breaks (Jenks), standard deviation, mean split, equal sum, unique values, manual; rounded breaks; class count; range limits (manual limits by dragging or typing; no range limits yet)
+- [x] Class editor with a live histogram and draggable breaks; class labels; "no data" and "not classified" styles (limits dragged in the histogram or typed; own labels per class; a colour for areas without data)
 - [x] Colour ramps: sequential, diverging, qualitative (ColorBrewer-like, colour-blind safe marked), custom 2–5 colour ramps, reverse, opacity (no custom ramp editor)
 - [x] Normalization: per area size, per another column (rates), share of total ("Relative to" on area colourings: per km², per another value, % of the total)
 - [ ] Symbols (points): colour, size (by area or radius, sqrt/linear/log), shape — each from a column, or one column for all (circles sized by a column (area-true), one colour; no shapes, colour by column or linear/log scaling yet)

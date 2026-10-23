@@ -573,6 +573,7 @@ fn ramp_picker(ui: &mut Ui, current: &RampSpec, kinds: &[RampKind]) -> Option<Ra
 fn scale_ui(
     ui: &mut Ui,
     scale: &ColorScale,
+    edges: &[f64],
     map: MapId,
     id: MapLayerId,
     actions: &mut Vec<Action>,
@@ -603,34 +604,67 @@ fn scale_ui(
                     .width(190.0)
                     .selected_text(method.label())
                     .show_ui(ui, |ui| {
-                        for m in Method::ALL.into_iter().filter(|m| *m != Method::Manual) {
+                        for m in Method::ALL {
                             ui.selectable_value(&mut method, m, m.label())
                                 .on_hover_text(m.help());
                         }
                     });
                 if method != scale.method {
+                    // Manual starts from the limits there are now.
+                    let inner: Vec<f64> = edges
+                        .get(1..edges.len().saturating_sub(1))
+                        .unwrap_or_default()
+                        .to_vec();
                     actions.push(edit(
                         "Change classification",
-                        Box::new(move |s| s.method = method),
+                        Box::new(move |s| {
+                            if method == Method::Manual {
+                                s.manual = inner;
+                            }
+                            s.method = method;
+                        }),
                     ));
                 }
                 ui.end_row();
-                ui.label("Classes");
-                let mut classes = scale.classes;
-                if ui.add(egui::Slider::new(&mut classes, 2..=9)).changed() {
-                    actions.push(edit(
-                        "Change class count",
-                        Box::new(move |s| s.classes = classes),
-                    ));
-                }
-                ui.end_row();
-                ui.label("");
-                let mut round = scale.round;
-                if ui.checkbox(&mut round, "Round class limits").changed() {
-                    actions.push(edit(
-                        "Round class limits",
-                        Box::new(move |s| s.round = round),
-                    ));
+                if scale.method == Method::Manual {
+                    ui.label("Limits");
+                    let mut text = scale
+                        .manual
+                        .iter()
+                        .map(|v| territoria_data::table::format_number(*v))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    if ui
+                        .add(egui::TextEdit::singleline(&mut text).desired_width(190.0))
+                        .on_hover_text("Between the classes, e.g. 1000, 5000, 20000; or drag them in the histogram")
+                        .changed()
+                    {
+                        let mut limits: Vec<f64> = text
+                            .split([',', ';', ' '])
+                            .filter_map(|t| t.trim().parse::<f64>().ok())
+                            .collect();
+                        limits.sort_by(f64::total_cmp);
+                        limits.dedup();
+                        actions.push(edit("Change class limits", Box::new(move |s| s.manual = limits)));
+                    }
+                } else {
+                    ui.label("Classes");
+                    let mut classes = scale.classes;
+                    if ui.add(egui::Slider::new(&mut classes, 2..=9)).changed() {
+                        actions.push(edit(
+                            "Change class count",
+                            Box::new(move |s| s.classes = classes),
+                        ));
+                    }
+                    ui.end_row();
+                    ui.label("");
+                    let mut round = scale.round;
+                    if ui.checkbox(&mut round, "Round class limits").changed() {
+                        actions.push(edit(
+                            "Round class limits",
+                            Box::new(move |s| s.round = round),
+                        ));
+                    }
                 }
                 ui.end_row();
             });
@@ -645,6 +679,27 @@ fn scale_ui(
     ) {
         actions.push(edit("Change colours", Box::new(move |s| s.ramp = r)));
     }
+    ui.horizontal(|ui| {
+        let mut shown = scale.no_data.is_some();
+        if ui
+            .checkbox(&mut shown, "Areas without data")
+            .on_hover_text(
+                "Fill areas that have no data in a colour of their own (otherwise they stay empty)",
+            )
+            .changed()
+        {
+            let c = shown.then_some(territoria_analysis::Rgba::rgb(0xee, 0xee, 0xee));
+            actions.push(edit("Areas without data", Box::new(move |s| s.no_data = c)));
+        }
+        if let Some(c) = scale.no_data
+            && let Some(nc) = rgba_button(ui, c)
+        {
+            actions.push(edit(
+                "Areas without data",
+                Box::new(move |s| s.no_data = Some(nc)),
+            ));
+        }
+    });
 }
 
 fn map_layer(
@@ -706,15 +761,13 @@ fn map_layer(
         } => {
             value_ui(ui, project, *layer, source, normalize, map, id, actions);
             ui.add_space(4.0);
-            scale_ui(ui, scale, map, id, actions);
+            let scaled = analyses.get(project, values, id, &ml.kind);
+            let edges = scaled.as_ref().map_or_else(Vec::new, |s| s.edges.clone());
+            scale_ui(ui, scale, &edges, map, id, actions);
             ui.separator();
-            if let Some(scaled) = analyses.get(project, values, id, &ml.kind) {
-                histogram(
-                    ui,
-                    values.normalized(project, *layer, source, normalize),
-                    &scaled.edges,
-                    &scaled.legend,
-                );
+            if let Some(scaled) = scaled {
+                let v = values.normalized(project, *layer, source, normalize);
+                histogram(ui, v, &scaled, scale, map, id, actions);
             }
             ui.separator();
             style_ui(
@@ -983,9 +1036,13 @@ fn same_source(a: &ValueSource, b: &ValueSource) -> bool {
 fn histogram(
     ui: &mut Ui,
     values: Vec<Option<f64>>,
-    edges: &[f64],
-    legend: &[territoria_analysis::LegendEntry],
+    scaled: &territoria_analysis::Scaled,
+    scale: &ColorScale,
+    map: MapId,
+    id: MapLayerId,
+    actions: &mut Vec<Action>,
 ) {
+    let (edges, legend) = (&scaled.edges, &scaled.legend);
     let v: Vec<f64> = values
         .into_iter()
         .flatten()
@@ -995,20 +1052,27 @@ fn histogram(
         ui.label(RichText::new("No values to show: check the link to the data.").weak());
         return;
     }
+    let edit = |label: &str, f: Box<dyn FnOnce(&mut ColorScale)>| {
+        edit_layer(map, id, label, move |l| {
+            if let MapLayerKind::Choropleth { scale, .. } = &mut l.kind {
+                f(scale);
+            }
+        })
+    };
     let (min, max) = (edges[0], edges[edges.len() - 1]);
+    let span = (max - min).max(1e-12);
     let bins = 40;
     let mut counts = vec![0usize; bins];
     for x in &v {
-        let i = (((x - min) / (max - min).max(1e-12)) * bins as f64).floor() as isize;
+        let i = (((x - min) / span) * bins as f64).floor() as isize;
         counts[i.clamp(0, bins as isize - 1) as usize] += 1;
     }
     let peak = *counts.iter().max().unwrap_or(&1) as f32;
     let (rect, _) =
         ui.allocate_exact_size(vec2(ui.available_width().min(300.0), 64.0), Sense::hover());
-    let p = ui.painter();
     let w = rect.width() / bins as f32;
     for (i, c) in counts.iter().enumerate() {
-        let mid = min + (i as f64 + 0.5) / bins as f64 * (max - min);
+        let mid = min + (i as f64 + 0.5) / bins as f64 * span;
         let class = territoria_analysis::classify::class_of(mid, edges).unwrap_or(0);
         let col = legend
             .get(class)
@@ -1018,14 +1082,47 @@ fn histogram(
             egui::pos2(rect.left() + i as f32 * w, rect.bottom() - h),
             egui::pos2(rect.left() + (i + 1) as f32 * w - 1.0, rect.bottom()),
         );
-        p.rect_filled(r, 0.0, col);
+        ui.painter().rect_filled(r, 0.0, col);
     }
-    for e in &edges[1..edges.len() - 1] {
-        let x = rect.left() + ((e - min) / (max - min).max(1e-12)) as f32 * rect.width();
-        p.line_segment(
-            [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-            egui::Stroke::new(1.0, ui.visuals().text_color()),
-        );
+    // Class limits: drag them to set them by hand.
+    let inner: Vec<f64> = edges[1..edges.len() - 1].to_vec();
+    if scale.mode == territoria_analysis::ScaleMode::Classified {
+        for (k, e) in inner.iter().enumerate() {
+            let x = rect.left() + ((e - min) / span) as f32 * rect.width();
+            let handle = egui::Rect::from_center_size(
+                egui::pos2(x, rect.center().y),
+                vec2(9.0, rect.height()),
+            );
+            let r = ui.interact(handle, ui.id().with(("class-limit", k)), Sense::drag());
+            let hot = r.hovered() || r.dragged();
+            if hot {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+            }
+            ui.painter().line_segment(
+                [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                egui::Stroke::new(if hot { 2.5 } else { 1.0 }, ui.visuals().text_color()),
+            );
+            let r = r.on_hover_text(format!("{} · drag to move", format_value(*e)));
+            if r.dragged()
+                && let Some(p) = r.interact_pointer_pos()
+            {
+                let raw = min + ((p.x - rect.left()) / rect.width()) as f64 * span;
+                // Round to a step of about a 200th of the range.
+                let step = 10f64.powf((span / 200.0).log10().floor());
+                let lo = if k == 0 { min } else { inner[k - 1] };
+                let hi = inner.get(k + 1).copied().unwrap_or(max);
+                let value = ((raw / step).round() * step).clamp(lo + step, hi - step);
+                let mut manual = inner.clone();
+                manual[k] = value;
+                actions.push(edit(
+                    "Move class limit",
+                    Box::new(move |s| {
+                        s.method = territoria_analysis::classify::Method::Manual;
+                        s.manual = manual;
+                    }),
+                ));
+            }
+        }
     }
     ui.horizontal(|ui| {
         ui.label(RichText::new(format_value(min)).small());
@@ -1033,11 +1130,41 @@ fn histogram(
             ui.label(RichText::new(format_value(max)).small())
         });
     });
-    for e in legend {
+    let classes = edges.len() - 1;
+    for (c, e) in legend.iter().enumerate() {
         ui.horizontal(|ui| {
             let (r, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
             ui.painter().rect_filled(r.shrink(1.0), 3.0, color(e.color));
-            ui.label(&e.label);
+            if c < classes && scale.mode == territoria_analysis::ScaleMode::Classified {
+                // Own labels; empty shows the limits.
+                let auto = format!(
+                    "{} – {}",
+                    format_value(edges[c]),
+                    format_value(edges[c + 1])
+                );
+                let mut text = scale.labels.get(c).cloned().unwrap_or_default();
+                if ui
+                    .add(
+                        egui::TextEdit::singleline(&mut text)
+                            .hint_text(auto)
+                            .desired_width(150.0),
+                    )
+                    .on_hover_text("A label of your own for the legend; empty shows the limits")
+                    .changed()
+                {
+                    actions.push(edit(
+                        "Change class label",
+                        Box::new(move |s| {
+                            if s.labels.len() < classes {
+                                s.labels.resize(classes, String::new());
+                            }
+                            s.labels[c] = text;
+                        }),
+                    ));
+                }
+            } else {
+                ui.label(&e.label);
+            }
             ui.label(RichText::new(format!("{} areas", e.count)).weak());
         });
     }
