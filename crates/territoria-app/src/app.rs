@@ -115,6 +115,8 @@ pub enum Export {
     /// A table or a layer's attributes with each row's territories, as
     /// Excel (`true`) or CSV.
     Data(DataRef, bool),
+    /// A PDF with an overview and a page per territory.
+    Report(PlanId),
 }
 
 struct Confirm {
@@ -396,6 +398,11 @@ impl TerritoriaApp {
                         "xlsx",
                         self.project.plan(b).map(|p| format!("Changes {}", p.name)),
                     ),
+                    Export::Report(p) => (
+                        "PDF document",
+                        "pdf",
+                        self.project.plan(p).map(|p| format!("Report {}", p.name)),
+                    ),
                     Export::Data(d, excel) => (
                         if excel { "Excel workbook" } else { "CSV" },
                         if excel { "xlsx" } else { "csv" },
@@ -464,6 +471,26 @@ impl TerritoriaApp {
             let label = format!("Writing {}", file_name(&path));
             self.jobs.spawn(label, move |_| {
                 let result = crate::export_map::encode(&svg, format, settings.scale, &font)
+                    .and_then(|bytes| std::fs::write(&path, bytes).map_err(|e| e.to_string()));
+                JobResult::Exported { path, result }
+            });
+            return;
+        }
+        if let Export::Report(plan) = what {
+            let data = match self.report_data(plan) {
+                Ok(d) => d,
+                Err(e) => {
+                    self.error(e);
+                    return;
+                }
+            };
+            let font = egui::FontDefinitions::default().font_data["Ubuntu-Light"]
+                .font
+                .to_vec();
+            let label = format!("Writing {}", file_name(&path));
+            self.jobs.spawn(label, move |_| {
+                let pages = crate::report::pages(&data);
+                let result = crate::export_map::pdf_pages(&pages, &font)
                     .and_then(|bytes| std::fs::write(&path, bytes).map_err(|e| e.to_string()));
                 JobResult::Exported { path, result }
             });
@@ -565,7 +592,7 @@ impl TerritoriaApp {
                         .map_err(err)
                     }
                     // Written on the UI thread's request above.
-                    Export::Map(_) => Ok(()),
+                    Export::Map(_) | Export::Report(_) => Ok(()),
                 }
             })();
             JobResult::Exported { path, result }
@@ -860,6 +887,11 @@ impl TerritoriaApp {
         d.name = name.into();
         d.source = source.into();
         self.formula = Some(d);
+    }
+
+    #[cfg(test)]
+    pub fn report_pages_for_test(&mut self, plan: PlanId) -> Vec<String> {
+        crate::report::pages(&self.report_data(plan).expect("report data"))
     }
 
     #[cfg(test)]
@@ -1470,6 +1502,67 @@ impl TerritoriaApp {
                 broken.join(", ")
             ));
         }
+    }
+
+    /// What a territory report of `plan` shows, from the project and caches.
+    fn report_data(&mut self, plan: PlanId) -> Result<crate::report::ReportData, String> {
+        let p = self
+            .project
+            .plan(plan)
+            .ok_or("The plan was removed.")?
+            .clone();
+        let layer = self
+            .project
+            .layer(p.layer)
+            .ok_or("The plan's areas were removed.")?;
+        let crs = self
+            .current_map
+            .and_then(|m| self.project.map(m))
+            .or(self.project.maps.first())
+            .map_or_else(territoria_geo::Crs::web_mercator, |m| m.crs.clone());
+        let mesh = if layer.kind() == GeometryKind::Point {
+            self.meshes.get_cells(layer, &crs, &mut self.jobs)
+        } else {
+            self.meshes.get(layer, &crs, &mut self.jobs)
+        }
+        .ok_or("The map is still being prepared; try again in a moment.")?;
+        let stats = self
+            .stats
+            .get(&self.project, &mut self.values, plan)
+            .ok_or("The plan was removed.")?;
+        let measure = p
+            .measures
+            .first()
+            .filter(|m| m.source != territoria_model::ValueSource::Units)
+            .map(|m| {
+                (
+                    m.source.label(&self.project),
+                    self.values.values(&self.project, p.layer, &m.source),
+                )
+            });
+        let label_units = self
+            .territory_cache
+            .get(&self.project, plan)
+            .map(|t| t.label_units.clone())
+            .unwrap_or_default();
+        let names = (0..layer.len()).map(|f| layer.display_name(f)).collect();
+        let credits = layer.source.attribution.iter().cloned().collect();
+        let today = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| (d.as_secs() / 86_400) as i32);
+        Ok(crate::report::ReportData {
+            title: p.name.clone(),
+            tolerance: p.measures.first().map_or(0.15, |m| m.tolerance),
+            plan: p,
+            mesh,
+            stats,
+            measure,
+            label_units,
+            names,
+            credits,
+            date: territoria_data::date::format(today),
+            crs,
+        })
     }
 
     /// Copies a plan as a scenario, shows the copy and compares it with
@@ -2093,6 +2186,13 @@ impl TerritoriaApp {
                         }
                         if ui.button("Territory outlines (GeoJSON)…").clicked() {
                             exports.push(Export::PlanGeoJson(p.id));
+                        }
+                        if ui
+                            .button("Report per territory (PDF)…")
+                            .on_hover_text("An overview and a page per territory with its map, figures and largest areas")
+                            .clicked()
+                        {
+                            exports.push(Export::Report(p.id));
                         }
                         ui.separator();
                     }

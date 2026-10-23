@@ -77,7 +77,11 @@ impl Layer {
             .map(|c| c.display(feature))
             .filter(|n| !n.is_empty());
         match name {
-            Some(n) if self.key_column.is_some() => format!("{} {n}", self.key(feature)),
+            Some(n) if self.key_column.is_some() => {
+                let key = self.key(feature);
+                // When the key is the name, once is enough.
+                if key == n { n } else { format!("{key} {n}") }
+            }
             Some(n) => n,
             None => self.key(feature),
         }

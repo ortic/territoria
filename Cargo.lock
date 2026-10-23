@@ -4264,6 +4264,7 @@ dependencies = [
  "egui_kittest",
  "geo-types",
  "image",
+ "pdf-writer",
  "resvg",
  "rfd",
  "serde",

@@ -1065,3 +1065,59 @@ fn select_and_assign() {
         .map_events_for_test(vec![MapEvent::ClearSelection]);
     assert!(h.state().selected.is_none());
 }
+
+/// A territory report: one PDF with an overview and a page per territory.
+#[test]
+fn territory_report() {
+    use crate::app::Export;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    h.state_mut()
+        .add_linked_table_now("Sales 2026", table, "Area", layer, Some("Revenue"));
+    let plan = h.state_mut().add_balanced_plan_now(layer, 5);
+    // Report by revenue rather than the number of areas.
+    let app = h.state_mut();
+    let link = app.project.links[0].id;
+    let rev = app.project.bump();
+    let p = app.project.plan_mut(plan).unwrap();
+    p.measures = vec![territoria_model::Measure {
+        source: territoria_model::ValueSource::Linked {
+            link,
+            column: "Revenue".into(),
+            agg: territoria_data::Aggregate::Sum,
+        },
+        tolerance: 0.15,
+        target: None,
+    }];
+    p.rev = rev;
+    settle(&mut h);
+    let dir = std::env::temp_dir().join(format!("territoria-report-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("report.pdf");
+    h.state_mut().export(Export::Report(plan), path.clone());
+    settle(&mut h);
+    let bytes = std::fs::read(&path).expect("the report");
+    assert_eq!(&bytes[..5], b"%PDF-");
+    let text = String::from_utf8_lossy(&bytes);
+    let pages = text.matches("/Type /Page").count() - text.matches("/Type /Pages").count();
+    assert_eq!(pages, 6, "an overview and five territories");
+    let svgs = h.state_mut().report_pages_for_test(plan);
+    assert!(svgs[1].contains("Territory 01") && svgs[1].contains("Deviation"));
+    assert!(svgs[1].contains("Largest areas by Revenue"));
+    if let Some(out) = out_dir() {
+        let font = egui::FontDefinitions::default().font_data["Ubuntu-Light"]
+            .font
+            .to_vec();
+        for (i, svg) in svgs.iter().take(2).enumerate() {
+            let png =
+                crate::export_map::encode(svg, crate::export_map::Format::Png, 1.5, &font).unwrap();
+            std::fs::write(out.join(format!("report-page-{}.png", i + 1)), png).unwrap();
+        }
+        std::fs::copy(&path, out.join("report.pdf")).unwrap();
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}

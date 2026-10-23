@@ -52,27 +52,105 @@ pub fn svg(
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" font-family="{font}">"#
     );
     let _ = write!(s, r##"<rect width="{w}" height="{h}" fill="#f3f1ec"/>"##);
-    let _ = write!(
-        s,
-        r#"<clipPath id="map"><rect width="{w}" height="{h}"/></clipPath><g clip-path="url(#map)">"#
-    );
-    for r in resolved {
-        layer(&mut s, r, view);
-    }
-    let mut occupied: Vec<Rect> = Vec::new();
-    for r in resolved.iter().rev() {
-        labels(&mut s, r, view, &mut occupied);
-    }
-    for r in resolved {
-        sites(&mut s, r, view);
-    }
-    s.push_str("</g>");
+    map_into(&mut s, resolved, view, "map");
     decorations(&mut s, view, crs, deco);
     s.push_str("</svg>");
     s
 }
 
-fn hex(c: Color32) -> (String, f32) {
+/// Draws the layers, labels and sites into `view.rect` (anywhere on a
+/// page), clipped to it.
+pub fn map_into(s: &mut String, resolved: &[Resolved], view: &View, clip: &str) {
+    let r = view.rect;
+    let _ = write!(
+        s,
+        r#"<clipPath id="{clip}"><rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}"/></clipPath><g clip-path="url(#{clip})">"#,
+        r.min.x,
+        r.min.y,
+        r.width(),
+        r.height()
+    );
+    for r in resolved {
+        layer(s, r, view);
+    }
+    let mut occupied: Vec<Rect> = Vec::new();
+    for r in resolved.iter().rev() {
+        labels(s, r, view, &mut occupied);
+    }
+    for r in resolved {
+        sites(s, r, view);
+    }
+    s.push_str("</g>");
+}
+
+/// The usvg options with our font as the sans-serif family.
+fn usvg_options(font: &[u8]) -> resvg::usvg::Options<'static> {
+    let mut options = resvg::usvg::Options::default();
+    options.fontdb_mut().load_font_data(font.to_vec());
+    let family = options
+        .fontdb
+        .faces()
+        .next()
+        .and_then(|f| f.families.first())
+        .map(|f| f.0.clone());
+    if let Some(family) = family {
+        // The SVG asks for sans-serif: that's our font.
+        options.fontdb_mut().set_sans_serif_family(family.clone());
+        options.font_family = family;
+    }
+    options
+}
+
+/// Several SVG pages as one PDF.
+pub fn pdf_pages(pages: &[String], font: &[u8]) -> Result<Vec<u8>, String> {
+    use pdf_writer::{Content, Finish, Name, Pdf, Rect as PdfRect, Ref};
+    let options = usvg_options(font);
+    let mut next = 1;
+    let mut alloc = || {
+        let r = Ref::new(next);
+        next += 1;
+        r
+    };
+    let catalog = alloc();
+    let tree_id = alloc();
+    let mut pdf = Pdf::new();
+    let mut page_ids = Vec::new();
+    let mut chunks = Vec::new();
+    for svg in pages {
+        let tree = resvg::usvg::Tree::from_str(svg, &options).map_err(|e| e.to_string())?;
+        let (chunk, svg_id) = svg2pdf::to_chunk(&tree, svg2pdf::ConversionOptions::default())
+            .map_err(|e| e.to_string())?;
+        let mut map = std::collections::HashMap::new();
+        let chunk = chunk.renumber(|old| *map.entry(old).or_insert_with(&mut alloc));
+        let svg_id = *map.get(&svg_id).ok_or("the page has no content")?;
+        let (page_id, content_id) = (alloc(), alloc());
+        let size = tree.size();
+        let (w, h) = (size.width(), size.height());
+        let mut page = pdf.page(page_id);
+        page.media_box(PdfRect::new(0.0, 0.0, w, h));
+        page.parent(tree_id);
+        page.contents(content_id);
+        page.resources().x_objects().pair(Name(b"P"), svg_id);
+        page.finish();
+        let mut content = Content::new();
+        content
+            .transform([w, 0.0, 0.0, h, 0.0, 0.0])
+            .x_object(Name(b"P"));
+        pdf.stream(content_id, &content.finish());
+        page_ids.push(page_id);
+        chunks.push(chunk);
+    }
+    pdf.catalog(catalog).pages(tree_id);
+    pdf.pages(tree_id)
+        .kids(page_ids.iter().copied())
+        .count(page_ids.len() as i32);
+    for c in &chunks {
+        pdf.extend(c);
+    }
+    Ok(pdf.finish())
+}
+
+pub fn hex(c: Color32) -> (String, f32) {
     let [r, g, b, a] = c.to_srgba_unmultiplied();
     (format!("#{r:02x}{g:02x}{b:02x}"), a as f32 / 255.0)
 }
@@ -242,7 +320,7 @@ fn sites(s: &mut String, r: &Resolved, view: &View) {
     }
 }
 
-fn escape(t: &str) -> String {
+pub fn escape(t: &str) -> String {
     t.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -250,7 +328,7 @@ fn escape(t: &str) -> String {
 }
 
 /// Rough text width for collision checks (no shaping in the exporter).
-fn text_width(t: &str, size: f32) -> f32 {
+pub fn text_width(t: &str, size: f32) -> f32 {
     t.chars().count() as f32 * size * 0.48
 }
 
@@ -466,19 +544,7 @@ pub fn encode(svg: &str, format: Format, scale: f32, font: &[u8]) -> Result<Vec<
     if format == Format::Svg {
         return Ok(svg.as_bytes().to_vec());
     }
-    let mut options = resvg::usvg::Options::default();
-    options.fontdb_mut().load_font_data(font.to_vec());
-    let family = options
-        .fontdb
-        .faces()
-        .next()
-        .and_then(|f| f.families.first())
-        .map(|f| f.0.clone());
-    if let Some(family) = family {
-        // The SVG asks for sans-serif: that's our font.
-        options.fontdb_mut().set_sans_serif_family(family.clone());
-        options.font_family = family;
-    }
+    let options = usvg_options(font);
     let tree = resvg::usvg::Tree::from_str(svg, &options).map_err(|e| e.to_string())?;
     match format {
         Format::Png => {

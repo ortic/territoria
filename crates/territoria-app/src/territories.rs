@@ -412,6 +412,13 @@ impl TerritoriesPanel {
                 if ui.button("Export (Excel)…").clicked() {
                     actions.push(Action::Export(Export::PlanExcel(plan_id)));
                 }
+                if ui
+                    .button("Report (PDF)…")
+                    .on_hover_text("An overview and a page per territory")
+                    .clicked()
+                {
+                    actions.push(Action::Export(Export::Report(plan_id)));
+                }
                 ui.separator();
                 if ui.button("🗑 Delete plan…").clicked() {
                     actions.push(Action::RemovePlan(plan_id));
