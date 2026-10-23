@@ -242,7 +242,7 @@ territoria/
 - [x] Legends generated from the analysis; a few templates (list, bar, histogram, size); edited labels stay in sync (list and gradient in Contents, histogram in Properties)
 - [x] Analysis-wide filter (segment) and "ignore filter" (per analysis: "Only where" with a formula over the linked table's or points' rows; no shared named segments yet)
 - [x] Zoom-dependent visibility and symbol scaling (each map layer shown only closer or farther than a zoom taken from the view, shown as 1:n; greyed in Contents when hidden; exports follow; symbols keep their screen size)
-- [ ] Save/load class sets and ramps for reuse across projects
+- [x] Save/load class sets and ramps for reuse across projects ("Class sets" in the class editor keeps breaks (fixed as they are), colours and labels by name in the settings, and applies them to any coloured layer)
 
 ### 5.8 Territory planning (M4)
 

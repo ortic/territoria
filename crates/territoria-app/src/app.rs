@@ -68,6 +68,8 @@ pub enum Action {
     Edit(String, EditFn),
     LinkTable(TableId),
     ColorBy(Option<LayerId>),
+    /// Classes kept by name in the settings.
+    SaveClassSet(String, territoria_analysis::ColorScale),
     /// A table column dropped on the map: show it.
     ShowColumn(DataRef, String),
     /// Show a data layer's boundaries on the current map.
@@ -3837,6 +3839,14 @@ impl TerritoriaApp {
             Action::LinkTable(t) => self.link = Some(LinkDialog::new(&self.project, t)),
             Action::ColorBy(layer) => self.color_by = Some(ColorByDialog::new(layer)),
             Action::ShowColumn(data, column) => self.show_column(data, &column),
+            Action::SaveClassSet(name, scale) => {
+                self.settings.class_sets.retain(|s| s.name != name);
+                self.toast(format!("Kept the classes as {name}."));
+                self.settings
+                    .class_sets
+                    .push(territoria_config::ClassSet { name, scale });
+                self.save_settings();
+            }
             Action::AddToMap(layer) => {
                 let before = self.project.clone();
                 let map = self.ensure_map();
@@ -5369,6 +5379,7 @@ impl eframe::App for TerritoriaApp {
                                 &mut self.analyses,
                                 self.selection,
                                 view,
+                                &self.settings.class_sets,
                             ));
                         }
                         RightTab::Territories => {

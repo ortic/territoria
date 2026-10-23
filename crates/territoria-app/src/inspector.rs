@@ -62,6 +62,7 @@ pub fn show(
     analyses: &mut AnalysisCache,
     selection: Selection,
     view: Option<(f64, f64)>,
+    class_sets: &[territoria_config::ClassSet],
 ) -> Vec<Action> {
     let mut actions = Vec::new();
     egui::ScrollArea::vertical()
@@ -77,7 +78,17 @@ pub fn show(
             }
             Selection::MapLayer(map, id) => {
                 if let Some(ml) = project.map(map).and_then(|m| m.layer(id)) {
-                    map_layer(ui, project, values, analyses, map, ml, view, &mut actions);
+                    map_layer(
+                        ui,
+                        project,
+                        values,
+                        analyses,
+                        map,
+                        ml,
+                        view,
+                        class_sets,
+                        &mut actions,
+                    );
                 }
             }
             Selection::Data(DataRef::Layer(id)) => {
@@ -601,6 +612,7 @@ fn scale_ui(
     ui: &mut Ui,
     scale: &ColorScale,
     edges: &[f64],
+    class_sets: &[territoria_config::ClassSet],
     map: MapId,
     id: MapLayerId,
     actions: &mut Vec<Action>,
@@ -619,6 +631,52 @@ fn scale_ui(
         if mode != scale.mode {
             actions.push(edit("Change colouring", Box::new(move |s| s.mode = mode)));
         }
+        // Classes kept by name, for other maps and projects.
+        ui.menu_button("Class sets", |ui| {
+            for set in class_sets {
+                let s = set.scale.clone();
+                if ui
+                    .button(&set.name)
+                    .on_hover_text("Use these classes, colours and labels here")
+                    .clicked()
+                {
+                    actions.push(edit("Use a class set", Box::new(move |scale| *scale = s)));
+                    ui.close();
+                }
+            }
+            if !class_sets.is_empty() {
+                ui.separator();
+            }
+            let name_id = ui.id().with("class-set-name");
+            let mut name: String = ui.data_mut(|d| d.get_temp(name_id).unwrap_or_default());
+            ui.label("Keep these classes as");
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::TextEdit::singleline(&mut name)
+                        .hint_text("Name, e.g. Revenue bands")
+                        .desired_width(160.0),
+                );
+                if ui
+                    .add_enabled(!name.trim().is_empty(), egui::Button::new("Keep"))
+                    .clicked()
+                {
+                    // Manual breaks keep the limits as they are now.
+                    let mut kept = scale.clone();
+                    if kept.method != Method::Manual && edges.len() > 2 {
+                        kept.method = Method::Manual;
+                        kept.manual = edges[1..edges.len() - 1].to_vec();
+                    }
+                    actions.push(Action::SaveClassSet(name.trim().to_owned(), kept));
+                    name.clear();
+                    ui.close();
+                }
+            });
+            ui.data_mut(|d| d.insert_temp(name_id, name));
+        })
+        .response
+        .on_hover_text(
+            "Classes and colours kept by name, to use on other maps and in other projects",
+        );
     });
     if scale.mode == ScaleMode::Classified {
         egui::Grid::new("classes")
@@ -935,6 +993,7 @@ fn map_layer(
     map: MapId,
     ml: &MapLayer,
     view: Option<(f64, f64)>,
+    class_sets: &[territoria_config::ClassSet],
     actions: &mut Vec<Action>,
 ) {
     let id = ml.id;
@@ -1285,7 +1344,7 @@ fn map_layer(
             ui.add_space(4.0);
             let scaled = analyses.get(project, values, id, &ml.kind);
             let edges = scaled.as_ref().map_or_else(Vec::new, |s| s.edges.clone());
-            scale_ui(ui, scale, &edges, map, id, actions);
+            scale_ui(ui, scale, &edges, class_sets, map, id, actions);
             ui.separator();
             if let Some(scaled) = scaled {
                 let v = values.normalized(project, *layer, source, normalize);

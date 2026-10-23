@@ -8,6 +8,7 @@ publish.workspace = true
 anyhow.workspace = true
 directories.workspace = true
 serde.workspace = true
+territoria-analysis.workspace = true
 territoria-io.workspace = true
 toml.workspace = true
 tracing.workspace = true

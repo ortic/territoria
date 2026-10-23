@@ -3574,3 +3574,60 @@ fn map_atlas() {
     }
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Classes kept by name and used again on another map layer.
+#[test]
+fn class_sets() {
+    use crate::app::{Action, Selection};
+    use egui_kittest::kittest::Queryable;
+    use territoria_model::MapLayerKind;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    let app = h.state_mut();
+    app.add_linked_table_now("Sales 2026", table, "Area", layer, None);
+    let link = app.project.links[0].id;
+    let map = app.project.maps[0].id;
+    let kept = territoria_analysis::ColorScale {
+        method: territoria_analysis::Method::Manual,
+        classes: 3,
+        manual: vec![5000.0, 20000.0],
+        labels: vec!["Low".into(), "Middle".into(), "High".into()],
+        ..Default::default()
+    };
+    app.apply_action_for_test(Action::SaveClassSet("Revenue bands".into(), kept.clone()));
+    assert_eq!(app.settings.class_sets.len(), 1);
+    let id = app
+        .add_choropleth_for_test(
+            map,
+            layer,
+            territoria_model::ValueSource::Linked {
+                link,
+                column: "Revenue".into(),
+                agg: territoria_data::Aggregate::Sum,
+            },
+        )
+        .unwrap();
+    app.selection = Selection::MapLayer(map, id);
+    settle(&mut h);
+    h.get_by_label("Class sets").click();
+    h.run_steps(2);
+    h.get_by_label("Revenue bands").click();
+    settle(&mut h);
+    save(&mut h, "class-set");
+    let ml = h
+        .state()
+        .project
+        .map(map)
+        .unwrap()
+        .layer(id)
+        .unwrap()
+        .clone();
+    let MapLayerKind::Choropleth { scale, .. } = &ml.kind else {
+        panic!("a choropleth");
+    };
+    assert_eq!(scale, &kept);
+}

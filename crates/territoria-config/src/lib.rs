@@ -40,6 +40,13 @@ impl Paths {
     }
 }
 
+/// Classes and colours of a map kept under a name, to use again.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ClassSet {
+    pub name: String,
+    pub scale: territoria_analysis::ColorScale,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ThemeChoice {
@@ -73,6 +80,8 @@ pub struct Settings {
     pub company: String,
     /// Logo image (PNG, JPEG or SVG) on exported maps and reports.
     pub logo: Option<PathBuf>,
+    /// Class sets kept for reuse: breaks, colours and labels by name.
+    pub class_sets: Vec<ClassSet>,
     /// Keyboard shortcuts changed from the defaults: command → keys like
     /// `Ctrl+Shift+S` (empty: none).
     pub shortcuts: std::collections::BTreeMap<String, String>,
@@ -91,6 +100,7 @@ impl Default for Settings {
             routing: Default::default(),
             territory_colors: None,
             company: String::new(),
+            class_sets: Vec::new(),
             logo: None,
             shortcuts: Default::default(),
         }
@@ -142,8 +152,21 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("territoria-config-test-{}", std::process::id()));
         let path = dir.join("settings.toml");
+        let mut shortcuts = std::collections::BTreeMap::new();
+        shortcuts.insert("Find".to_owned(), "Ctrl+K".to_owned());
         let s = Settings {
             ui_scale: 1.25,
+            shortcuts,
+            class_sets: vec![ClassSet {
+                name: "Revenue bands".into(),
+                scale: territoria_analysis::ColorScale {
+                    method: territoria_analysis::Method::Manual,
+                    manual: vec![1000.0, 5000.0],
+                    labels: vec!["low".into(), "mid".into(), "high".into()],
+                    no_data: Some(territoria_analysis::Rgba::rgb(1, 2, 3)),
+                    ..Default::default()
+                },
+            }],
             ..Default::default()
         };
         save_toml(&path, &s).unwrap();
