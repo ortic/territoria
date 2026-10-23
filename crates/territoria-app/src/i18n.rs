@@ -302,6 +302,15 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
         ("Rows of", "Zeilen von"),
         // Panels: properties, territories, contents, tables.
         ("of", "von"),
+        ("Rounds for all territories", "Touren für alle Gebiete"),
+        (
+            "Each territory's quickest round by road through its customers, from its site. The workload adds the time at each customer to the time on the road.",
+            "Die schnellste Tour jedes Gebiets über die Strasse durch seine Kunden, ab seinem Standort. Die Arbeitslast zählt die Zeit bei jedem Kunden zur Zeit unterwegs.",
+        ),
+        ("Each visit takes", "Jeder Besuch dauert"),
+        ("the same for all", "für alle gleich"),
+        ("minutes from", "Minuten aus"),
+        ("Plan rounds", "Touren planen"),
         (
             "Distances to the sites by road",
             "Distanzen zu den Standorten über die Strasse",

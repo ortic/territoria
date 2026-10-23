@@ -4821,3 +4821,117 @@ impl DriveZonesDialog {
         apply
     }
 }
+
+// ---------------------------------------------------------------------------
+// Rounds
+
+/// How long a visit takes: the same for every stop, or from a column.
+#[derive(Clone)]
+pub struct VisitTime {
+    pub minutes: f64,
+    pub column: Option<String>,
+}
+
+/// Rounds for all territories: the time spent at each stop.
+pub struct RoundsDialog {
+    pub plan: territoria_model::PlanId,
+    pub visit: VisitTime,
+}
+
+impl RoundsDialog {
+    pub fn new(plan: territoria_model::PlanId) -> RoundsDialog {
+        RoundsDialog {
+            plan,
+            visit: VisitTime {
+                minutes: 20.0,
+                column: None,
+            },
+        }
+    }
+
+    pub fn show(&mut self, ctx: &egui::Context, project: &Project, open: &mut bool) -> bool {
+        let mut apply = false;
+        let mut cancel = false;
+        let numbers: Vec<String> = project
+            .plan(self.plan)
+            .and_then(|p| project.layer(p.layer))
+            .map(|l| {
+                l.attributes
+                    .columns
+                    .iter()
+                    .filter(|c| c.kind.is_numeric())
+                    .map(|c| c.name.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        *open = modal(ctx, "rounds", "Rounds for all territories", 460.0, |ui| {
+            ui.label(
+                RichText::new(tr(
+                    "Each territory's quickest round by road through its customers, from its site. The workload adds the time at each customer to the time on the road.",
+                ))
+                .weak(),
+            );
+            ui.add_space(6.0);
+            egui::Grid::new("rounds-grid")
+                .num_columns(2)
+                .spacing([12.0, 8.0])
+                .show(ui, |ui| {
+                    ui.label(tr("Each visit takes"));
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            if ui
+                                .radio(self.visit.column.is_none(), tr("the same for all"))
+                                .clicked()
+                            {
+                                self.visit.column = None;
+                            }
+                            ui.add_enabled(
+                                self.visit.column.is_none(),
+                                egui::DragValue::new(&mut self.visit.minutes)
+                                    .range(0.0..=600.0)
+                                    .suffix(" min"),
+                            );
+                        });
+                        if !numbers.is_empty() {
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .radio(self.visit.column.is_some(), tr("minutes from"))
+                                    .clicked()
+                                    && self.visit.column.is_none()
+                                {
+                                    self.visit.column = numbers.first().cloned();
+                                }
+                                if let Some(c) = &mut self.visit.column {
+                                    ComboBox::from_id_salt("rounds-column")
+                                        .selected_text(c.clone())
+                                        .show_ui(ui, |ui| {
+                                            for n in &numbers {
+                                                ui.selectable_value(c, n.clone(), n);
+                                            }
+                                        });
+                                }
+                            });
+                        }
+                    });
+                    ui.end_row();
+                    ui.label("");
+                    ui.horizontal(|ui| {
+                        if ui
+                            .button(RichText::new(tr("Plan rounds")).strong())
+                            .clicked()
+                        {
+                            apply = true;
+                        }
+                        if ui.button(tr("Cancel")).clicked() {
+                            cancel = true;
+                        }
+                    });
+                    ui.end_row();
+                });
+        });
+        if cancel || apply {
+            *open = false;
+        }
+        apply
+    }
+}

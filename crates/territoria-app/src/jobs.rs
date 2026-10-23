@@ -92,6 +92,8 @@ pub enum JobResult {
     Rounds {
         plan: territoria_model::PlanId,
         rounds: TerritoryRounds,
+        /// Per unit the minutes spent there (the visit).
+        visits: Vec<f64>,
     },
     /// A visiting round through points of a layer.
     Round {

@@ -276,6 +276,7 @@ pub struct TerritoriaApp {
     atlas: Option<crate::dialogs::AtlasDialog>,
     templates_dialog: Option<crate::dialogs::TemplatesDialog>,
     drive_zones: Option<crate::dialogs::DriveZonesDialog>,
+    rounds_dialog: Option<crate::dialogs::RoundsDialog>,
     score: Option<crate::dialogs::ScoreDialog>,
     /// The search box: query and what it found.
     search: String,
@@ -419,6 +420,7 @@ impl TerritoriaApp {
             atlas: None,
             templates_dialog: None,
             drive_zones: None,
+            rounds_dialog: None,
             score: None,
             search: String::new(),
             search_hits: Vec::new(),
@@ -1327,7 +1329,11 @@ impl TerritoriaApp {
                     set.country, set.level
                 )),
             },
-            JobResult::Rounds { plan, rounds } => self.add_plan_rounds(plan, rounds),
+            JobResult::Rounds {
+                plan,
+                rounds,
+                visits,
+            } => self.add_plan_rounds(plan, rounds, &visits),
             JobResult::DriveZones {
                 layer,
                 label,
@@ -1720,6 +1726,7 @@ impl TerritoriaApp {
         self.color_by = None;
         self.new_plan = None;
         self.formula = None;
+        self.rounds_dialog = None;
     }
 
     #[cfg(test)]
@@ -2585,9 +2592,21 @@ impl TerritoriaApp {
 
     /// A round by road for each territory of `plan` (on points), from its
     /// site if it has one, asked one after the other.
-    fn plan_rounds(&mut self, plan_id: PlanId) {
+    pub(crate) fn plan_rounds(&mut self, plan_id: PlanId, visit: &crate::dialogs::VisitTime) {
         let Some(plan) = self.project.plan(plan_id) else {
             return;
+        };
+        // Minutes at each stop: the same for all, or from a column.
+        let visits: Vec<f64> = {
+            let n = self.project.layer(plan.layer).map_or(0, |l| l.len());
+            match visit.column.as_deref().and_then(|c| {
+                self.project
+                    .layer(plan.layer)
+                    .and_then(|l| l.attributes.column(c))
+            }) {
+                Some(c) => (0..n).map(|u| c.f64(u).unwrap_or(0.0).max(0.0)).collect(),
+                None => vec![visit.minutes.max(0.0); n],
+            }
         };
         let Some(layer) = self.project.layer(plan.layer) else {
             return;
@@ -2649,13 +2668,19 @@ impl TerritoriaApp {
             JobResult::Rounds {
                 plan: plan_id,
                 rounds,
+                visits,
             }
         });
     }
 
     /// The plan's rounds as one line layer (a line per territory, in its
     /// colour, with stops, km and hours) and each customer's visit order.
-    fn add_plan_rounds(&mut self, plan_id: PlanId, rounds: crate::jobs::TerritoryRounds) {
+    fn add_plan_rounds(
+        &mut self,
+        plan_id: PlanId,
+        rounds: crate::jobs::TerritoryRounds,
+        visits: &[f64],
+    ) {
         use territoria_data::{Column, ColumnKind, Table};
         let Some(plan) = self.project.plan(plan_id).cloned() else {
             return;
@@ -2671,6 +2696,7 @@ impl TerritoriaApp {
             Vec::new(),
             Vec::new(),
         );
+        let mut visit_minutes = Vec::new();
         let mut failed = 0;
         for (i, units, from_site, trip) in rounds {
             let Ok(trip) = trip else {
@@ -2694,6 +2720,13 @@ impl TerritoriaApp {
             stops.push(Some(units.len() as f64));
             km.push(Some((trip.km * 10.0).round() / 10.0));
             minutes.push(Some(trip.minutes.round()));
+            visit_minutes.push(Some(
+                units
+                    .iter()
+                    .map(|&u| visits.get(u as usize).copied().unwrap_or(0.0))
+                    .sum::<f64>()
+                    .round(),
+            ));
             colors.push((t.name.clone(), t.color.lighten(-0.25)));
             paths.push(geo_types::MultiLineString(vec![geo_types::LineString(
                 trip.path,
@@ -2709,17 +2742,21 @@ impl TerritoriaApp {
             let _ = t.push_column(c);
         }
         let total_km: f64 = km.iter().flatten().sum();
-        let total_minutes: f64 = minutes.iter().flatten().sum();
+        let total_minutes: f64 =
+            minutes.iter().flatten().sum::<f64>() + visit_minutes.iter().flatten().sum::<f64>();
+        // Workload: on the road and at the customers.
         let hours: Vec<Option<f64>> = minutes
             .iter()
-            .map(|m| m.map(|m| (m / 6.0).round() / 10.0))
+            .zip(&visit_minutes)
+            .map(|(m, v)| Some(((m.unwrap_or(0.0) + v.unwrap_or(0.0)) / 6.0).round() / 10.0))
             .collect();
         let table = Table::new(vec![
             Column::text("Territory", ColumnKind::Key, names),
             Column::number("Stops", stops),
             Column::number("Km", km),
-            Column::number("Minutes", minutes),
-            Column::number("Hours", hours),
+            Column::number("Travel minutes", minutes),
+            Column::number("Visit minutes", visit_minutes),
+            Column::number("Workload hours", hours),
         ])
         .expect("one row per round");
         let geometry = territoria_model::LayerGeometry::from_imported(
@@ -4460,7 +4497,9 @@ impl TerritoriaApp {
             Action::LinkTable(t) => self.link = Some(LinkDialog::new(&self.project, t)),
             Action::ColorBy(layer) => self.color_by = Some(ColorByDialog::new(layer)),
             Action::ShowColumn(data, column) => self.show_column(data, &column),
-            Action::PlanRounds(plan) => self.plan_rounds(plan),
+            Action::PlanRounds(plan) => {
+                self.rounds_dialog = Some(crate::dialogs::RoundsDialog::new(plan));
+            }
             Action::Coverage(plan) => self.coverage_scenario(plan),
             Action::SaveClassSet(name, scale) => {
                 self.settings.class_sets.retain(|s| s.name != name);
@@ -5396,6 +5435,14 @@ impl TerritoriaApp {
                 self.score = Some(d);
             }
         }
+        if let Some(mut d) = self.rounds_dialog.take() {
+            let mut open = true;
+            if d.show(ctx, &self.project, &mut open) {
+                self.plan_rounds(d.plan, &d.visit);
+            } else if open {
+                self.rounds_dialog = Some(d);
+            }
+        }
         if let Some(mut d) = self.drive_zones.take() {
             let mut open = true;
             if d.show(ctx, &self.project, &mut open) {
@@ -5957,6 +6004,7 @@ impl eframe::App for TerritoriaApp {
             || self.atlas.is_some()
             || self.templates_dialog.is_some()
             || self.drive_zones.is_some()
+            || self.rounds_dialog.is_some()
             || self.score.is_some()
             || self.settings_dialog.is_some()
             || self.select_list.is_some()

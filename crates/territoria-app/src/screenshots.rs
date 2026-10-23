@@ -4113,7 +4113,18 @@ fn rounds_for_all_territories() {
             t.site = c.map(|c| [c.x, c.y]);
         }
     }
+    // The menu asks how long visits take first.
     app.apply_action_for_test(crate::app::Action::PlanRounds(plan));
+    settle(&mut h);
+    save(&mut h, "rounds-dialog");
+    h.state_mut().close_dialogs();
+    h.state_mut().plan_rounds(
+        plan,
+        &crate::dialogs::VisitTime {
+            minutes: 15.0,
+            column: None,
+        },
+    );
     settle(&mut h);
     save(&mut h, "plan-rounds");
     let app = h.state();
@@ -4121,6 +4132,19 @@ fn rounds_for_all_territories() {
     assert_eq!(rounds.name, "Rounds of Sales territories");
     assert_eq!(rounds.len(), 3, "a round per territory");
     assert!(rounds.attributes.column("Km").unwrap().f64(0).unwrap() > 0.0);
+    // Workload: travel plus 15 minutes per customer.
+    let t = &rounds.attributes;
+    let stops = t.column("Stops").unwrap().f64(0).unwrap();
+    let travel = t.column("Travel minutes").unwrap().f64(0).unwrap();
+    assert_eq!(
+        t.column("Visit minutes").unwrap().f64(0),
+        Some(stops * 15.0)
+    );
+    let hours = t.column("Workload hours").unwrap().f64(0).unwrap();
+    assert!(
+        (hours - (travel + stops * 15.0) / 60.0).abs() < 0.06,
+        "{hours}"
+    );
     // Each territory's customers are visited 1, 2, … in some order.
     let p = app.project.plan(plan).unwrap();
     let order = app
