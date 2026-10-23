@@ -51,6 +51,7 @@ pub fn show(
     values: &mut Cache,
     analyses: &mut AnalysisCache,
     selection: Selection,
+    view: Option<(f64, f64)>,
 ) -> Vec<Action> {
     let mut actions = Vec::new();
     egui::ScrollArea::vertical()
@@ -66,7 +67,7 @@ pub fn show(
             }
             Selection::MapLayer(map, id) => {
                 if let Some(ml) = project.map(map).and_then(|m| m.layer(id)) {
-                    map_layer(ui, project, values, analyses, map, ml, &mut actions);
+                    map_layer(ui, project, values, analyses, map, ml, view, &mut actions);
                 }
             }
             Selection::Data(DataRef::Layer(id)) => {
@@ -718,6 +719,77 @@ fn scale_ui(
     });
 }
 
+/// At which zoom levels the layer shows: limits taken from the view.
+fn zoom_ui(
+    ui: &mut Ui,
+    ml: &MapLayer,
+    view: Option<(f64, f64)>,
+    map: MapId,
+    actions: &mut Vec<Action>,
+) {
+    let id = ml.id;
+    let z = ml.zoom;
+    let text = |s: f64| view.map_or("set".to_owned(), |v| crate::map_view::scale_text(s, &v));
+    let summary = match (z.closest, z.farthest) {
+        (None, None) => "At all zoom levels".to_owned(),
+        (None, Some(f)) => format!("Closer than {}", text(f)),
+        (Some(c), None) => format!("Farther than {}", text(c)),
+        (Some(c), Some(f)) => format!("{} to {}", text(c), text(f)),
+    };
+    ui.horizontal(|ui| {
+        ui.label("Shown");
+        ui.menu_button(summary, |ui| {
+            let Some(now) = view else {
+                ui.label(RichText::new("Open the map to set zoom levels.").weak());
+                return;
+            };
+            let here = crate::map_view::scale_text(now.0, &now);
+            if ui
+                .button(format!("Only when zoomed in closer than now ({here})"))
+                .on_hover_text(
+                    "Hide it when zoomed out farther, e.g. postcode labels on a country map",
+                )
+                .clicked()
+            {
+                let s = now.0;
+                actions.push(edit_layer(map, id, "Show when zoomed in", move |l| {
+                    l.zoom.farthest = Some(s);
+                    if l.zoom.closest.is_some_and(|c| c >= s) {
+                        l.zoom.closest = None;
+                    }
+                }));
+                ui.close();
+            }
+            if ui
+                .button(format!("Only when zoomed out farther than now ({here})"))
+                .on_hover_text(
+                    "Hide it when zoomed in closer, e.g. a summary layer that gives way to details",
+                )
+                .clicked()
+            {
+                let s = now.0;
+                actions.push(edit_layer(map, id, "Show when zoomed out", move |l| {
+                    l.zoom.closest = Some(s);
+                    if l.zoom.farthest.is_some_and(|f| f <= s) {
+                        l.zoom.farthest = None;
+                    }
+                }));
+                ui.close();
+            }
+            if z.is_limited() && ui.button("At all zoom levels").clicked() {
+                actions.push(edit_layer(map, id, "Show at all zoom levels", |l| {
+                    l.zoom = Default::default();
+                }));
+                ui.close();
+            }
+        });
+        if ml.visible && view.is_some_and(|v| !z.contains(v.0)) {
+            ui.label(RichText::new("hidden now").weak());
+        }
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
 fn map_layer(
     ui: &mut Ui,
     project: &Project,
@@ -725,6 +797,7 @@ fn map_layer(
     analyses: &mut AnalysisCache,
     map: MapId,
     ml: &MapLayer,
+    view: Option<(f64, f64)>,
     actions: &mut Vec<Action>,
 ) {
     let id = ml.id;
@@ -753,6 +826,7 @@ fn map_layer(
             }));
         }
     });
+    zoom_ui(ui, ml, view, map, actions);
     ui.separator();
     match &ml.kind {
         MapLayerKind::Boundaries { layer, style } => {

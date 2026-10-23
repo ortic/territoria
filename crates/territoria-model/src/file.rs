@@ -369,6 +369,7 @@ mod tests {
             name: "Areas".into(),
             visible: true,
             opacity: 1.0,
+            zoom: Default::default(),
             kind: MapLayerKind::Boundaries {
                 layer,
                 style: crate::BoundaryStyle {

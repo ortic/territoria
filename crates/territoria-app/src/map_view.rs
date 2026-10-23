@@ -417,7 +417,7 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
         dark: cx.dark,
     };
     let mut resolved = Vec::new();
-    for ml in map.layers.iter().filter(|l| l.visible) {
+    for ml in map.layers.iter().filter(|l| l.shown_at(view.scale)) {
         if let MapLayerKind::Heatmap {
             layer,
             weight,
@@ -546,7 +546,7 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
     }
 
     // Hover and painting.
-    let interactive = interactive_layer(map, cx, painting_tool || selecting_tool);
+    let interactive = interactive_layer(map, cx, painting_tool || selecting_tool, view.scale);
     state.hover = None;
     if let (Some(p), Some((layer_id, plan))) = (pointer, interactive)
         && let Some(layer) = project.layer(layer_id)
@@ -1170,6 +1170,32 @@ fn hover_rows(
     rows
 }
 
+/// Metres per screen point at the view's centre (for map scales).
+pub fn metres_per_point(view: &View, crs: &territoria_geo::Crs) -> Option<f64> {
+    use territoria_geo::{Crs, Transformer};
+    let t = Transformer::new(crs, &Crs::wgs84()).ok()?;
+    let a = view.center;
+    let b = [a[0] + 100.0 * view.scale, a[1]];
+    let (a, b) = (
+        t.convert(geo_types::Coord { x: a[0], y: a[1] })?,
+        t.convert(geo_types::Coord { x: b[0], y: b[1] })?,
+    );
+    let m = territoria_geo::haversine(a, b) / 100.0;
+    (m.is_finite() && m > 0.0).then_some(m)
+}
+
+/// A view scale as a map scale, e.g. "1:250,000" (a point is 1/72 inch).
+pub fn scale_text(scale: f64, now: &(f64, f64)) -> String {
+    let (now_scale, mpp) = *now;
+    let denominator = scale / now_scale * mpp / 0.000_352_778;
+    // Two significant digits.
+    let p = 10f64.powf(denominator.log10().floor() - 1.0);
+    format!(
+        "1:{}",
+        territoria_data::table::format_number((denominator / p).round() * p)
+    )
+}
+
 /// Draws a resolved layer's shapes (not its labels).
 pub fn draw_resolved(shapes: &mut Vec<Shape>, r: &Resolved, view: &View, ppp: f32) {
     let mesh = &r.mesh;
@@ -1338,6 +1364,7 @@ fn interactive_layer(
     map: &Map,
     cx: &MapContext,
     painting: bool,
+    scale: f64,
 ) -> Option<(LayerId, Option<PlanId>)> {
     if painting && let Some(plan) = cx.active_plan.and_then(|p| cx.project.plan(p)) {
         return Some((plan.layer, Some(plan.id)));
@@ -1345,7 +1372,7 @@ fn interactive_layer(
     map.layers
         .iter()
         .rev()
-        .filter(|l| l.visible)
+        .filter(|l| l.shown_at(scale))
         .find_map(|l| match &l.kind {
             MapLayerKind::Territories { plan, .. } => {
                 cx.project.plan(*plan).map(|p| (p.layer, Some(*plan)))
@@ -1377,7 +1404,7 @@ fn attribution(painter: &egui::Painter, view: &View, map: &Map, project: &Projec
     {
         credits.push(attribution.clone());
     }
-    for ml in map.layers.iter().filter(|l| l.visible) {
+    for ml in map.layers.iter().filter(|l| l.shown_at(view.scale)) {
         let layer = match &ml.kind {
             MapLayerKind::Territories { plan, .. } => {
                 project.plan(*plan).and_then(|p| project.layer(p.layer))

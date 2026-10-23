@@ -1278,6 +1278,7 @@ fn proportional_circles() {
             name: format!("Circles {id}"),
             visible: true,
             opacity: 1.0,
+            zoom: Default::default(),
             kind: MapLayerKind::Symbols {
                 layer,
                 source,
@@ -1432,6 +1433,7 @@ fn distance_zones() {
             name: "km to the site".into(),
             visible: true,
             opacity: 1.0,
+            zoom: Default::default(),
             kind: MapLayerKind::Choropleth {
                 layer,
                 source: ValueSource::SiteDistance { plan },
@@ -2160,6 +2162,7 @@ fn filtered_analysis() {
             name: "Customers where [Sales] > 8000".into(),
             visible: true,
             opacity: 1.0,
+            zoom: Default::default(),
             kind: MapLayerKind::Choropleth {
                 layer,
                 source: big,
@@ -2584,6 +2587,7 @@ fn heat_map() {
         name: "Density of Sales".into(),
         visible: true,
         opacity: 0.85,
+        zoom: Default::default(),
         kind: MapLayerKind::Heatmap {
             layer: points,
             weight: Some("Sales".into()),
@@ -2756,5 +2760,64 @@ fn two_values_at_once() {
     settle(&mut h);
     let svg = std::fs::read_to_string(&path).unwrap();
     assert!(svg.contains("↑ Area"), "grid legend in the export");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A layer limited to closer zoom levels shows only when zoomed in, on
+/// screen and in exports.
+#[test]
+fn zoom_dependent_layer() {
+    use crate::app::{Action, Export};
+    use crate::export_map::Format;
+    use territoria_model::{LabelMode, MapLayerKind};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    settle(&mut h);
+    let app = h.state_mut();
+    let (center, scale) = app.view_for_test().expect("a view");
+    let map = app.project.maps[0].id;
+    // Key labels only closer than a quarter of the full view's scale.
+    let m = app.project.map_mut(map).unwrap();
+    let ml = m
+        .layers
+        .iter_mut()
+        .find(|l| l.kind.layer() == Some(layer))
+        .unwrap();
+    if let MapLayerKind::Boundaries { style, .. } = &mut ml.kind {
+        style.labels = LabelMode::Key;
+    }
+    ml.zoom.farthest = Some(scale / 4.0);
+    let key = app.project.layer(layer).unwrap().key(0);
+    let dir = std::env::temp_dir().join(format!("territoria-zoom-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("zoom.svg");
+    let settings = || crate::dialogs::MapExportSettings {
+        format: Format::Svg,
+        scale: 1.0,
+        title: String::new(),
+        legend: true,
+        scale_bar: false,
+    };
+    app.set_map_export_for_test(settings());
+    settle(&mut h);
+    save(&mut h, "zoom-out");
+    h.state_mut().export(Export::Map(Format::Svg), path.clone());
+    settle(&mut h);
+    let far = std::fs::read_to_string(&path).unwrap();
+    assert!(!far.contains("<path"), "no areas when zoomed out");
+    h.state_mut()
+        .apply_action_for_test(Action::GoToView(map, center, scale / 8.0));
+    settle(&mut h);
+    save(&mut h, "zoom-in");
+    let path = dir.join("zoom-in.svg");
+    h.state_mut().set_map_export_for_test(settings());
+    h.state_mut().export(Export::Map(Format::Svg), path.clone());
+    settle(&mut h);
+    let near = std::fs::read_to_string(&path).unwrap();
+    assert!(near.contains("<path"), "areas when zoomed in");
+    assert!(near.contains("<text") || key.is_empty());
     let _ = std::fs::remove_dir_all(dir);
 }

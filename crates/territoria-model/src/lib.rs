@@ -26,7 +26,7 @@ pub use layer::{
 };
 pub use map::{
     BoundaryStyle, ChartPart, ChartShape, ChartStyle, LabelMode, Map, MapLayer, MapLayerKind,
-    SymbolStyle,
+    SymbolStyle, ZoomRange,
 };
 pub use plan::{
     Comparison, Diagnostic, Measure, Move, Plan, PlanStats, Region, RegionStats, RowUnits,

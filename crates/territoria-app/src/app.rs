@@ -1676,7 +1676,7 @@ impl TerritoriaApp {
         }
         // Per map layer how many resolved layers it gave (for hover texts).
         let mut counts: Vec<(MapLayer, usize)> = Vec::new();
-        for ml in map.layers.iter().filter(|l| l.visible) {
+        for ml in map.layers.iter().filter(|l| l.shown_at(view.scale)) {
             let r = crate::resolve::resolve(&mut rcx, &meshes, &cells, ml, &map.crs);
             counts.push((ml.clone(), r.len()));
             resolved.extend(r);
@@ -2008,6 +2008,7 @@ impl TerritoriaApp {
                 name: format!("Rings {} km", radii.join(" / ")),
                 visible: true,
                 opacity: 1.0,
+                zoom: Default::default(),
                 kind: MapLayerKind::Rings {
                     centres: spec.centres,
                     radii_km: spec.radii_km.clone(),
@@ -2187,6 +2188,7 @@ impl TerritoriaApp {
                 name,
                 visible: true,
                 opacity: 1.0,
+                zoom: Default::default(),
                 kind: MapLayerKind::Boundaries { layer, style },
             },
         )
@@ -2413,6 +2415,7 @@ impl TerritoriaApp {
                 name,
                 visible: true,
                 opacity: 1.0,
+                zoom: Default::default(),
                 kind,
             },
         )?;
@@ -2437,6 +2440,7 @@ impl TerritoriaApp {
                 name,
                 visible: true,
                 opacity: 1.0,
+                zoom: Default::default(),
                 kind: MapLayerKind::Bivariate {
                     layer,
                     x,
@@ -2490,6 +2494,7 @@ impl TerritoriaApp {
                 name,
                 visible: true,
                 opacity: 1.0,
+                zoom: Default::default(),
                 kind: MapLayerKind::Charts {
                     layer,
                     parts,
@@ -2503,6 +2508,13 @@ impl TerritoriaApp {
             self.selection = Selection::MapLayer(map, id);
             self.right_tab = RightTab::Properties;
         }
+    }
+
+    /// The map's view on screen: its scale and metres per point.
+    fn view_scale(&self, map: MapId) -> Option<(f64, f64)> {
+        let view = self.map_states.get(&map)?.view?;
+        let crs = &self.project.map(map)?.crs;
+        Some((view.scale, crate::map_view::metres_per_point(&view, crs)?))
     }
 
     fn apply_color_by(&mut self, outcome: ColorByOutcome) {
@@ -2547,6 +2559,7 @@ impl TerritoriaApp {
                         name: format!("Density of {name}"),
                         visible: true,
                         opacity: 0.85,
+                        zoom: Default::default(),
                         kind: MapLayerKind::Heatmap {
                             layer,
                             weight,
@@ -2566,6 +2579,7 @@ impl TerritoriaApp {
                         name,
                         visible: true,
                         opacity: 1.0,
+                        zoom: Default::default(),
                         kind: MapLayerKind::Symbols {
                             layer,
                             source,
@@ -2596,6 +2610,7 @@ impl TerritoriaApp {
                         name,
                         visible: true,
                         opacity: 1.0,
+                        zoom: Default::default(),
                         kind,
                     },
                 )
@@ -2800,6 +2815,7 @@ impl TerritoriaApp {
                     name,
                     visible: true,
                     opacity: 1.0,
+                    zoom: Default::default(),
                     kind: MapLayerKind::Territories {
                         plan,
                         style: Default::default(),
@@ -4602,10 +4618,15 @@ impl eframe::App for TerritoriaApp {
                 .min_size(200.0)
                 .max_size(480.0)
                 .show(ui, |ui| {
+                    let scale = self
+                        .current_map
+                        .and_then(|m| self.view_scale(m))
+                        .map(|v| v.0);
                     let cx = crate::contents::ContentsContext {
                         project: &self.project,
                         values: &mut self.values,
                         analyses: &mut self.analyses,
+                        scale,
                         current_map: self.current_map,
                         selection: self.selection,
                         active_plan: self.active_plan,
@@ -4635,12 +4656,17 @@ impl eframe::App for TerritoriaApp {
                     ui.separator();
                     match self.right_tab {
                         RightTab::Properties => {
+                            let view = match self.selection {
+                                Selection::MapLayer(map, _) => self.view_scale(map),
+                                _ => None,
+                            };
                             actions.extend(crate::inspector::show(
                                 ui,
                                 &self.project,
                                 &mut self.values,
                                 &mut self.analyses,
                                 self.selection,
+                                view,
                             ));
                         }
                         RightTab::Territories => {

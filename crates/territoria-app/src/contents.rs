@@ -15,6 +15,8 @@ pub struct ContentsContext<'a> {
     pub project: &'a Project,
     pub values: &'a mut Cache,
     pub analyses: &'a mut AnalysisCache,
+    /// The current map's view scale (display units per point).
+    pub scale: Option<f64>,
     pub current_map: Option<MapId>,
     pub selection: Selection,
     pub active_plan: Option<PlanId>,
@@ -93,10 +95,20 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                             }
                         };
                         let text = RichText::new(format!("{icon} {}", ml.name));
-                        let text = if ml.visible { text } else { text.weak() };
+                        // Hidden at this zoom: greyed, with why.
+                        let zoomed = cx.scale.is_some_and(|s| !ml.zoom.contains(s));
+                        let text = if ml.visible && !zoomed {
+                            text
+                        } else {
+                            text.weak()
+                        };
                         let r = ui
                             .selectable_label(selected, text)
-                            .on_hover_text(ml.kind.type_label());
+                            .on_hover_text(if ml.visible && zoomed {
+                                format!("{} · not shown at this zoom", ml.kind.type_label())
+                            } else {
+                                ml.kind.type_label().to_owned()
+                            });
                         if r.clicked() {
                             actions.push(Action::Select(Selection::MapLayer(map_id, layer_id)));
                         }

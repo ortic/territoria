@@ -67,7 +67,37 @@ pub struct MapLayer {
     pub name: String,
     pub visible: bool,
     pub opacity: f32,
+    /// The zoom levels it shows at.
+    #[serde(default)]
+    pub zoom: ZoomRange,
     pub kind: MapLayerKind,
+}
+
+impl MapLayer {
+    /// Whether it shows in a view of `scale` (display units per point).
+    pub fn shown_at(&self, scale: f64) -> bool {
+        self.visible && self.zoom.contains(scale)
+    }
+}
+
+/// The view scales (display units per screen point) a layer shows at;
+/// `None` is no limit.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct ZoomRange {
+    /// Hidden when zoomed in closer than this.
+    pub closest: Option<f64>,
+    /// Hidden when zoomed out farther than this.
+    pub farthest: Option<f64>,
+}
+
+impl ZoomRange {
+    pub fn contains(&self, scale: f64) -> bool {
+        self.closest.is_none_or(|c| scale >= c) && self.farthest.is_none_or(|f| scale <= f)
+    }
+
+    pub fn is_limited(&self) -> bool {
+        self.closest.is_some() || self.farthest.is_some()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

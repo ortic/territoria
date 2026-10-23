@@ -241,7 +241,7 @@ territoria/
 - [x] Tooltips: rich cards from a template; several analyses at one spot listed together (no templates)
 - [x] Legends generated from the analysis; a few templates (list, bar, histogram, size); edited labels stay in sync (list and gradient in Contents, histogram in Properties)
 - [x] Analysis-wide filter (segment) and "ignore filter" (per analysis: "Only where" with a formula over the linked table's or points' rows; no shared named segments yet)
-- [ ] Zoom-dependent visibility and symbol scaling
+- [x] Zoom-dependent visibility and symbol scaling (each map layer shown only closer or farther than a zoom taken from the view, shown as 1:n; greyed in Contents when hidden; exports follow; symbols keep their screen size)
 - [ ] Save/load class sets and ramps for reuse across projects
 
 ### 5.8 Territory planning (M4)
