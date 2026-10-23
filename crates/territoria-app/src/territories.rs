@@ -1045,6 +1045,14 @@ impl TerritoriesPanel {
                 }
                 let has_points = project.layers.iter().any(|l| l.kind() == territoria_io::GeometryKind::Point && l.id != plan.layer);
                 if ui
+                    .add_enabled(any_site, egui::Button::new(tr("Coverage from the sites")))
+                    .on_hover_text("A scenario where each site takes its nearest areas until its territory holds its target plus the tolerance: what the sites can cover, and what is left over")
+                    .clicked()
+                {
+                    actions.push(Action::Coverage(plan_id));
+                    ui.close();
+                }
+                if ui
                     .add_enabled(has_points, egui::Button::new(tr("Sites from points…")))
                     .on_hover_text("Rep homes or branches from a point layer, matched to the territories; or the best of many possible locations")
                     .on_disabled_hover_text("Add points first (a table with coordinates or addresses)")

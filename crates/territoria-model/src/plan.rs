@@ -476,6 +476,54 @@ impl Plan {
         }
     }
 
+    /// Coverage from the sites: nearest pairs first, each unit goes to
+    /// the nearest site that still has room (`capacity` per territory, in
+    /// units of `values`; each unit counts 1 without values). Units no
+    /// site can take stay unassigned; territories without a site take
+    /// nothing.
+    pub fn coverage(
+        &self,
+        geometry: &LayerGeometry,
+        values: Option<&[Option<f64>]>,
+        capacity: &[f64],
+    ) -> Vec<Option<TerritoryId>> {
+        let n = self.assignment.len();
+        let sites: Vec<(usize, geo_types::Coord<f64>)> = self
+            .territories
+            .iter()
+            .enumerate()
+            .filter_map(|(i, t)| t.site.map(|[x, y]| (i, geo_types::Coord { x, y })))
+            .collect();
+        let mut pairs: Vec<(f64, u32, usize)> = Vec::with_capacity(n * sites.len());
+        for u in 0..n {
+            let Some(p) = geometry.label_points.get(u).copied().flatten() else {
+                continue;
+            };
+            for &(i, s) in &sites {
+                let d = if geometry.geographic {
+                    territoria_geo::topology::haversine(s, p)
+                } else {
+                    (s.x - p.x).hypot(s.y - p.y)
+                };
+                pairs.push((d, u as u32, i));
+            }
+        }
+        pairs.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut out: Vec<Option<TerritoryId>> = vec![None; n];
+        let mut load = vec![0.0f64; self.territories.len()];
+        for (_, u, i) in pairs {
+            if out[u as usize].is_some() {
+                continue;
+            }
+            let v = values.map_or(1.0, |v| v.get(u as usize).copied().flatten().unwrap_or(0.0));
+            if load[i] + v <= capacity.get(i).copied().unwrap_or(0.0) {
+                load[i] += v;
+                out[u as usize] = Some(self.territories[i].id);
+            }
+        }
+        out
+    }
+
     /// The colours territories take.
     pub fn colors(&self) -> &[Rgba] {
         if self.palette.is_empty() {

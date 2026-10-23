@@ -73,6 +73,8 @@ pub enum Action {
     SaveClassSet(String, territoria_analysis::ColorScale),
     /// A round by road per territory of a plan on points.
     PlanRounds(PlanId),
+    /// A scenario where each site takes its nearest areas up to capacity.
+    Coverage(PlanId),
     /// A table column dropped on the map: show it.
     ShowColumn(DataRef, String),
     /// Show a data layer's boundaries on the current map.
@@ -3888,6 +3890,67 @@ impl TerritoriaApp {
 
     /// Copies a plan as a scenario, shows the copy and compares it with
     /// the original.
+    /// A scenario of `plan` where each site takes its nearest areas until
+    /// its territory holds its target plus the tolerance; what no site can
+    /// take stays unassigned.
+    fn coverage_scenario(&mut self, plan_id: PlanId) {
+        let Some(plan) = self.project.plan(plan_id).cloned() else {
+            return;
+        };
+        let Some(geometry) = self.project.layer(plan.layer).map(|l| l.geometry.clone()) else {
+            return;
+        };
+        if !plan.territories.iter().any(|t| t.site.is_some()) {
+            self.toast("Place the territories' sites first (Sites menu).");
+            return;
+        }
+        let stats = plan.stats(&self.project, &mut self.values);
+        let measure = plan.measures.first();
+        let tolerance = measure.map_or(0.15, |m| m.tolerance);
+        let values = measure
+            .filter(|m| m.source != territoria_model::ValueSource::Units)
+            .map(|m| self.values.values(&self.project, plan.layer, &m.source));
+        let capacity: Vec<f64> = stats
+            .territories
+            .iter()
+            .map(|t| t.targets.first().copied().unwrap_or(0.0) * (1.0 + tolerance))
+            .collect();
+        let assignment = plan.coverage(&geometry, values.as_deref(), &capacity);
+        let left = assignment.iter().filter(|a| a.is_none()).count();
+        let before = self.project.clone();
+        let names: Vec<String> = self.project.plans.iter().map(|p| p.name.clone()).collect();
+        let name = (1..)
+            .map(|i| {
+                if i == 1 {
+                    format!("{} – coverage", plan.name)
+                } else {
+                    format!("{} – coverage {i}", plan.name)
+                }
+            })
+            .find(|n| !names.contains(n))
+            .unwrap_or_default();
+        let Some(copy) = self.project.duplicate_plan(plan_id, &name) else {
+            return;
+        };
+        let rev = self.project.bump();
+        if let Some(p) = self.project.plan_mut(copy) {
+            p.assignment = std::sync::Arc::new(assignment);
+            p.rev = rev;
+        }
+        self.show_plan(copy);
+        self.history.push("Coverage from sites", before);
+        self.territories_panel.compare_with(plan_id);
+        self.toast(if left == 0 {
+            format!("“{name}”: the sites cover every area.")
+        } else {
+            format!(
+                "“{name}”: {} areas are beyond what the sites can take (their target +{:.0} %).",
+                territoria_analysis::format::format_value(left as f64),
+                tolerance * 100.0
+            )
+        });
+    }
+
     fn duplicate_plan(&mut self, plan: PlanId) {
         let Some(name) = self.project.plan(plan).map(|p| p.name.clone()) else {
             return;
@@ -4365,6 +4428,7 @@ impl TerritoriaApp {
             Action::ColorBy(layer) => self.color_by = Some(ColorByDialog::new(layer)),
             Action::ShowColumn(data, column) => self.show_column(data, &column),
             Action::PlanRounds(plan) => self.plan_rounds(plan),
+            Action::Coverage(plan) => self.coverage_scenario(plan),
             Action::SaveClassSet(name, scale) => {
                 self.settings.class_sets.retain(|s| s.name != name);
                 self.toast(format!("Kept the classes as {name}."));

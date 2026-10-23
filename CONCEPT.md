@@ -269,7 +269,7 @@ territoria/
 - [x] Scenarios: copy a plan, compare two plans (moved units, KPI deltas), adopt changes (⋯ menu → Duplicate as scenario; the panel compares, marks moved areas on the map, adopts into the original)
 - [x] Change log: what moved since a snapshot ("143 customers change rep") (a scenario copy is the snapshot: moved areas, points in them per point layer, Excel export of the moves and per-territory figures; no automatic snapshots)
 - [x] Rename, delete and export a plan from the Territories panel; one plan shown on the map at a time
-- [ ] Analyses on plans: distance zones (unit to own site), catchment (potential within distance), key units (top units per territory), coverage (sites grab units until capacity) (distance zones: km to the own site as a value for colourings, farthest area per territory; key units in the report; no catchment or coverage yet)
+- [x] Analyses on plans: distance zones (unit to own site), catchment (potential within distance), key units (top units per territory), coverage (sites grab units until capacity) (distance zones: km to the own site as a value for colourings, farthest area per territory; drive-time zones by road; catchment rings with figures around sites; key units in the report; coverage: a scenario where each site takes its nearest areas up to its target plus tolerance)
 - [x] Point-in-territory column for any table ("which rep owns this customer") (live column per plan in the table view, for linked tables and points in the plan's areas; in table exports and as extra sheets of the plan workbook)
 
 ### 5.9 Optimization (M5)

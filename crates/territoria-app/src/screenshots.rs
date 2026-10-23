@@ -4220,3 +4220,46 @@ fn german_interface() {
     h.get_by_label("Karte exportieren");
     crate::i18n::set_language(territoria_config::Language::English);
 }
+
+/// Each site takes its nearest areas up to capacity: a scenario shows
+/// what three sites can cover of four territories' worth.
+#[test]
+fn coverage_from_sites() {
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    let plan = app.add_balanced_plan_now(layer, 4);
+    let g = app.project.layer(layer).unwrap().geometry.clone();
+    let centres = app.project.plan(plan).unwrap().centres(&g, None);
+    {
+        let p = app.project.plan_mut(plan).unwrap();
+        // Three of the four territories have a site; no tolerance.
+        for (t, c) in p.territories.iter_mut().zip(&centres).take(3) {
+            t.site = c.map(|c| [c.x, c.y]);
+        }
+        p.measures[0].tolerance = 0.0;
+    }
+    app.apply_action_for_test(crate::app::Action::Coverage(plan));
+    settle(&mut h);
+    save(&mut h, "coverage");
+    let app = h.state();
+    let scenario = app.project.plans.last().unwrap();
+    assert_eq!(scenario.name, "Sales territories – coverage");
+    let members = scenario.members();
+    let n = scenario.assignment.len();
+    let target = n as f64 / 4.0;
+    for m in &members[..3] {
+        assert!(
+            m.len() as f64 <= target.ceil(),
+            "{} areas over {target}",
+            m.len()
+        );
+        assert!(m.len() as f64 >= target - 2.0, "{} areas", m.len());
+    }
+    assert!(members[3].is_empty(), "no site, nothing taken");
+    let left = scenario.assignment.iter().filter(|a| a.is_none()).count();
+    assert!(left as f64 >= target - 3.0, "{left} left over");
+}
