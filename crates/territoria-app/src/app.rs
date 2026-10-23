@@ -359,7 +359,7 @@ impl TerritoriaApp {
                 )),
             FileAction::AddBoundaries => dialog
                 .add_filter(
-                    "Boundaries (Shapefile, GeoJSON, zip)",
+                    "Boundaries (Shapefile, GeoJSON, GeoPackage, zip)",
                     territoria_io::VECTOR_EXTENSIONS,
                 )
                 .add_filter("All files", &["*"]),
@@ -2430,7 +2430,7 @@ impl TerritoriaApp {
             button(ui, "📂 Open", Command::OpenProject, "Open a project");
             button(ui, "💾 Save", Command::SaveProject, "Save the project");
             ui.separator();
-            button(ui, "🗺 Add boundaries", Command::AddBoundaries, "Postcodes, municipalities, regions… from a Shapefile, GeoJSON or zip");
+            button(ui, "🗺 Add boundaries", Command::AddBoundaries, "Postcodes, municipalities, regions… from a Shapefile, GeoJSON, GeoPackage or zip");
             button(ui, "📊 Add data", Command::AddData, "A table from CSV or Excel, linked to areas by a key");
             button(ui, "🎨 Colour by value", Command::ColorByValue, "Colour areas, or draw circles sized by a number");
             ui.separator();
@@ -2545,7 +2545,7 @@ impl TerritoriaApp {
             };
             let width = 3.0 * 290.0;
             ui.allocate_ui_with_layout(egui::vec2(width, 120.0), Layout::left_to_right(Align::Min), |ui| {
-                if card(ui, "1  Add boundaries", "Postcodes, municipalities or any areas: Shapefile, GeoJSON or a zip download.") {
+                if card(ui, "1  Add boundaries", "Postcodes, municipalities or any areas: Shapefile, GeoJSON, GeoPackage or a zip download.") {
                     commands.push(Command::AddBoundaries);
                 }
                 if card(ui, "2  Add your data", "A CSV or Excel table. Keys are matched to areas automatically.") {

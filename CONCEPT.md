@@ -143,7 +143,7 @@ territoria/
 
 - [x] Import ESRI Shapefile (`.shp/.shx/.dbf`, `.prj`, `.cpg`), polygons, lines, points (also inside zip files)
 - [x] Import GeoJSON (Feature, FeatureCollection, Geometry; mixed types split into layers)
-- [ ] Import GeoPackage
+- [x] Import GeoPackage (every feature table a layer, also inside zips; CRS from gpkg_spatial_ref_sys; 2D of Z/M geometries; no curves)
 - [ ] Import FlatGeobuf, KML (optional)
 - [x] Attribute encoding: `.cpg`, UTF-8 detection, legacy code pages (Windows-1252, 850, …)
 - [x] CRS from `.prj` WKT: EPSG authority, name lookup against the EPSG table, WKT parameters

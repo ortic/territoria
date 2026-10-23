@@ -12,7 +12,7 @@ written in Rust (egui on wgpu), for Linux, Windows and macOS.
 
 **Boundaries from anywhere.** Postcodes, municipalities, sales regions or
 any other areas: ESRI Shapefiles (also the zipped downloads statistical
-offices publish) and GeoJSON. The coordinate system is read from the
+offices publish), GeoPackages and GeoJSON. The coordinate system is read from the
 `.prj` file (EPSG authority, ESRI names or the WKT parameters) or can be
 given as an EPSG code; data is shown in Web Mercator. Text encodings of
 attribute tables are detected. Nothing is tied to one country.

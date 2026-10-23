@@ -1317,3 +1317,17 @@ fn proportional_circles() {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// The import dialog for a GeoPackage given in `TERRITORIA_TEST_GPKG`
+/// (skipped without it).
+#[test]
+fn geopackage_import_dialog() {
+    let Some(path) = std::env::var_os("TERRITORIA_TEST_GPKG").map(PathBuf::from) else {
+        return;
+    };
+    let (mut h, _lock) = harness(false);
+    h.state_mut()
+        .import_boundaries(path, territoria_io::VectorOptions::default());
+    settle(&mut h);
+    save(&mut h, "gpkg-import");
+}

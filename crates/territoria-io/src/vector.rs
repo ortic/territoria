@@ -128,7 +128,7 @@ pub struct VectorOptions {
 }
 
 /// File extensions [`read_vector`] understands.
-pub const VECTOR_EXTENSIONS: &[&str] = &["shp", "zip", "geojson", "json"];
+pub const VECTOR_EXTENSIONS: &[&str] = &["shp", "zip", "geojson", "json", "gpkg"];
 
 pub fn read_vector(
     path: &Path,
@@ -158,6 +158,7 @@ pub fn read_vector(
             Ok(vec![read_shapefile(&stem, files, options)?])
         }
         "zip" => read_zip(path, options),
+        "gpkg" => crate::gpkg::read_geopackage(path, options),
         "geojson" | "json" => read_geojson(&stem, &std::fs::read(path)?, options),
         _ => Err(ImportError::Unsupported(ext)),
     }
@@ -188,9 +189,11 @@ fn read_zip(path: &Path, options: &VectorOptions) -> Result<Vec<ImportedLayer>, 
             .map_err(|e| ImportError::Format(e.to_string()))?
             .into_owned();
         let lower = name.to_lowercase();
-        if [".shp", ".shx", ".dbf", ".prj", ".cpg", ".geojson", ".json"]
-            .iter()
-            .any(|e| lower.ends_with(e))
+        if [
+            ".shp", ".shx", ".dbf", ".prj", ".cpg", ".geojson", ".json", ".gpkg",
+        ]
+        .iter()
+        .any(|e| lower.ends_with(e))
         {
             let mut buf = Vec::new();
             file.read_to_end(&mut buf)?;
@@ -225,11 +228,19 @@ fn read_zip(path: &Path, options: &VectorOptions) -> Result<Vec<ImportedLayer>, 
             layers.push(read_shapefile(&stem, parts, options)?);
         } else if lower.ends_with(".geojson") || lower.ends_with(".json") {
             layers.extend(read_geojson(&stem, bytes, options)?);
+        } else if lower.ends_with(".gpkg") {
+            // SQLite reads files: unpack it next to the other temporary files.
+            let tmp =
+                std::env::temp_dir().join(format!("territoria-{}-{stem}.gpkg", std::process::id()));
+            std::fs::write(&tmp, bytes)?;
+            let read = crate::gpkg::read_geopackage(&tmp, options);
+            let _ = std::fs::remove_file(&tmp);
+            layers.extend(read?);
         }
     }
     if layers.is_empty() {
         return Err(ImportError::Format(
-            "the zip file contains no shapefile or GeoJSON".into(),
+            "the zip file contains no shapefile, GeoJSON or GeoPackage".into(),
         ));
     }
     Ok(layers)
@@ -474,7 +485,7 @@ fn convert_shape(shape: shapefile::Shape) -> (Option<GeometryKind>, Option<Geome
     }
 }
 
-fn build_table(names: &[String], columns: Vec<Vec<Option<String>>>) -> Table {
+pub(crate) fn build_table(names: &[String], columns: Vec<Vec<Option<String>>>) -> Table {
     let mut table = Table::default();
     for (name, values) in names.iter().zip(columns) {
         let name = table.unique_name(name);
@@ -487,7 +498,7 @@ fn build_table(names: &[String], columns: Vec<Vec<Option<String>>>) -> Table {
 }
 
 /// Resolves the coordinate system and converts to WGS84.
-fn finish_layer(
+pub(crate) fn finish_layer(
     name: &str,
     mut geometries: Geometries,
     mut attributes: Table,

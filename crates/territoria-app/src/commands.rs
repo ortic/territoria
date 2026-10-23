@@ -29,7 +29,7 @@ commands! {
     OpenProject => "File: Open Project…",
     SaveProject => "File: Save",
     SaveProjectAs => "File: Save As…",
-    AddBoundaries => "File: Add Boundaries (Shapefile, GeoJSON)…",
+    AddBoundaries => "File: Add Boundaries (Shapefile, GeoJSON, GeoPackage)…",
     AddData => "File: Add Data (CSV, Excel)…",
     DownloadBoundaries => "File: Download Open Boundaries…",
     Quit => "File: Exit",
