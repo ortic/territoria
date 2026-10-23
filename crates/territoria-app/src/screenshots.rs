@@ -661,7 +661,7 @@ fn territories_around_sites() {
         app.project
             .plan_mut(plan)
             .unwrap()
-            .sites_at_centres(&g, true),
+            .sites_at_centres(&g, true, None),
         5
     );
     // Move one site to a corner, then start over around the sites.
@@ -1398,4 +1398,64 @@ fn paste_cells() {
     assert_eq!(d.0.rows(), 2);
     assert_eq!(d.0.columns[0].display(0), "0811", "leading zeros stay");
     assert_eq!(d.0.columns[1].f64(0), Some(1200.5), "decimal comma");
+}
+
+/// Distance zones: areas coloured by their distance to their territory's
+/// site.
+#[test]
+fn distance_zones() {
+    use territoria_model::{MapLayer, MapLayerKind, ValueSource};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    let plan = app.add_balanced_plan_now(layer, 5);
+    let g = app.project.layer(layer).unwrap().geometry.clone();
+    app.project
+        .plan_mut(plan)
+        .unwrap()
+        .sites_at_centres(&g, true, None);
+    let map = app.project.maps[0].id;
+    let m = app.project.map_mut(map).unwrap();
+    // Right under the territories, which stay on top with their borders.
+    let at = m
+        .layers
+        .iter()
+        .position(|l| matches!(l.kind, MapLayerKind::Territories { .. }))
+        .unwrap();
+    m.layers.insert(
+        at,
+        MapLayer {
+            id: territoria_model::MapLayerId(2001),
+            name: "km to the site".into(),
+            visible: true,
+            opacity: 1.0,
+            kind: MapLayerKind::Choropleth {
+                layer,
+                source: ValueSource::SiteDistance { plan },
+                normalize: Default::default(),
+                scale: Default::default(),
+                style: Default::default(),
+            },
+        },
+    );
+    for ml in &mut m.layers {
+        if let MapLayerKind::Territories { style, .. } = &mut ml.kind {
+            style.fill_opacity = 0.0;
+        }
+    }
+    let mut values = territoria_model::Cache::default();
+    let d = values.values(&app.project, layer, &ValueSource::SiteDistance { plan });
+    assert!(
+        d.iter().flatten().count() > d.len() / 2,
+        "distances for assigned areas"
+    );
+    assert!(
+        d.iter().flatten().any(|x| *x == 0.0),
+        "each site's own area is 0 km away"
+    );
+    settle(&mut h);
+    save(&mut h, "distance-zones");
 }

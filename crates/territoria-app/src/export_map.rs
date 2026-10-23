@@ -416,9 +416,20 @@ fn labels(s: &mut String, r: &Resolved, view: &View, occupied: &mut Vec<Rect>) {
                 let Some(lp) = mesh.label_points.get(*unit as usize).copied().flatten() else {
                     continue;
                 };
-                let (x, y) = f.xy(lp);
+                let (x, mut y) = f.xy(lp);
                 let tw = text_width(name, size);
-                let rect = Rect::from_center_size(pos2(x, y), vec2(tw + 8.0, size + 6.0));
+                let mut rect = Rect::from_center_size(pos2(x, y), vec2(tw + 8.0, size + 6.0));
+                // A site marker under the name: the name goes below it.
+                if let Some(site) = r
+                    .sites
+                    .iter()
+                    .map(|(d, _)| view.to_screen(*d))
+                    .find(|s| rect.expand(6.0).contains(*s))
+                {
+                    let dy = site.y + 8.0 - rect.top();
+                    rect = rect.translate(vec2(0.0, dy));
+                    y += dy;
+                }
                 if !view.rect.contains(rect.center()) || occupied.iter().any(|o| o.intersects(rect))
                 {
                     continue;

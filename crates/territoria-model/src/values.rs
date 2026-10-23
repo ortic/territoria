@@ -35,6 +35,8 @@ pub enum ValueSource {
     Area,
     /// 1 per feature: counts units.
     Units,
+    /// km from each unit to its territory's site in a plan.
+    SiteDistance { plan: crate::PlanId },
 }
 
 impl ValueSource {
@@ -77,6 +79,10 @@ impl ValueSource {
             }
             ValueSource::Area => "Area (km²)".into(),
             ValueSource::Units => "Number of areas".into(),
+            ValueSource::SiteDistance { plan } => {
+                let name = project.plan(*plan).map_or("?".into(), |p| p.name.clone());
+                format!("km to the site ({name})")
+            }
         }
     }
 }
@@ -403,6 +409,27 @@ impl Cache {
                 }
             }
             ValueSource::Units => vec![Some(1.0); n],
+            ValueSource::SiteDistance { plan } => {
+                let Some(p) = project.plan(*plan).filter(|p| p.layer == layer) else {
+                    return vec![None; n];
+                };
+                let g = &l.geometry;
+                if !g.geographic {
+                    return vec![None; n];
+                }
+                let sites: HashMap<_, _> = p
+                    .territories
+                    .iter()
+                    .filter_map(|t| t.site.map(|[x, y]| (t.id, geo_types::Coord { x, y })))
+                    .collect();
+                (0..n)
+                    .map(|u| {
+                        let site = sites.get(&p.assignment.get(u).copied().flatten()?)?;
+                        let at = g.label_points.get(u).copied().flatten()?;
+                        Some(territoria_geo::topology::haversine(*site, at) / 1000.0)
+                    })
+                    .collect()
+            }
             ValueSource::Linked { link, column, agg } => {
                 let (Some(m), Some(lk)) = (self.matching(project, *link), project.link(*link))
                 else {

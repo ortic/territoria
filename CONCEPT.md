@@ -269,7 +269,7 @@ territoria/
 - [x] Scenarios: copy a plan, compare two plans (moved units, KPI deltas), adopt changes (⋯ menu → Duplicate as scenario; the panel compares, marks moved areas on the map, adopts into the original)
 - [x] Change log: what moved since a snapshot ("143 customers change rep") (a scenario copy is the snapshot: moved areas, points in them per point layer, Excel export of the moves and per-territory figures; no automatic snapshots)
 - [x] Rename, delete and export a plan from the Territories panel; one plan shown on the map at a time
-- [ ] Analyses on plans: distance zones (unit to own site), catchment (potential within distance), key units (top units per territory), coverage (sites grab units until capacity)
+- [ ] Analyses on plans: distance zones (unit to own site), catchment (potential within distance), key units (top units per territory), coverage (sites grab units until capacity) (distance zones: km to the own site as a value for colourings, farthest area per territory; key units in the report; no catchment or coverage yet)
 - [x] Point-in-territory column for any table ("which rep owns this customer") (live column per plan in the table view, for linked tables and points in the plan's areas; in table exports and as extra sheets of the plan workbook)
 
 ### 5.9 Optimization (M5)
@@ -285,7 +285,7 @@ territoria/
 - [x] Runs in the background with progress, live preview, cancel, deterministic seed (no live preview)
 - [x] Result as a proposal: KPI before/after, moved units listed, accept or discard (counts, not a list)
 - [x] Diagnostics instead of silent failure (a unit alone exceeds the target, too few units, negative values) (also areas without data and islands; each with a button that selects the areas)
-- [ ] Location optimization: place sites at (weighted) centroids or p-median over candidate points; match sites to territories (assignment problem)
+- [ ] Location optimization: place sites at (weighted) centroids or p-median over candidate points; match sites to territories (assignment problem) (sites at the centre of the measure, in the nearest area; no p-median or matching yet)
 - [x] Colour optimization: neighbours get different colours; palettes; hierarchical colours (children shades of the parent) (neighbours differ; one palette)
 
 ### 5.10 Output (M6)

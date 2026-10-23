@@ -485,6 +485,14 @@ fn territory_page(d: &ReportData, t: usize, page: usize, pages: usize) -> String
     if let Some([lon, lat]) = territory.site {
         row(&mut s, "Site", format!("{lat:.4}°, {lon:.4}°"), INK);
     }
+    if let Some(r) = ts.site_reach {
+        row(
+            &mut s,
+            "Farthest from the site",
+            format!("{} km", format_value(r)),
+            INK,
+        );
+    }
     if !territory.notes.is_empty() {
         row(&mut s, "Notes", fit(&territory.notes, 9.5, 140.0), INK);
     }

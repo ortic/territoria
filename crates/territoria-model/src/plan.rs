@@ -375,6 +375,14 @@ impl Plan {
                     .map(|&u| geometry.areas.get(u as usize).copied().unwrap_or(0.0))
                     .sum(),
                 parts: geometry.components(units),
+                site_reach: t.site.filter(|_| geometry.geographic).map(|[x, y]| {
+                    let site = geo_types::Coord { x, y };
+                    units
+                        .iter()
+                        .filter_map(|&u| geometry.label_points.get(u as usize).copied().flatten())
+                        .map(|p| territoria_geo::topology::haversine(site, p) / 1000.0)
+                        .fold(0.0, f64::max)
+                }),
                 values: measure_values
                     .iter()
                     .map(|v| {
@@ -431,7 +439,12 @@ impl Plan {
     /// Puts each territory's site at its centre: the label point of the unit
     /// nearest to the territory's area-weighted centre (so it's inside).
     /// Territories with a site keep it unless `replace`.
-    pub fn sites_at_centres(&mut self, geometry: &LayerGeometry, replace: bool) -> usize {
+    pub fn sites_at_centres(
+        &mut self,
+        geometry: &LayerGeometry,
+        replace: bool,
+        weights: Option<&[Option<f64>]>,
+    ) -> usize {
         let members = self.members();
         let mut placed = 0;
         for (t, units) in self.territories.iter_mut().zip(&members) {
@@ -441,12 +454,12 @@ impl Plan {
             let (mut sx, mut sy, mut sw) = (0.0, 0.0, 0.0);
             for &u in units {
                 if let Some(p) = geometry.label_points.get(u as usize).copied().flatten() {
-                    let w = geometry
-                        .areas
-                        .get(u as usize)
-                        .copied()
-                        .unwrap_or(1.0)
-                        .max(1e-9);
+                    // By the measure (where the revenue is), else by size.
+                    let w = match weights {
+                        Some(w) => w.get(u as usize).copied().flatten().unwrap_or(0.0),
+                        None => geometry.areas.get(u as usize).copied().unwrap_or(1.0),
+                    }
+                    .max(1e-9);
                     sx += p.x * w;
                     sy += p.y * w;
                     sw += w;
@@ -684,6 +697,8 @@ pub struct TerritoryStats {
     pub area: f64,
     /// Separate pieces (1 = contiguous).
     pub parts: usize,
+    /// km from the site to the farthest unit (with a site).
+    pub site_reach: Option<f64>,
     /// Per measure: value, target and deviation (value / target − 1).
     pub values: Vec<f64>,
     pub targets: Vec<f64>,
@@ -1498,6 +1513,42 @@ mod tests {
         let density = cache.normalized(&p, layer, &sales, &Normalize::PerArea);
         assert!((density[0].unwrap() - 10.0 / area).abs() < 1e-12);
         assert_eq!(Normalize::PerArea.suffix(&p), " per km²");
+    }
+
+    #[test]
+    fn sites_and_distances() {
+        use crate::layer::LayerGeometry;
+        use geo_types::{MultiPolygon, polygon};
+        // Two squares of one degree side by side at the equator.
+        let areas: Vec<MultiPolygon<f64>> = (0..2)
+            .map(|i| {
+                let x = i as f64;
+                MultiPolygon(vec![polygon![(x: x, y: 0.0), (x: x + 1.0, y: 0.0), (x: x + 1.0, y: 1.0), (x: x, y: 1.0), (x: x, y: 0.0)]])
+            })
+            .collect();
+        let mut p = Project::new();
+        let g = LayerGeometry::from_imported(territoria_io::Geometries::Areas(areas), true);
+        let layer = p.add_layer("A", g, Table::with_rows(2), Default::default());
+        let plan = p.add_plan("Plan", layer, 1);
+        let g = p.layer(layer).unwrap().geometry.clone();
+        let pl = p.plan_mut(plan).unwrap();
+        let t = pl.territories[0].id;
+        pl.assign(&[0, 1], Some(t));
+        // Weighted by the measure, the site goes where most of it is.
+        assert_eq!(
+            pl.sites_at_centres(&g, true, Some(&[Some(1.0), Some(9.0)])),
+            1
+        );
+        let site = pl.territories[0].site.unwrap();
+        let second = g.label_points[1].unwrap();
+        assert_eq!(site, [second.x, second.y]);
+        let mut cache = Cache::default();
+        let d = cache.values(&p, layer, &ValueSource::SiteDistance { plan });
+        assert_eq!(d[1], Some(0.0));
+        let km = d[0].unwrap();
+        assert!((km - 111.2).abs() < 1.0, "{km} km for a degree");
+        let stats = p.plan(plan).unwrap().stats(&p, &mut cache);
+        assert!((stats.territories[0].site_reach.unwrap() - km).abs() < 1e-9);
     }
 
     #[test]

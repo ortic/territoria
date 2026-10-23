@@ -583,8 +583,9 @@ impl TerritoriesPanel {
                                         let txt = if d.abs() < 0.0005 { "±0 %".to_owned() } else { format!("{:+.1} %", d * 100.0) };
                                         let c = if d.abs() <= measure.tolerance { ui.visuals().text_color() } else { theme::WARN };
                                         ui.label(RichText::new(txt).color(c).monospace());
+                                        let reach = s.site_reach.map_or(String::new(), |r| format!("\nfarthest area {} km from the site", format_value(r)));
                                         ui.label(RichText::new(format_value(s.values[0])).monospace()).on_hover_text(format!(
-                                            "{} areas · {} km²\ntarget {}",
+                                            "{} areas · {} km²\ntarget {}{reach}",
                                             s.units,
                                             format_value(s.area),
                                             format_value(s.targets[0])
@@ -738,23 +739,55 @@ impl TerritoriesPanel {
                 }
             });
             let missing = plan.territories.iter().filter(|t| t.site.is_none()).count();
-            if missing > 0
-                && ui
-                    .button("📍 Sites at centres")
-                    .on_hover_text("Put a site (rep home, branch) at the centre of each territory without one. Start over then builds territories around the sites.")
-                    .clicked()
-            {
-                actions.push(Action::Edit(
-                    "Sites at centres".into(),
+            let any_site = missing < plan.territories.len();
+            // Centres weighted by the measure: where the revenue is.
+            let by_measure = measure.source != ValueSource::Units;
+            let what = if by_measure { measure.source.label(project) } else { "area".to_owned() };
+            let sites_at = |replace: bool, values: &mut Cache| {
+                let weights = by_measure.then(|| values.values(project, plan.layer, &measure.source));
+                Action::Edit(
+                    if replace { "Move sites to centres".into() } else { "Sites at centres".into() },
                     Box::new(move |p| {
                         let Some(g) = p.plan(plan_id).and_then(|pl| p.layer(pl.layer)).map(|l| l.geometry.clone()) else { return };
                         if let Some(pl) = p.plan_mut(plan_id) {
-                            pl.sites_at_centres(&g, false);
+                            pl.sites_at_centres(&g, replace, weights.as_deref());
                         }
                         touch(p, plan_id);
                     }),
-                ));
-            }
+                )
+            };
+            ui.menu_button("📍 Sites", |ui| {
+                if ui
+                    .add_enabled(missing > 0, egui::Button::new("Sites at centres"))
+                    .on_hover_text(format!("A site (rep home, branch) for each territory without one, in the area nearest the centre of its {what}. Start over then builds territories around the sites."))
+                    .clicked()
+                {
+                    actions.push(sites_at(false, cx.values));
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(any_site, egui::Button::new("Move all sites to the centres"))
+                    .on_hover_text(format!("Every site goes to the area nearest the centre of its territory's {what}"))
+                    .clicked()
+                {
+                    actions.push(sites_at(true, cx.values));
+                    ui.close();
+                }
+                if ui.add_enabled(any_site, egui::Button::new("Remove all sites")).clicked() {
+                    actions.push(Action::Edit(
+                        "Remove sites".into(),
+                        Box::new(move |p| {
+                            if let Some(pl) = p.plan_mut(plan_id) {
+                                for t in &mut pl.territories {
+                                    t.site = None;
+                                }
+                            }
+                            touch(p, plan_id);
+                        }),
+                    ));
+                    ui.close();
+                }
+            });
         });
 
         // The active territory's details.

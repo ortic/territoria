@@ -1012,6 +1012,17 @@ pub fn colorables(project: &Project, layer: LayerId) -> Vec<(String, Colorable)>
         }
         out.push(("Area (km²)".into(), Colorable::Number(ValueSource::Area)));
     }
+    // Distance zones: each area's distance to its territory's site.
+    for p in project
+        .plans
+        .iter()
+        .filter(|p| p.layer == layer && p.territories.iter().any(|t| t.site.is_some()))
+    {
+        out.push((
+            format!("km to the site ({})", p.name),
+            Colorable::Number(ValueSource::SiteDistance { plan: p.id }),
+        ));
+    }
     out
 }
 

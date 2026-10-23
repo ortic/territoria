@@ -978,9 +978,18 @@ fn draw_labels(
                     continue;
                 }
                 let galley = painter.layout_no_wrap(name.clone(), font.clone(), text);
-                let rect = Align2::CENTER_CENTER
+                let mut rect = Align2::CENTER_CENTER
                     .anchor_size(at, galley.size())
                     .expand(3.0);
+                // A site marker under the name: the name goes below it.
+                if let Some(site) = r
+                    .sites
+                    .iter()
+                    .map(|(d, _)| view.to_screen(*d))
+                    .find(|s| rect.expand(6.0).contains(*s))
+                {
+                    rect = rect.translate(vec2(0.0, site.y + 8.0 - rect.top()));
+                }
                 if occupied.iter().any(|o| o.intersects(rect)) {
                     continue;
                 }
