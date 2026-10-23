@@ -4653,3 +4653,125 @@ impl TemplatesDialog {
         outcome
     }
 }
+
+// ---------------------------------------------------------------------------
+// Drive-time zones
+
+/// Areas coloured by their travel time by road to the nearest site.
+pub struct DriveZonesDialog {
+    pub centres: Option<territoria_model::catchment::Centres>,
+    pub areas: Option<LayerId>,
+    /// Limits of the zones in minutes, e.g. "15, 30, 45".
+    pub bands: String,
+}
+
+impl DriveZonesDialog {
+    pub fn new(project: &Project) -> DriveZonesDialog {
+        let centres = CatchmentDialog::new(project).centres;
+        let areas = project
+            .layers
+            .iter()
+            .find(|l| l.kind() == GeometryKind::Area)
+            .map(|l| l.id);
+        DriveZonesDialog {
+            centres,
+            areas,
+            bands: "15, 30, 45".into(),
+        }
+    }
+
+    /// The zones' limits in minutes, ascending.
+    pub fn limits(&self) -> Vec<f64> {
+        let mut v = territoria_model::catchment::parse_radii(&self.bands);
+        v.sort_by(f64::total_cmp);
+        v.dedup();
+        v
+    }
+
+    pub fn show(&mut self, ctx: &egui::Context, project: &Project, open: &mut bool) -> bool {
+        use territoria_model::catchment::Centres;
+        let mut apply = false;
+        let mut cancel = false;
+        *open = modal(ctx, "drive-zones", "Drive-time zones", 500.0, |ui| {
+            ui.label(
+                RichText::new(
+                    "Each area coloured by the minutes by road to the nearest branch, rep or site: who is within 15, 30, 45 minutes. Travel times come from the routing service in Settings.",
+                )
+                .weak(),
+            );
+            ui.add_space(6.0);
+            egui::Grid::new("drive-zones-grid")
+                .num_columns(2)
+                .spacing([12.0, 8.0])
+                .show(ui, |ui| {
+                    ui.label("Areas");
+                    layer_combo(
+                        ui,
+                        "dz-areas",
+                        project,
+                        &mut self.areas,
+                        Some(GeometryKind::Area),
+                    );
+                    ui.end_row();
+                    ui.label("Around");
+                    let text = self
+                        .centres
+                        .map_or("Choose…".to_owned(), |c| c.label(project));
+                    ComboBox::from_id_salt("dz-centres")
+                        .width(260.0)
+                        .selected_text(text)
+                        .show_ui(ui, |ui| {
+                            for l in project
+                                .layers
+                                .iter()
+                                .filter(|l| l.kind() == GeometryKind::Point)
+                            {
+                                ui.selectable_value(
+                                    &mut self.centres,
+                                    Some(Centres::Points(l.id)),
+                                    &l.name,
+                                );
+                            }
+                            for p in project
+                                .plans
+                                .iter()
+                                .filter(|p| p.territories.iter().any(|t| t.site.is_some()))
+                            {
+                                ui.selectable_value(
+                                    &mut self.centres,
+                                    Some(Centres::Sites(p.id)),
+                                    format!("Sites of {}", p.name),
+                                );
+                            }
+                        });
+                    ui.end_row();
+                    ui.label("Zones up to");
+                    ui.horizontal(|ui| {
+                        ui.add(egui::TextEdit::singleline(&mut self.bands).desired_width(120.0));
+                        ui.label("minutes");
+                    });
+                    ui.end_row();
+                    ui.label("");
+                    ui.horizontal(|ui| {
+                        let ready = self.areas.is_some()
+                            && self.centres.is_some()
+                            && !self.limits().is_empty();
+                        if ui
+                            .add_enabled(ready, egui::Button::new(RichText::new("Create").strong()))
+                            .clicked()
+                        {
+                            apply = true;
+                        }
+                        if ui.button("Cancel").clicked() {
+                            cancel = true;
+                        }
+                    });
+                    ui.end_row();
+                });
+        });
+        if cancel || apply {
+            *open = false;
+        }
+        apply
+    }
+}

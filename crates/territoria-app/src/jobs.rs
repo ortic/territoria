@@ -79,6 +79,15 @@ pub enum JobResult {
     },
     /// The map as an image for the clipboard.
     Copied(Result<egui::ColorImage, String>),
+    /// Areas' travel times by road to the nearest centre, for zones.
+    DriveZones {
+        layer: LayerId,
+        /// What the centres are, for names.
+        label: String,
+        limits: Vec<f64>,
+        /// Per area: minutes and the nearest centre's name.
+        result: Result<Vec<Option<(f64, String)>>, String>,
+    },
     /// A round per territory of a plan on points.
     Rounds {
         plan: territoria_model::PlanId,

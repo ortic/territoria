@@ -110,7 +110,21 @@ pub fn breaks(values: &[f64], method: Method, classes: usize, manual: &[f64]) ->
             }
             out
         }
-        Method::Manual => manual.to_vec(),
+        Method::Manual => {
+            // Breaks you set stay, also beyond the data: classes (and their
+            // labels and colours) keep their meaning, some may be empty.
+            let mut b: Vec<f64> = manual.iter().copied().filter(|x| x.is_finite()).collect();
+            b.sort_by(f64::total_cmp);
+            b.dedup();
+            if let (Some(&first), Some(&last)) = (b.first(), b.last()) {
+                let eps = (last - first).abs().max(first.abs()).max(1.0) * 1e-9;
+                let mut edges = vec![if min < first { min } else { first - eps }];
+                edges.extend(b);
+                edges.push(if max > last { max } else { last + eps });
+                return edges;
+            }
+            Vec::new()
+        }
     };
     let mut edges = vec![min];
     for b in inner {
@@ -236,6 +250,16 @@ pub fn class_of(value: f64, edges: &[f64]) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn manual_breaks_beyond_the_data_stay() {
+        let v = [20.0, 25.0, 40.0];
+        let e = breaks(&v, Method::Manual, 4, &[15.0, 30.0, 45.0]);
+        assert_eq!(&e[1..4], &[15.0, 30.0, 45.0]);
+        assert_eq!(e.len(), 5, "four classes: {e:?}");
+        assert_eq!(class_of(20.0, &e), Some(1), "15–30");
+        assert_eq!(class_of(40.0, &e), Some(2), "30–45");
+    }
 
     #[test]
     fn quantiles_and_intervals() {

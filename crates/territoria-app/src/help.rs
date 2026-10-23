@@ -79,6 +79,7 @@ Everything can be undone (Ctrl+Z). The command palette (Ctrl+Shift+P) finds ever
 - Pie and bar charts: several numbers per area, as shares of a pie sized by the total, or bars on one scale.
 - Heat map: where points are dense, optionally weighted by a number; set how far each point spreads.
 - Catchment rings: rings of given distances around points or territory sites, with figures within each ring.
+- Drive-time zones: areas coloured by their minutes by road to the nearest site, in bands you choose (15, 30, 45 minutes).
 - Flow lines: lines from where each row starts to where it goes (customers to their branch), as wide as their value.
 - Every map layer can be limited to zoom levels: Shown → only when zoomed in or out.",
     },

@@ -270,6 +270,7 @@ pub struct TerritoriaApp {
     flows: Option<crate::dialogs::FlowDialog>,
     atlas: Option<crate::dialogs::AtlasDialog>,
     templates_dialog: Option<crate::dialogs::TemplatesDialog>,
+    drive_zones: Option<crate::dialogs::DriveZonesDialog>,
     score: Option<crate::dialogs::ScoreDialog>,
     /// The search box: query and what it found.
     search: String,
@@ -412,6 +413,7 @@ impl TerritoriaApp {
             flows: None,
             atlas: None,
             templates_dialog: None,
+            drive_zones: None,
             score: None,
             search: String::new(),
             search_hits: Vec::new(),
@@ -1271,6 +1273,15 @@ impl TerritoriaApp {
                 )),
             },
             JobResult::Rounds { plan, rounds } => self.add_plan_rounds(plan, rounds),
+            JobResult::DriveZones {
+                layer,
+                label,
+                limits,
+                result,
+            } => match result {
+                Ok(found) => self.add_drive_zones(layer, &label, &limits, found),
+                Err(e) => self.error(format!("Couldn't get the travel times: {e}")),
+            },
             JobResult::Round {
                 layer,
                 units,
@@ -2356,6 +2367,137 @@ impl TerritoriaApp {
             units,
             result: territoria_io::routing::trip(&settings, &stops).map_err(|e| e.to_string()),
         });
+    }
+
+    /// Asks the routing service how long each area of `areas` takes to
+    /// the nearest centre.
+    pub(crate) fn drive_zones_for(
+        &mut self,
+        areas: LayerId,
+        centres: territoria_model::catchment::Centres,
+        limits: Vec<f64>,
+    ) {
+        let Some(l) = self.project.layer(areas) else {
+            return;
+        };
+        let origins: Vec<Option<geo_types::Coord<f64>>> = l.geometry.label_points.clone();
+        let dests = centres.list(&self.project);
+        if dests.is_empty() {
+            self.error("There are no places to travel to.");
+            return;
+        }
+        let label = centres.label(&self.project);
+        let settings = self.settings.routing.clone();
+        self.jobs
+            .spawn_cancellable(format!("Travel times to {label}"), move |job| {
+                let present: Vec<geo_types::Coord<f64>> =
+                    origins.iter().flatten().copied().collect();
+                let targets: Vec<geo_types::Coord<f64>> = dests.iter().map(|d| d.1).collect();
+                let result = territoria_io::routing::nearest_by_road(
+                    &settings,
+                    &present,
+                    &targets,
+                    &mut |done, total| {
+                        if total > 0 {
+                            job.progress(done as f32 / total as f32);
+                        }
+                        !job.cancelled()
+                    },
+                )
+                .map_err(|e| e.to_string())
+                .map(|found| {
+                    let mut found = found.into_iter();
+                    origins
+                        .iter()
+                        .map(|o| {
+                            o.and_then(|_| found.next().flatten())
+                                .map(|n| (n.minutes, dests[n.destination].0.clone()))
+                        })
+                        .collect()
+                });
+                JobResult::DriveZones {
+                    layer: areas,
+                    label,
+                    limits,
+                    result,
+                }
+            });
+    }
+
+    /// The travel times as columns of the areas and a map of zones.
+    fn add_drive_zones(
+        &mut self,
+        layer: LayerId,
+        label: &str,
+        limits: &[f64],
+        found: Vec<Option<(f64, String)>>,
+    ) {
+        use territoria_data::{Column, ColumnKind};
+        let before = self.project.clone();
+        let mut column = format!("Minutes to {label}");
+        if let Some(t) = data_table_mut(&mut self.project, DataRef::Layer(layer)) {
+            column = t.unique_name(&column);
+            let nearest = t.unique_name(&format!("Nearest of {label} by road"));
+            let _ = t.push_column(Column::number(
+                column.clone(),
+                found
+                    .iter()
+                    .map(|f| f.as_ref().map(|(m, _)| (m * 10.0).round() / 10.0))
+                    .collect(),
+            ));
+            let _ = t.push_column(Column::text(
+                nearest,
+                ColumnKind::Text,
+                found
+                    .iter()
+                    .map(|f| f.as_ref().map(|(_, n)| n.clone()))
+                    .collect(),
+            ));
+        }
+        let fmt = territoria_data::table::format_number;
+        let mut labels = vec![format!("under {} min", fmt(limits[0]))];
+        for w in limits.windows(2) {
+            labels.push(format!("{}–{} min", fmt(w[0]), fmt(w[1])));
+        }
+        labels.push(format!("over {} min", fmt(*limits.last().unwrap_or(&0.0))));
+        let map = self.ensure_map();
+        let id = self.project.new_map_layer_id();
+        self.push_map_layer(
+            map,
+            MapLayer {
+                id,
+                name: format!("Drive time to {label}"),
+                visible: true,
+                opacity: 1.0,
+                zoom: Default::default(),
+                kind: MapLayerKind::Choropleth {
+                    layer,
+                    source: territoria_model::ValueSource::Attribute { column },
+                    normalize: Default::default(),
+                    scale: ColorScale {
+                        method: territoria_analysis::Method::Manual,
+                        classes: limits.len() + 1,
+                        manual: limits.to_vec(),
+                        round: false,
+                        // Near is dark, far fades out.
+                        ramp: territoria_analysis::RampSpec::Named {
+                            name: "Yellow-Green".into(),
+                            reversed: true,
+                        },
+                        labels,
+                        ..Default::default()
+                    },
+                    style: BoundaryStyle {
+                        stroke: territoria_analysis::Rgba([0xff, 0xff, 0xff, 140]),
+                        stroke_width: 0.5,
+                        ..Default::default()
+                    },
+                },
+            },
+        );
+        self.history.push("Drive-time zones", before);
+        self.selection = Selection::MapLayer(map, id);
+        self.right_tab = RightTab::Properties;
     }
 
     /// A round by road for each territory of `plan` (on points), from its
@@ -3870,6 +4012,14 @@ impl TerritoriaApp {
                     self.toast("Show a map first.");
                 }
             }
+            Command::DriveZones => {
+                let d = crate::dialogs::DriveZonesDialog::new(&self.project);
+                if d.centres.is_none() {
+                    self.toast("Add points (branches, reps) or place territory sites first.");
+                } else {
+                    self.drive_zones = Some(d);
+                }
+            }
             Command::Templates => {
                 self.templates_dialog = Some(crate::dialogs::TemplatesDialog::new(
                     self.templates(),
@@ -4663,6 +4813,7 @@ impl TerritoriaApp {
                     Command::ReplaceLayer,
                     Command::HexGrid,
                     Command::Catchment,
+                    Command::DriveZones,
                     Command::FlowLines,
                     Command::CalculatedColumn,
                     Command::ExportMap,
@@ -5076,6 +5227,16 @@ impl TerritoriaApp {
                 self.formula = Some(f);
             } else if open {
                 self.score = Some(d);
+            }
+        }
+        if let Some(mut d) = self.drive_zones.take() {
+            let mut open = true;
+            if d.show(ctx, &self.project, &mut open) {
+                if let (Some(areas), Some(centres)) = (d.areas, d.centres) {
+                    self.drive_zones_for(areas, centres, d.limits());
+                }
+            } else if open {
+                self.drive_zones = Some(d);
             }
         }
         if let Some(mut d) = self.templates_dialog.take() {
@@ -5625,6 +5786,7 @@ impl eframe::App for TerritoriaApp {
             || self.flows.is_some()
             || self.atlas.is_some()
             || self.templates_dialog.is_some()
+            || self.drive_zones.is_some()
             || self.score.is_some()
             || self.settings_dialog.is_some()
             || self.select_list.is_some()

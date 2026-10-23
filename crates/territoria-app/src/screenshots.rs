@@ -4098,3 +4098,72 @@ fn rounds_for_all_territories() {
         assert_eq!(ranks, (1..=members.len()).collect::<Vec<_>>());
     }
 }
+
+/// Areas coloured by their minutes by road to the nearest branch.
+#[test]
+fn drive_time_zones() {
+    use crate::dialogs::Placement;
+    use territoria_model::MapLayerKind;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    app.settings.routing.url = territoria_io::routing::mock_server();
+    app.settings.routing.interval_ms = 0;
+    let b = app.project.layer(layer).unwrap().geometry.bbox.unwrap();
+    let at = |u: f64, v: f64| (b.min().x + u * b.width(), b.min().y + v * b.height());
+    let spots = [at(0.25, 0.35), at(0.75, 0.65)];
+    let branches = Table::new(vec![
+        Column::text(
+            "Branch",
+            ColumnKind::Key,
+            vec![Some("West".into()), Some("East".into())],
+        ),
+        Column::number("Lon", spots.iter().map(|s| Some(s.0)).collect()),
+        Column::number("Lat", spots.iter().map(|s| Some(s.1)).collect()),
+    ])
+    .unwrap();
+    app.add_table(
+        "Branches".into(),
+        branches,
+        PathBuf::from("branches.csv"),
+        Placement::Points {
+            x: "Lon".into(),
+            y: "Lat".into(),
+        },
+        None,
+    );
+    let points = app.project.layers.last().unwrap().id;
+    app.drive_zones_for(
+        layer,
+        territoria_model::catchment::Centres::Points(points),
+        vec![2.0, 4.0, 6.0],
+    );
+    settle(&mut h);
+    save(&mut h, "drive-zones");
+    let app = h.state_mut();
+    // Under the branches' points.
+    let ml = app.project.maps[0]
+        .layers
+        .iter()
+        .find(|l| l.name == "Drive time to Branches")
+        .expect("the zones")
+        .clone();
+    let MapLayerKind::Choropleth { scale, .. } = &ml.kind else {
+        panic!("zones");
+    };
+    assert_eq!(scale.labels[0], "under 2 min");
+    let mut values = territoria_model::Cache::default();
+    let scaled = app
+        .analyses
+        .get(&app.project, &mut values, ml.id, &ml.kind)
+        .unwrap();
+    assert_eq!(scaled.legend.len(), 4, "four zones");
+    assert!(
+        scaled.legend.iter().all(|e| e.count > 0),
+        "{:?}",
+        scaled.legend
+    );
+}

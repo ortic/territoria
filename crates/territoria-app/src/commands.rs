@@ -43,6 +43,7 @@ commands! {
     CalculatedColumn => "Data: Calculated Column…",
     HexGrid => "Data: New Hexagon Grid…",
     Catchment => "Map: Catchment Rings Around Points…",
+    DriveZones => "Map: Drive-Time Zones Around Sites…",
     FlowLines => "Map: Flow Lines Between Places…",
     ColorByValue => "Map: Colour Areas by Value…",
     NewMap => "Map: New Map",
