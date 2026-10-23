@@ -105,6 +105,7 @@ Everything can be undone (Ctrl+Z). The command palette (Ctrl+Shift+P) finds ever
 - Map → Select Areas by List takes keys pasted from a spreadsheet.
 - The selection bar shows the count and the plan's measure, assigns the selection to the active territory, zooms to it or fades everything else (Focus).
 - Select in: carries the selection to another layer, e.g. the postcodes inside selected districts or the customers in them.
+- Round: for selected points (a rep's customers), the quickest round by road from the routing service, drawn on the map with its km and time, and each point's place in it as a column.
 - Rows selected in a table are selected on the map.",
     },
     Topic {

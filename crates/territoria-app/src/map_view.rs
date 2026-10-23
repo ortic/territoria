@@ -108,6 +108,8 @@ pub enum MapEvent {
     },
     ZoomToSelection,
     ClearSelection,
+    /// The quickest round by road through the selected points.
+    Round,
     /// Select the features of another layer related to the selection.
     TransferSelection {
         to: LayerId,
@@ -926,6 +928,15 @@ fn selection_bar(
                         }
                     }
                     ui.separator();
+                    if noun == "points"
+                        && (2..=100).contains(&units.len())
+                        && ui
+                            .button("Round")
+                            .on_hover_text("The quickest round by road visiting the selected points, from the routing service")
+                            .clicked()
+                    {
+                        events.push(MapEvent::Round);
+                    }
                     transfer_menu(ui, map, project, layer, events);
                     if ui.button("Zoom to").clicked() {
                         events.push(MapEvent::ZoomToSelection);

@@ -146,6 +146,102 @@ pub fn nearest_by_road(
     Ok(best)
 }
 
+/// A visiting round: the stops in the order to visit them, the road
+/// there and back, and its length.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Trip {
+    /// Per stop (as given) its place in the round, from 0.
+    pub order: Vec<usize>,
+    /// The road, longitude/latitude.
+    pub path: Vec<Coord<f64>>,
+    pub minutes: f64,
+    pub km: f64,
+}
+
+#[derive(Deserialize)]
+struct TripResponse {
+    code: String,
+    #[serde(default)]
+    message: Option<String>,
+    #[serde(default)]
+    trips: Vec<TripRoute>,
+    #[serde(default)]
+    waypoints: Vec<TripWaypoint>,
+}
+
+#[derive(Deserialize)]
+struct TripRoute {
+    geometry: TripGeometry,
+    duration: f64,
+    distance: f64,
+}
+
+#[derive(Deserialize)]
+struct TripGeometry {
+    coordinates: Vec<[f64; 2]>,
+}
+
+#[derive(Deserialize)]
+struct TripWaypoint {
+    waypoint_index: usize,
+}
+
+/// The quickest round through `stops` (longitude/latitude), starting and
+/// ending at the first (OSRM's `trip` service).
+pub fn trip(settings: &RoutingSettings, stops: &[Coord<f64>]) -> Result<Trip, ImportError> {
+    if stops.len() < 2 {
+        return Err(ImportError::Format(
+            "a round needs two stops or more".into(),
+        ));
+    }
+    let coords: Vec<String> = stops
+        .iter()
+        .map(|c| format!("{:.6},{:.6}", c.x, c.y))
+        .collect();
+    let url = format!(
+        "{}/trip/v1/{}/{}?roundtrip=true&source=first&geometries=geojson&overview=full",
+        settings.url.trim_end_matches('/'),
+        settings.profile,
+        coords.join(";")
+    );
+    let agent = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(120)))
+        .user_agent(concat!("territoria/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .new_agent();
+    let net = |e: ureq::Error| ImportError::Format(format!("routing: {e}"));
+    let text = agent
+        .get(&url)
+        .call()
+        .map_err(net)?
+        .body_mut()
+        .read_to_string()
+        .map_err(net)?;
+    let r: TripResponse = serde_json::from_str(&text)
+        .map_err(|e| ImportError::Format(format!("routing: unexpected answer ({e})")))?;
+    if r.code != "Ok" {
+        return Err(ImportError::Format(format!(
+            "routing: {}",
+            r.message.unwrap_or(r.code)
+        )));
+    }
+    let route = r
+        .trips
+        .first()
+        .ok_or_else(|| ImportError::Format("routing: no round found".into()))?;
+    Ok(Trip {
+        order: r.waypoints.iter().map(|w| w.waypoint_index).collect(),
+        path: route
+            .geometry
+            .coordinates
+            .iter()
+            .map(|[x, y]| Coord { x: *x, y: *y })
+            .collect(),
+        minutes: route.duration / 60.0,
+        km: route.distance / 1000.0,
+    })
+}
+
 /// An OSRM stand-in for tests: a second of travel per 0.001° of straight
 /// line, a km per 0.01°. Returns its address.
 #[doc(hidden)]
@@ -177,6 +273,45 @@ pub fn mock_server() -> String {
                     (x.parse().unwrap(), y.parse().unwrap())
                 })
                 .collect();
+            let dist = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).hypot(a.1 - b.1);
+            if route.contains("/trip/") {
+                // Nearest neighbour from the first stop, and back.
+                let mut order = vec![0usize];
+                while order.len() < coords.len() {
+                    let last = coords[*order.last().unwrap()];
+                    let next = (0..coords.len())
+                        .filter(|i| !order.contains(i))
+                        .min_by(|a, b| dist(last, coords[*a]).total_cmp(&dist(last, coords[*b])))
+                        .unwrap();
+                    order.push(next);
+                }
+                let mut path: Vec<(f64, f64)> = order.iter().map(|&i| coords[i]).collect();
+                path.push(coords[0]);
+                let length: f64 = path.windows(2).map(|w| dist(w[0], w[1])).sum();
+                let mut rank = vec![0; coords.len()];
+                for (k, &i) in order.iter().enumerate() {
+                    rank[i] = k;
+                }
+                let points: Vec<String> =
+                    path.iter().map(|p| format!("[{},{}]", p.0, p.1)).collect();
+                let waypoints: Vec<String> = rank
+                    .iter()
+                    .map(|k| format!(r#"{{"waypoint_index":{k},"trips_index":0}}"#))
+                    .collect();
+                let body = format!(
+                    r#"{{"code":"Ok","trips":[{{"geometry":{{"type":"LineString","coordinates":[{}]}},"duration":{},"distance":{}}}],"waypoints":[{}]}}"#,
+                    points.join(","),
+                    length * 1000.0,
+                    length * 100_000.0,
+                    waypoints.join(",")
+                );
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                continue;
+            }
             let list = |name: &str| -> Vec<usize> {
                 query
                     .split('&')
@@ -252,5 +387,19 @@ mod tests {
         assert!((first.km - 5.0).abs() < 1e-6);
         // 2 blocks of destinations × 3 of origins, and the final report.
         assert_eq!(calls, 7);
+    }
+
+    #[test]
+    fn round_through_stops() {
+        let settings = RoutingSettings {
+            url: mock_server(),
+            ..Default::default()
+        };
+        let c = |x: f64, y: f64| Coord { x, y };
+        let stops = [c(0.0, 0.0), c(2.0, 0.0), c(1.0, 0.0), c(3.0, 0.0)];
+        let t = trip(&settings, &stops).unwrap();
+        assert_eq!(t.order, vec![0, 2, 1, 3]);
+        assert_eq!(t.path.len(), 5);
+        assert!((t.km - 600.0).abs() < 1e-6, "{}", t.km);
     }
 }

@@ -3307,3 +3307,56 @@ fn travel_time_by_road() {
     assert!(minutes.f64(west).unwrap() < 1.0);
     assert!(t.column("Road km to Branches").is_some());
 }
+
+/// The quickest round through selected customers: a line on the map and
+/// each customer's place in it.
+#[test]
+fn round_through_customers() {
+    use crate::app::Action;
+    use crate::dialogs::Placement;
+    use crate::map_view::MapEvent;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    app.settings.routing.url = territoria_io::routing::mock_server();
+    let customers = customers(app, layer, 60);
+    app.add_table(
+        "Customers".into(),
+        customers,
+        PathBuf::from("customers.csv"),
+        Placement::Points {
+            x: "Longitude".into(),
+            y: "Latitude".into(),
+        },
+        None,
+    );
+    let points = app.project.layers.last().unwrap().id;
+    let units: Vec<u32> = (0..12).map(|i| i * 5).collect();
+    app.apply_action_for_test(Action::SelectUnits(points, units.clone()));
+    settle(&mut h);
+    h.state_mut().map_events_for_test(vec![MapEvent::Round]);
+    settle(&mut h);
+    save(&mut h, "round");
+    let app = h.state();
+    let round = app.project.layers.last().unwrap();
+    assert_eq!(round.name, "Round of Customers");
+    assert_eq!(round.kind(), territoria_io::GeometryKind::Line);
+    let order = app
+        .project
+        .layer(points)
+        .unwrap()
+        .attributes
+        .column("Visit order")
+        .expect("visit order");
+    let mut ranks: Vec<u32> = units
+        .iter()
+        .map(|&u| order.f64(u as usize).unwrap() as u32)
+        .collect();
+    assert_eq!(ranks[0], 1, "starts at the first");
+    ranks.sort_unstable();
+    assert_eq!(ranks, (1..=12).collect::<Vec<u32>>());
+    assert!(order.f64(1).is_none(), "others not in the round");
+}

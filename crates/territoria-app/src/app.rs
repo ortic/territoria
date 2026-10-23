@@ -1128,6 +1128,14 @@ impl TerritoriaApp {
                     set.country, set.level
                 )),
             },
+            JobResult::Round {
+                layer,
+                units,
+                result,
+            } => match result {
+                Ok(trip) => self.add_round(layer, &units, trip),
+                Err(e) => self.error(format!("Couldn't plan the round: {e}")),
+            },
             JobResult::Columns { target, result } => match result {
                 Ok(columns) => {
                     let n = columns.len();
@@ -2092,6 +2100,102 @@ impl TerritoriaApp {
             }
         });
         self.toast(format!("{n} columns added."));
+    }
+
+    /// Asks the routing service for the quickest round through `units`
+    /// (points), starting at the first.
+    fn plan_round(&mut self, layer: LayerId, units: Vec<u32>) {
+        let Some(l) = self.project.layer(layer) else {
+            return;
+        };
+        let stops: Vec<geo_types::Coord<f64>> = units
+            .iter()
+            .filter_map(|&u| l.geometry.points.get(u as usize)?.0.first().map(|p| p.0))
+            .collect();
+        if stops.len() != units.len() {
+            self.error("Some of the selected points have no place.");
+            return;
+        }
+        let settings = self.settings.routing.clone();
+        let label = format!("Planning a round of {} stops", units.len());
+        self.jobs.spawn(label, move |_| JobResult::Round {
+            layer,
+            units,
+            result: territoria_io::routing::trip(&settings, &stops).map_err(|e| e.to_string()),
+        });
+    }
+
+    /// The round as a line layer on the map, and the visiting order as a
+    /// column of the points.
+    fn add_round(&mut self, layer: LayerId, units: &[u32], trip: territoria_io::routing::Trip) {
+        use territoria_data::{Column, ColumnKind, Table};
+        let Some(name) = self.project.layer(layer).map(|l| l.name.clone()) else {
+            return;
+        };
+        let before = self.project.clone();
+        let n = self.project.layer(layer).map_or(0, |l| l.len());
+        let mut order = vec![None; n];
+        for (u, k) in units.iter().zip(&trip.order) {
+            if let Some(o) = order.get_mut(*u as usize) {
+                *o = Some((*k + 1) as f64);
+            }
+        }
+        if let Some(t) = data_table_mut(&mut self.project, DataRef::Layer(layer)) {
+            let mut c = Column::number(t.unique_name("Visit order"), order);
+            c.kind = ColumnKind::Integer;
+            let _ = t.push_column(c);
+        }
+        let hours = (trip.minutes / 60.0).floor();
+        let summary = format!(
+            "{} stops, {} km, {} h {:02} min",
+            units.len(),
+            territoria_analysis::format::format_value(trip.km.round()),
+            hours,
+            (trip.minutes - hours * 60.0).round() as u32
+        );
+        let table = Table::new(vec![
+            Column::text(
+                "Round",
+                ColumnKind::Key,
+                vec![Some(format!("Round of {name}"))],
+            ),
+            Column::number("Stops", vec![Some(units.len() as f64)]),
+            Column::number("Km", vec![Some((trip.km * 10.0).round() / 10.0)]),
+            Column::number("Minutes", vec![Some(trip.minutes.round())]),
+        ])
+        .expect("one row each");
+        let geometry = territoria_model::LayerGeometry::from_imported(
+            territoria_io::Geometries::Lines(vec![geo_types::MultiLineString(vec![
+                geo_types::LineString(trip.path),
+            ])]),
+            true,
+        );
+        let title = format!("Round of {name}");
+        let id = self
+            .project
+            .add_layer(&title, geometry, table, SourceInfo::default());
+        let map = self.ensure_map();
+        let ml = self.project.new_map_layer_id();
+        self.push_map_layer(
+            map,
+            MapLayer {
+                id: ml,
+                name: format!("{title} ({summary})"),
+                visible: true,
+                opacity: 1.0,
+                zoom: Default::default(),
+                kind: MapLayerKind::Boundaries {
+                    layer: id,
+                    style: BoundaryStyle {
+                        fill: territoria_analysis::Rgba([0x1d, 0x4e, 0xd8, 220]),
+                        stroke_width: 3.0,
+                        ..Default::default()
+                    },
+                },
+            },
+        );
+        self.history.push("Plan a round", before);
+        self.toast(format!("Round planned: {summary}."));
     }
 
     /// Travel time and distance by road from each feature of `from` to the
@@ -3746,6 +3850,11 @@ impl TerritoriaApp {
                 MapEvent::ClearSelection => {
                     self.selected = None;
                     self.focus = false;
+                }
+                MapEvent::Round => {
+                    if let Some((layer, units)) = self.selected.clone() {
+                        self.plan_round(layer, units);
+                    }
                 }
                 MapEvent::TransferSelection { to, relation } => {
                     if let Some((from, units)) = self.selected.clone()

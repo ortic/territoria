@@ -69,6 +69,12 @@ pub enum JobResult {
     },
     /// The map as an image for the clipboard.
     Copied(Result<egui::ColorImage, String>),
+    /// A visiting round through points of a layer.
+    Round {
+        layer: LayerId,
+        units: Vec<u32>,
+        result: Result<territoria_io::routing::Trip, String>,
+    },
     /// New columns for a table or layer, worked out in the background.
     Columns {
         target: crate::app::DataRef,
