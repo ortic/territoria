@@ -136,7 +136,7 @@ territoria/
 - [x] Project: new, open, save, save as; recent projects
 - [x] Autosave and crash recovery (autosave to the data folder; no restore prompt yet)
 - [x] Undo/redo for every project change
-- [ ] Context help (F1) and tooltips that explain, not just name
+- [x] Context help (F1) and tooltips that explain, not just name (F1 opens searchable help on the topic of the selection: getting started, layers, data, formulas with all functions, colouring, symbols, territories, scenarios, selecting, views, exports, keyboard shortcuts)
 - [x] Remember where the user left off (map view, selected layer, open tables) (also the current map, active plan and territory)
 
 ### 5.2 Boundaries and base geometry (M1)

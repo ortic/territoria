@@ -12,6 +12,7 @@ mod dialogs;
 mod export_map;
 mod flowlines;
 mod heat;
+mod help;
 mod inspector;
 mod jobs;
 mod map_view;

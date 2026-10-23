@@ -3102,3 +3102,43 @@ fn circles_by_category() {
     assert!(fills.len() >= 3, "{fills:?}");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// F1 opens help on the topic of what is selected.
+#[test]
+fn help_on_the_selection() {
+    use crate::commands::Command;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    h.state_mut()
+        .add_linked_table_now("Sales 2026", table, "Area", layer, None);
+    settle(&mut h);
+    let app = h.state_mut();
+    let map = app.project.maps[0].id;
+    let id = app.project.maps[0].layers.last().unwrap().id;
+    app.selection = crate::app::Selection::MapLayer(map, id);
+    app.run_command_for_test(Command::Help);
+    assert_eq!(h.state().help_topic_for_test(), Some("boundaries"));
+    // A coloured layer: the colouring topic.
+    let app = h.state_mut();
+    let link = app.project.links[0].id;
+    let id = app
+        .add_choropleth_for_test(
+            map,
+            layer,
+            territoria_model::ValueSource::Linked {
+                link,
+                column: "Revenue".into(),
+                agg: territoria_data::Aggregate::Sum,
+            },
+        )
+        .unwrap();
+    app.selection = crate::app::Selection::MapLayer(map, id);
+    app.run_command_for_test(Command::Help);
+    assert_eq!(h.state().help_topic_for_test(), Some("colour"));
+    settle(&mut h);
+    save(&mut h, "help");
+}

@@ -70,6 +70,7 @@ commands! {
     ZoomIn => "View: Zoom In (UI)",
     ZoomOut => "View: Zoom Out (UI)",
     ZoomReset => "View: Reset Zoom (UI)",
+    Help => "Help: Help Topics",
     About => "Help: About Territoria",
 }
 
@@ -107,6 +108,7 @@ impl Default for Keymap {
                 (Command::Settings, k(ctrl, Key::Comma)),
                 (Command::Find, k(ctrl, Key::F)),
                 (Command::Presentation, k(none, Key::F11)),
+                (Command::Help, k(none, Key::F1)),
                 (Command::CopyMap, k(ctrl | shift, Key::C)),
                 (Command::ZoomToAll, k(none, Key::Home)),
                 (Command::ToolNavigate, k(none, Key::V)),

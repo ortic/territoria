@@ -257,6 +257,7 @@ pub struct TerritoriaApp {
     attributions: HashMap<PathBuf, (String, String)>,
     palette: Option<(String, usize)>,
     about: bool,
+    help: Option<crate::help::HelpWindow>,
     confirm: Option<Confirm>,
     file_dialog: Option<(std::sync::mpsc::Receiver<Option<PathBuf>>, FileAction)>,
     toasts: Vec<Toast>,
@@ -388,6 +389,7 @@ impl TerritoriaApp {
             map_export: None,
             attributions: HashMap::new(),
             palette: None,
+            help: None,
             about: false,
             confirm: None,
             file_dialog: None,
@@ -1362,6 +1364,21 @@ impl TerritoriaApp {
         self.search = query.into();
         self.search_hits = crate::search::search(&self.project, query, 12);
         self.search_focus = true;
+    }
+
+    #[cfg(test)]
+    pub fn help_topic_for_test(&self) -> Option<&'static str> {
+        self.help.as_ref().map(|h| h.topic)
+    }
+
+    #[cfg(test)]
+    pub fn add_choropleth_for_test(
+        &mut self,
+        map: MapId,
+        layer: LayerId,
+        source: territoria_model::ValueSource,
+    ) -> Option<MapLayerId> {
+        self.add_choropleth(map, layer, "Value".into(), source)
     }
 
     #[cfg(test)]
@@ -3209,6 +3226,14 @@ impl TerritoriaApp {
                 self.save_settings();
             }
             Command::About => self.about = true,
+            Command::Help => {
+                let topic = crate::help::topic_for(
+                    self.selection,
+                    &self.project,
+                    self.right_tab == RightTab::Territories,
+                );
+                self.help = Some(crate::help::HelpWindow::new(topic));
+            }
             Command::Settings => {
                 self.settings_dialog =
                     Some(crate::dialogs::SettingsDialog::new(self.tiles.cache_dir()));
@@ -3799,7 +3824,8 @@ impl TerritoriaApp {
                 }
             });
             ui.menu_button("Help", |ui| {
-                item(ui, commands, &self.keymap, Command::About)
+                item(ui, commands, &self.keymap, Command::Help);
+                item(ui, commands, &self.keymap, Command::About);
             });
         });
         for e in exports {
@@ -4327,6 +4353,13 @@ impl TerritoriaApp {
                 self.settings_dialog = Some(d);
             } else {
                 self.save_settings();
+            }
+        }
+        if let Some(mut help) = self.help.take() {
+            let mut open = true;
+            help.show(ctx, &self.keymap, &mut open);
+            if open {
+                self.help = Some(help);
             }
         }
         if self.about {
