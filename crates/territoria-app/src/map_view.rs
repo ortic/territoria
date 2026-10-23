@@ -1313,6 +1313,25 @@ pub fn scale_text(scale: f64, now: &(f64, f64)) -> String {
     )
 }
 
+/// A symbol of `shape` at `p` with half-size `r`.
+pub fn symbol(
+    shapes: &mut Vec<Shape>,
+    shape: territoria_model::SymbolShape,
+    p: Pos2,
+    r: f32,
+    fill: Color32,
+    stroke: Stroke,
+) {
+    let outline = shape.outline(p.x, p.y, r);
+    if outline.is_empty() {
+        shapes.push(Shape::circle_filled(p, r, fill));
+        shapes.push(Shape::circle_stroke(p, r, stroke));
+    } else {
+        let points: Vec<Pos2> = outline.iter().map(|[x, y]| pos2(*x, *y)).collect();
+        shapes.push(Shape::convex_polygon(points, fill, stroke));
+    }
+}
+
 /// Draws a resolved layer's shapes (not its labels).
 pub fn draw_resolved(shapes: &mut Vec<Shape>, r: &Resolved, view: &View, ppp: f32) {
     let mesh = &r.mesh;
@@ -1372,8 +1391,7 @@ pub fn draw_resolved(shapes: &mut Vec<Shape>, r: &Resolved, view: &View, ppp: f3
                 .copied()
                 .flatten()
                 .unwrap_or(r.symbol_fill);
-            shapes.push(Shape::circle_filled(p, radius, fill));
-            shapes.push(Shape::circle_stroke(p, radius, r.symbol_stroke));
+            symbol(shapes, r.symbol_shape, p, radius, fill, r.symbol_stroke);
         }
     }
     for chart in &r.charts {

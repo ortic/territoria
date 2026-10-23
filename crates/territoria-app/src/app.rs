@@ -2104,6 +2104,7 @@ impl TerritoriaApp {
                 symbol_fill: egui::Color32::TRANSPARENT,
                 symbol_colors: Vec::new(),
                 symbol_stroke: egui::Stroke::NONE,
+                symbol_shape: Default::default(),
                 charts: Vec::new(),
                 flows: Vec::new(),
                 rings: Vec::new(),

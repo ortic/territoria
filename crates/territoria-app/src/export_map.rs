@@ -586,11 +586,24 @@ fn layer(s: &mut String, r: &Resolved, view: &View, tips: Option<&[String]>, fin
             .unwrap_or(r.symbol_fill);
         let (c, a) = hex(fill);
         let (sc, sa) = hex(r.symbol_stroke.color);
-        let _ = write!(
-            s,
-            r#"<circle cx="{x:.2}" cy="{y:.2}" r="{radius:.2}" fill="{c}" fill-opacity="{a:.3}" stroke="{sc}" stroke-opacity="{sa:.3}" stroke-width="{:.2}"/>"#,
-            r.symbol_stroke.width
-        );
+        let outline = r.symbol_shape.outline(x, y, radius);
+        if outline.is_empty() {
+            let _ = write!(
+                s,
+                r#"<circle cx="{x:.2}" cy="{y:.2}" r="{radius:.2}" fill="{c}" fill-opacity="{a:.3}" stroke="{sc}" stroke-opacity="{sa:.3}" stroke-width="{:.2}"/>"#,
+                r.symbol_stroke.width
+            );
+        } else {
+            let mut d = String::new();
+            for (k, [px, py]) in outline.iter().enumerate() {
+                let _ = write!(d, "{}{px:.2} {py:.2}", if k == 0 { "M" } else { "L" });
+            }
+            let _ = write!(
+                s,
+                r#"<path d="{d}Z" fill="{c}" fill-opacity="{a:.3}" stroke="{sc}" stroke-opacity="{sa:.3}" stroke-width="{:.2}" stroke-linejoin="round"/>"#,
+                r.symbol_stroke.width
+            );
+        }
     }
     for chart in &r.charts {
         let Some(lp) = mesh.label_points.get(chart.feature).copied().flatten() else {

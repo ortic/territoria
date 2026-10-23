@@ -270,6 +270,92 @@ pub struct SymbolStyle {
     /// Colours by a category instead of one colour.
     #[serde(default)]
     pub color_by: Option<(TextSource, CategoryScale)>,
+    #[serde(default)]
+    pub shape: SymbolShape,
+    #[serde(default)]
+    pub scaling: SymbolScaling,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum SymbolShape {
+    #[default]
+    Circle,
+    Square,
+    Diamond,
+    Triangle,
+}
+
+impl SymbolShape {
+    pub const ALL: [SymbolShape; 4] = [
+        SymbolShape::Circle,
+        SymbolShape::Square,
+        SymbolShape::Diamond,
+        SymbolShape::Triangle,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SymbolShape::Circle => "Circle",
+            SymbolShape::Square => "Square",
+            SymbolShape::Diamond => "Diamond",
+            SymbolShape::Triangle => "Triangle",
+        }
+    }
+
+    /// The outline around `(x, y)` with half-size `r` (none for circles),
+    /// clockwise from the top.
+    pub fn outline(self, x: f32, y: f32, r: f32) -> Vec<[f32; 2]> {
+        match self {
+            SymbolShape::Circle => Vec::new(),
+            // Squares a little smaller, so their area matches the circle's.
+            SymbolShape::Square => {
+                let h = r * 0.886;
+                vec![
+                    [x - h, y - h],
+                    [x + h, y - h],
+                    [x + h, y + h],
+                    [x - h, y + h],
+                ]
+            }
+            SymbolShape::Diamond => vec![[x, y - r], [x + r, y], [x, y + r], [x - r, y]],
+            SymbolShape::Triangle => {
+                let k = r * 1.3;
+                vec![
+                    [x, y - k],
+                    [x + k * 0.866, y + k * 0.5],
+                    [x - k * 0.866, y + k * 0.5],
+                ]
+            }
+        }
+    }
+}
+
+/// How symbol sizes follow the value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum SymbolScaling {
+    /// Areas grow with the value (true to the data).
+    #[default]
+    Area,
+    /// Widths grow with the value (differences look bigger).
+    Width,
+    /// Widths grow with the logarithm (for values over many magnitudes).
+    Log,
+}
+
+impl SymbolScaling {
+    pub const ALL: [SymbolScaling; 3] = [
+        SymbolScaling::Area,
+        SymbolScaling::Width,
+        SymbolScaling::Log,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SymbolScaling::Area => "Area grows with the value",
+            SymbolScaling::Width => "Width grows with the value",
+            SymbolScaling::Log => "Logarithmic",
+        }
+    }
 }
 
 impl Default for SymbolStyle {
@@ -279,6 +365,8 @@ impl Default for SymbolStyle {
             outline: Rgba([0xff, 0xff, 0xff, 230]),
             max_radius: 22.0,
             color_by: None,
+            shape: SymbolShape::Circle,
+            scaling: SymbolScaling::Area,
         }
     }
 }
@@ -294,13 +382,19 @@ impl SymbolStyle {
         }
     }
 
-    /// The radius for `value` when `max` gets the full size: circle areas
-    /// grow with the value.
+    /// The radius for `value` when `max` gets the full size: by default
+    /// circle areas grow with the value.
     pub fn radius(&self, value: f64, max: f64) -> f32 {
         if value <= 0.0 || max <= 0.0 {
             return 0.0;
         }
-        self.max_radius * (value / max).min(1.0).sqrt() as f32
+        let t = (value / max).min(1.0);
+        let k = match self.scaling {
+            SymbolScaling::Area => t.sqrt(),
+            SymbolScaling::Width => t,
+            SymbolScaling::Log => (1.0 + value.min(max)).ln() / (1.0 + max).ln(),
+        };
+        self.max_radius * k as f32
     }
 }
 
@@ -511,5 +605,31 @@ impl Default for TerritoryStyle {
             show_sites: true,
             region_border_width: default_region_border(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn symbol_sizes_and_shapes() {
+        let mut s = SymbolStyle {
+            max_radius: 20.0,
+            ..Default::default()
+        };
+        assert_eq!(
+            s.radius(25.0, 100.0),
+            10.0,
+            "area: a quarter of the value, half the width"
+        );
+        s.scaling = SymbolScaling::Width;
+        assert_eq!(s.radius(25.0, 100.0), 5.0);
+        s.scaling = SymbolScaling::Log;
+        let small = s.radius(9.0, 999.0);
+        assert!((small - 20.0 / 3.0).abs() < 1e-4, "{small}");
+        assert!(SymbolShape::Circle.outline(0.0, 0.0, 5.0).is_empty());
+        assert_eq!(SymbolShape::Diamond.outline(0.0, 0.0, 5.0)[0], [0.0, -5.0]);
+        assert_eq!(SymbolShape::Triangle.outline(0.0, 0.0, 5.0).len(), 3);
     }
 }

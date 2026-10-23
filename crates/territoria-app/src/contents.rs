@@ -727,8 +727,16 @@ fn size_legend(ui: &mut Ui, symbol: &territoria_model::SymbolStyle, max: f64) {
             continue;
         }
         let c = egui::pos2(cx, bottom - r);
-        p.circle_filled(c, r, fill.gamma_multiply(0.35));
-        p.circle_stroke(c, r, egui::Stroke::new(1.0, fill));
+        let mut shapes = Vec::new();
+        crate::map_view::symbol(
+            &mut shapes,
+            symbol.shape,
+            c,
+            r,
+            fill.gamma_multiply(0.35),
+            egui::Stroke::new(1.0, fill),
+        );
+        p.extend(shapes);
         let top = egui::pos2(cx, bottom - 2.0 * r);
         let label_x = cx + r_max + 8.0;
         // Labels keep apart even where small circles' tops are close.

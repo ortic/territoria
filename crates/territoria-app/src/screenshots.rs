@@ -3886,3 +3886,80 @@ fn project_templates() {
     assert!(app.path_for_test().is_none(), "not saved anywhere yet");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Diamonds sized logarithmically, on screen and in exports.
+#[test]
+fn symbol_shapes() {
+    use crate::app::Export;
+    use crate::dialogs::Placement;
+    use crate::export_map::Format;
+    use territoria_model::{MapLayer, MapLayerKind, SymbolScaling, SymbolShape, ValueSource};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    let customers = customers(app, layer, 120);
+    app.add_table(
+        "Customers".into(),
+        customers,
+        PathBuf::from("customers.csv"),
+        Placement::Points {
+            x: "Longitude".into(),
+            y: "Latitude".into(),
+        },
+        None,
+    );
+    let points = app.project.layers.last().unwrap().id;
+    let map = app.project.maps[0].id;
+    let m = app.project.map_mut(map).unwrap();
+    for ml in &mut m.layers {
+        if ml.kind.layer() == Some(points) {
+            ml.visible = false;
+        }
+    }
+    m.layers.push(MapLayer {
+        id: territoria_model::MapLayerId(6001),
+        name: "Sales".into(),
+        visible: true,
+        opacity: 1.0,
+        zoom: Default::default(),
+        kind: MapLayerKind::Symbols {
+            layer: points,
+            source: ValueSource::Attribute {
+                column: "Sales".into(),
+            },
+            normalize: Default::default(),
+            symbol: territoria_model::SymbolStyle {
+                shape: SymbolShape::Diamond,
+                scaling: SymbolScaling::Log,
+                ..territoria_model::SymbolStyle::for_count(120)
+            },
+            style: Default::default(),
+        },
+    });
+    settle(&mut h);
+    save(&mut h, "symbol-shapes");
+    let dir = std::env::temp_dir().join(format!("territoria-shapes-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("shapes.svg");
+    let app = h.state_mut();
+    app.set_map_export_for_test(crate::dialogs::MapExportSettings {
+        format: Format::Svg,
+        scale: 1.0,
+        title: String::new(),
+        legend: false,
+        scale_bar: false,
+        page: Default::default(),
+        footer: String::new(),
+    });
+    app.export(Export::Map(Format::Svg), path.clone());
+    settle(&mut h);
+    let svg = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        svg.matches("stroke-linejoin=\"round\"/>").count() >= 100,
+        "diamonds in the export"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

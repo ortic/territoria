@@ -1790,6 +1790,43 @@ fn map_layer(
                         }));
                     }
                     ui.end_row();
+                    ui.label("Shape");
+                    ui.horizontal(|ui| {
+                        for shape in territoria_model::SymbolShape::ALL {
+                            if ui
+                                .selectable_label(symbol.shape == shape, shape.label())
+                                .clicked()
+                                && symbol.shape != shape
+                            {
+                                actions.push(edit_layer(map, id, "Change symbol shape", move |l| {
+                                    if let MapLayerKind::Symbols { symbol, .. } = &mut l.kind {
+                                        symbol.shape = shape;
+                                    }
+                                }));
+                            }
+                        }
+                    });
+                    ui.end_row();
+                    ui.label("Sizes");
+                    let mut scaling = symbol.scaling;
+                    ComboBox::from_id_salt("symbol-scaling")
+                        .width(190.0)
+                        .selected_text(scaling.label())
+                        .show_ui(ui, |ui| {
+                            for s in territoria_model::SymbolScaling::ALL {
+                                ui.selectable_value(&mut scaling, s, s.label());
+                            }
+                        })
+                        .response
+                        .on_hover_text("By area is true to the data; by width makes differences look bigger; logarithmic suits values over many magnitudes");
+                    if scaling != symbol.scaling {
+                        actions.push(edit_layer(map, id, "Change symbol sizes", move |l| {
+                            if let MapLayerKind::Symbols { symbol, .. } = &mut l.kind {
+                                symbol.scaling = scaling;
+                            }
+                        }));
+                    }
+                    ui.end_row();
                 });
             ui.separator();
             style_ui(
