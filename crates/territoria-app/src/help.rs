@@ -75,7 +75,7 @@ Everything can be undone (Ctrl+Z). The command palette (Ctrl+Shift+P) finds ever
     Topic {
         id: "symbols",
         title: "Circles, charts, heat maps and flows",
-        body: "- Circles sized by value: circle areas grow with the number; they can take their colour from a category.
+        body: "- Circles sized by value: circle areas grow with the number; they can take their colour from a category; also squares, diamonds and triangles.
 - Pie and bar charts: several numbers per area, as shares of a pie sized by the total, or bars on one scale.
 - Heat map: where points are dense, optionally weighted by a number; set how far each point spreads.
 - Catchment rings: rings of given distances around points or territory sites, with figures within each ring.
@@ -91,8 +91,9 @@ Everything can be undone (Ctrl+Z). The command palette (Ctrl+Shift+P) finds ever
 - New plan: start empty, from a table of assignments, or balanced automatically by a measure (customers, potential) with a tolerance.
 - Paint (B): drag over areas to give them to the active territory; Shift+click picks the territory under the pointer.
 - Balance improves sizes while keeping territories contiguous and compact; locked territories stay as they are.
-- Sites place each territory's office or rep; territories can be built around sites and distances to the site measured.
-- Regions group territories with wider borders; they can be formed automatically or by hand.
+- Sites place each territory's office or rep; territories can be built around sites, distances to the site measured, and \"Coverage from the sites\" shows what the sites can cover up to their capacity.
+- Regions group territories with wider borders; they can be formed automatically or by hand, and territories dragged between regions.
+- On plans of customer points, \"Rounds for all territories\" plans a round by road for each.
 - Before balancing, a check points out what would get in the way: areas without data, negative values, areas cut off from their neighbours.",
     },
     Topic {
@@ -121,9 +122,9 @@ Everything can be undone (Ctrl+Z). The command palette (Ctrl+Shift+P) finds ever
     Topic {
         id: "export",
         title: "Exports and reports",
-        body: "- Map → Export Map: PNG, SVG or PDF with title, legend and scale bar, as on screen or on an A4/A3 page with the legend beside the map, a north arrow and a footer ({project}, {map}, {date}); Copy Map puts it on the clipboard.
+        body: "- Map → Export Map: PNG, SVG or PDF with title, legend and scale bar, as on screen or on an A4/A3 page with the legend beside the map, a north arrow, an overview map and a footer ({project}, {map}, {date}); Copy Map puts it on the clipboard.
 - Export as Web Page: one HTML file that zooms, pans and shows hover cards, to send to anyone.
-- Territory report: a PDF with an overview and a page per territory.
+- Territory report: a PDF with an overview and a page per territory; Excel with a sheet per territory.
 - Map → Export Atlas: the map as a PDF with a page per region, rep or area, each zoomed to it with the rest veiled.
 - Plan exports: the assignment as CSV or Excel, changes between scenarios, territory figures.
 - Settings → Company puts your company's name and logo on exported maps, web pages and reports.
