@@ -103,6 +103,8 @@ enum FileAction {
     AddBoundaries,
     AddData,
     Export(Export),
+    /// A newer version of this layer's boundaries.
+    ReplaceLayer(LayerId),
 }
 
 /// What File → Export writes.
@@ -400,7 +402,7 @@ impl TerritoriaApp {
                     self.project.title,
                     territoria_model::file::EXTENSION
                 )),
-            FileAction::AddBoundaries => dialog
+            FileAction::AddBoundaries | FileAction::ReplaceLayer(_) => dialog
                 .add_filter(
                     "Boundaries (Shapefile, GeoJSON, GeoPackage, zip)",
                     territoria_io::VECTOR_EXTENSIONS,
@@ -501,6 +503,7 @@ impl TerritoriaApp {
                 self.save_to(path);
             }
             FileAction::AddBoundaries => self.import_boundaries(path, VectorOptions::default()),
+            FileAction::ReplaceLayer(layer) => self.read_replacement(layer, path),
             FileAction::AddData => self.import_table_file(path, TableOptions::default()),
             FileAction::Export(e) => self.export(e, path),
         }
@@ -734,6 +737,97 @@ impl TerritoriaApp {
                 .map_err(|e| e.to_string());
             JobResult::Boundaries { path, result }
         });
+    }
+
+    /// Reads a newer version of a layer's boundaries in the background.
+    pub(crate) fn read_replacement(&mut self, layer: LayerId, path: PathBuf) {
+        let label = format!("Reading {}", file_name(&path));
+        self.jobs.spawn(label, move |_| {
+            let result = territoria_io::read_vector(&path, &VectorOptions::default())
+                .map(|layers| {
+                    layers
+                        .into_iter()
+                        .map(|imported| {
+                            let geometry = territoria_model::LayerGeometry::from_imported(
+                                imported.geometries.clone(),
+                                imported.is_geographic(),
+                            );
+                            PreparedLayer { imported, geometry }
+                        })
+                        .collect()
+                })
+                .map_err(|e| e.to_string());
+            JobResult::Replacement {
+                layer,
+                path,
+                result,
+            }
+        });
+    }
+
+    /// Puts the newer boundaries in place of the layer's.
+    fn apply_replacement(&mut self, layer: LayerId, path: PathBuf, prepared: Vec<PreparedLayer>) {
+        let Some(old) = self.project.layer(layer) else {
+            return;
+        };
+        // The file's layer of the same kind, preferably of the same name.
+        let kind = old.kind();
+        let name = old.name.to_lowercase();
+        let pick = prepared
+            .iter()
+            .position(|p| p.geometry.kind == kind && p.imported.name.to_lowercase() == name)
+            .or_else(|| prepared.iter().position(|p| p.geometry.kind == kind));
+        let Some(i) = pick else {
+            self.error(format!(
+                "The file has no {} to replace “{}” with.",
+                kind.label(),
+                old.name
+            ));
+            return;
+        };
+        let p = prepared.into_iter().nth(i).expect("picked");
+        let attributes = p.imported.attributes;
+        // The key column: the same name as before, else the suggested one.
+        let key = old
+            .key_column
+            .clone()
+            .filter(|k| attributes.column(k).is_some())
+            .or_else(|| {
+                territoria_data::suggest::key_column(&attributes)
+                    .map(|c| attributes.columns[c].name.clone())
+            });
+        let before = self.project.clone();
+        let Some(r) = self
+            .project
+            .replace_layer(layer, p.geometry, attributes, key)
+        else {
+            return;
+        };
+        if let Some(l) = self.project.layer_mut(layer) {
+            l.source.path = Some(path);
+            l.source.crs_note = p.imported.crs_note;
+        }
+        self.history.push("Replace boundaries", before);
+        self.meshes.retain(&self.project);
+        self.selected = None;
+        let fmt = territoria_analysis::format::format_value;
+        let mut text = format!(
+            "Replaced: {} areas kept their place by key",
+            fmt(r.by_key as f64)
+        );
+        if r.by_place > 0 {
+            text.push_str(&format!(", {} by position", fmt(r.by_place as f64)));
+        }
+        if r.new > 0 {
+            text.push_str(&format!(
+                ", {} are new (no territory yet)",
+                fmt(r.new as f64)
+            ));
+        }
+        if r.gone > 0 {
+            text.push_str(&format!("; {} old areas are gone", fmt(r.gone as f64)));
+        }
+        self.toast(format!("{text}. Undo brings the old ones back."));
     }
 
     pub fn import_table_file(&mut self, path: PathBuf, options: TableOptions) {
@@ -978,6 +1072,14 @@ impl TerritoriaApp {
                     });
                 }
                 Err(e) => self.error(format!("Couldn't find the addresses: {e}")),
+            },
+            JobResult::Replacement {
+                layer,
+                path,
+                result,
+            } => match result {
+                Ok(prepared) => self.apply_replacement(layer, path, prepared),
+                Err(e) => self.error(format!("Couldn't read {}: {e}", file_name(&path))),
             },
             JobResult::Copied(result) => match result {
                 Ok(image) => {
@@ -2428,6 +2530,23 @@ impl TerritoriaApp {
                     None => self.toast("Add data or boundaries first."),
                 }
             }
+            Command::ReplaceLayer => {
+                let layer = match self.selection {
+                    Selection::Data(DataRef::Layer(l)) => Some(l),
+                    _ => None,
+                }
+                .or_else(|| {
+                    self.project
+                        .layers
+                        .iter()
+                        .find(|l| l.kind() == GeometryKind::Area)
+                        .map(|l| l.id)
+                });
+                match layer {
+                    Some(l) => self.ask_file(FileAction::ReplaceLayer(l)),
+                    None => self.toast("Add boundaries first."),
+                }
+            }
             Command::MergeAreas => {
                 let layer = match self.selection {
                     Selection::Data(DataRef::Layer(l)) => Some(l),
@@ -3031,6 +3150,7 @@ impl TerritoriaApp {
                     Command::ColorByValue,
                     Command::LinkData,
                     Command::MergeAreas,
+                    Command::ReplaceLayer,
                     Command::HexGrid,
                     Command::Catchment,
                     Command::CalculatedColumn,

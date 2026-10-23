@@ -1820,6 +1820,59 @@ mod tests {
     }
 
     #[test]
+    fn newer_boundaries_keep_territories() {
+        use crate::layer::LayerGeometry;
+        use geo_types::{MultiPolygon, polygon};
+        let square = |x: f64| {
+            MultiPolygon(vec![
+                polygon![(x: x, y: 0.0), (x: x + 1.0, y: 0.0), (x: x + 1.0, y: 1.0), (x: x, y: 1.0), (x: x, y: 0.0)],
+            ])
+        };
+        let keys = |k: &[&str]| {
+            Table::new(vec![territoria_data::Column::text(
+                "Code",
+                territoria_data::ColumnKind::Key,
+                k.iter().map(|s| Some((*s).to_owned())).collect(),
+            )])
+            .unwrap()
+        };
+        let mut p = Project::new();
+        let g = LayerGeometry::from_imported(
+            territoria_io::Geometries::Areas(vec![square(0.0), square(1.0), square(2.0)]),
+            true,
+        );
+        let layer = p.add_layer("Areas", g, keys(&["A", "B", "C"]), Default::default());
+        p.layer_mut(layer).unwrap().key_column = Some("Code".into());
+        let plan = p.add_plan("Plan", layer, 2);
+        let pl = p.plan_mut(plan).unwrap();
+        let (t1, t2) = (pl.territories[0].id, pl.territories[1].id);
+        pl.assign(&[0, 1], Some(t1));
+        pl.assign(&[2], Some(t2));
+        pl.set_pinned(&[2], true);
+        // The new version: C first, A, and D where B was (B is gone).
+        let g = LayerGeometry::from_imported(
+            territoria_io::Geometries::Areas(vec![square(2.0), square(0.0), square(1.0)]),
+            true,
+        );
+        let r = p
+            .replace_layer(layer, g, keys(&["C", "A", "D"]), Some("Code".into()))
+            .unwrap();
+        assert_eq!(
+            r,
+            crate::Replaced {
+                by_key: 2,
+                by_place: 1,
+                new: 0,
+                gone: 0
+            }
+        );
+        let pl = p.plan(plan).unwrap();
+        assert_eq!(pl.assignment.as_slice(), &[Some(t2), Some(t1), Some(t1)]);
+        assert_eq!(pl.pinned.as_slice(), &[true, false, false]);
+        assert_eq!(p.layer(layer).unwrap().key(2), "D");
+    }
+
+    #[test]
     fn names_and_numbers() {
         use crate::layer::LayerGeometry;
         use geo_types::{MultiPolygon, polygon};

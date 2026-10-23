@@ -56,6 +56,12 @@ pub enum JobResult {
         plan: territoria_model::PlanId,
         result: Result<crate::territories::Proposal, String>,
     },
+    /// A newer version of a layer's boundaries, read.
+    Replacement {
+        layer: LayerId,
+        path: PathBuf,
+        result: Result<Vec<PreparedLayer>, String>,
+    },
     /// The map as an image for the clipboard.
     Copied(Result<egui::ColorImage, String>),
     /// Addresses of a table to be added, found (or not).

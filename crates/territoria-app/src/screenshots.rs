@@ -2039,3 +2039,31 @@ fn map_as_web_page() {
     }
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Newer boundaries replace a layer's; territories carry over.
+#[test]
+fn replace_with_newer_boundaries() {
+    let (mut h, _lock) = harness(false);
+    let file = boundaries();
+    let layer = h.state_mut().add_boundaries_now(&file).expect("boundaries")[0];
+    let app = h.state_mut();
+    let plan = app.add_balanced_plan_now(layer, 3);
+    let before: Vec<_> = app.project.plan(plan).unwrap().assignment.to_vec();
+    let n = before.len();
+    // The "new version": the same file read again.
+    app.read_replacement(layer, file.clone());
+    settle(&mut h);
+    let app = h.state();
+    let after = app.project.plan(plan).unwrap().assignment.to_vec();
+    assert_eq!(after.len(), n);
+    assert_eq!(after, before, "every area keeps its territory");
+    let toasts = app.toasts_for_test();
+    assert!(
+        toasts.iter().any(|t| t.starts_with("Replaced:")),
+        "{toasts:?}"
+    );
+    // Undo brings the old version back.
+    h.state_mut()
+        .run_command_for_test(crate::commands::Command::Undo);
+    assert_eq!(h.state().project.plan(plan).unwrap().assignment.len(), n);
+}

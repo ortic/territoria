@@ -48,6 +48,19 @@ ids!(
     RegionId
 );
 
+/// How replacing a layer's areas went.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Replaced {
+    /// New areas that took over an old one by key.
+    pub by_key: usize,
+    /// … by lying where an old one was.
+    pub by_place: usize,
+    /// New areas with no old one.
+    pub new: usize,
+    /// Old areas nothing took over.
+    pub gone: usize,
+}
+
 /// A table of data the user brought in.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Dataset {
@@ -267,6 +280,100 @@ impl Project {
         }
         self.layers.retain(|l| l.id != id);
         gone
+    }
+
+    /// Replaces a layer's areas with a newer version (new postcodes, merged
+    /// municipalities), keeping the layer: its links, map layers and plans
+    /// go on. New areas take over the old ones by key, else the old area
+    /// under their centre; plans' assignments and pins follow, calculated
+    /// columns are computed again.
+    pub fn replace_layer(
+        &mut self,
+        id: LayerId,
+        geometry: LayerGeometry,
+        mut attributes: territoria_data::Table,
+        key_column: Option<String>,
+    ) -> Option<Replaced> {
+        let old = self.layer(id)?.clone();
+        let n = geometry.len();
+        if attributes.rows() != n {
+            attributes = territoria_data::Table::with_rows(n);
+        }
+        let old_keys: Vec<Option<String>> = (0..old.len())
+            .map(|u| old.key_index().map(|_| old.key(u)))
+            .collect();
+        let index = territoria_data::KeyIndex::new(
+            old_keys.iter().map(|k| k.as_deref()),
+            territoria_data::MatchMode::Loose,
+        );
+        let new_keys = key_column.as_deref().and_then(|k| attributes.column(k));
+        let mut report = Replaced::default();
+        let mut taken = vec![false; old.len()];
+        let from: Vec<Option<usize>> = (0..n)
+            .map(|u| {
+                if let Some(o) = new_keys
+                    .and_then(|c| c.get(u).to_text())
+                    .and_then(|k| index.find(&k))
+                {
+                    report.by_key += 1;
+                    taken[o as usize] = true;
+                    return Some(o as usize);
+                }
+                let at = geometry.label_points.get(u).copied().flatten()?;
+                match old.geometry.feature_at(at, 0.0) {
+                    Some(o) => {
+                        report.by_place += 1;
+                        taken[o] = true;
+                        Some(o)
+                    }
+                    None => {
+                        report.new += 1;
+                        None
+                    }
+                }
+            })
+            .collect();
+        report.gone = taken.iter().filter(|t| !**t).count();
+        // Calculated columns, on the new attributes.
+        for c in old
+            .attributes
+            .columns
+            .iter()
+            .filter(|c| c.formula.is_some())
+        {
+            if attributes.column(&c.name).is_none()
+                && let Some(source) = &c.formula
+                && let Ok(f) = territoria_expr::Formula::compile(source, &attributes)
+            {
+                let col = f.column(&c.name, source, &attributes);
+                let _ = attributes.push_column(col);
+            }
+        }
+        let rev = self.bump();
+        for plan in self.plans.iter_mut().filter(|p| p.layer == id) {
+            let assignment = from
+                .iter()
+                .map(|o| o.and_then(|o| plan.assignment.get(o).copied().flatten()))
+                .collect();
+            let pinned = from
+                .iter()
+                .map(|o| o.is_some_and(|o| plan.pinned.get(o).copied().unwrap_or(false)))
+                .collect();
+            plan.assignment = Arc::new(assignment);
+            plan.pinned = Arc::new(pinned);
+            plan.rev = rev;
+        }
+        let layer = self.layer_mut(id)?;
+        let name_column = layer
+            .name_column
+            .clone()
+            .filter(|c| attributes.column(c).is_some());
+        layer.geometry = Arc::new(geometry);
+        layer.attributes = Arc::new(attributes);
+        layer.key_column = key_column;
+        layer.name_column = name_column;
+        layer.rev = rev;
+        Some(report)
     }
 
     /// Removes a plan and the map layers showing it.

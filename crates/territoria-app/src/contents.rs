@@ -299,6 +299,15 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                         actions.push(Action::Command(Command::MergeAreas));
                         ui.close();
                     }
+                    if ui
+                        .button("Replace with a newer version…")
+                        .on_hover_text("New boundaries from a file; data, colourings and territories carry over by key or by position")
+                        .clicked()
+                    {
+                        actions.push(Action::Select(Selection::Data(DataRef::Layer(id))));
+                        actions.push(Action::Command(Command::ReplaceLayer));
+                        ui.close();
+                    }
                     ui.separator();
                     if ui.button("Remove…").clicked() {
                         actions.push(Action::RemoveLayer(id));

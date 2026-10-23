@@ -38,6 +38,7 @@ commands! {
     Redo => "Edit: Redo",
     LinkData => "Data: Link Table to Map…",
     MergeAreas => "Data: New Layer by Merging Areas…",
+    ReplaceLayer => "Data: Replace Boundaries with a Newer Version…",
     CalculatedColumn => "Data: Calculated Column…",
     HexGrid => "Data: New Hexagon Grid…",
     Catchment => "Map: Catchment Rings Around Points…",

@@ -157,7 +157,7 @@ territoria/
 - [x] Point layers from tables (coordinates, geocoded addresses, area centroids) (coordinates in any CRS; no geocoding or centroids yet)
 - [x] Voronoi areas for point layers (customers as planning units)
 - [x] Download open boundaries (e.g. geoBoundaries ADM0–ADM2 for any country) with licence shown (all levels; credited on the map)
-- [ ] Switch a layer to a newer vintage, carrying data and assignments over (by key, or geometrically)
+- [x] Switch a layer to a newer vintage, carrying data and assignments over (by key, or geometrically) (Data → Replace Boundaries: by key, else the old area under the new one's centre; pins and calculated columns too; one undo step)
 - [x] Geometry embedded in the project (no "map not found" after moving the file)
 
 ### 5.3 Map View (M1)
