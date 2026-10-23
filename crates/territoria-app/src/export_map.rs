@@ -101,6 +101,28 @@ fn usvg_options(font: &[u8]) -> resvg::usvg::Options<'static> {
     options
 }
 
+/// The SVG as pixels (for the clipboard), `scale` times its size.
+pub fn rasterize(svg: &str, scale: f32, font: &[u8]) -> Result<egui::ColorImage, String> {
+    let options = usvg_options(font);
+    let tree = resvg::usvg::Tree::from_str(svg, &options).map_err(|e| e.to_string())?;
+    let size = tree.size();
+    let (w, h) = (
+        (size.width() * scale).ceil() as u32,
+        (size.height() * scale).ceil() as u32,
+    );
+    let mut pixmap =
+        resvg::tiny_skia::Pixmap::new(w.max(1), h.max(1)).ok_or("the image is too large")?;
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::from_scale(scale, scale),
+        &mut pixmap.as_mut(),
+    );
+    Ok(egui::ColorImage::from_rgba_premultiplied(
+        [pixmap.width() as usize, pixmap.height() as usize],
+        pixmap.data(),
+    ))
+}
+
 /// Several SVG pages as one PDF.
 pub fn pdf_pages(pages: &[String], font: &[u8]) -> Result<Vec<u8>, String> {
     use pdf_writer::{Content, Finish, Name, Pdf, Rect as PdfRect, Ref};

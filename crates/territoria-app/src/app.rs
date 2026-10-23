@@ -209,6 +209,12 @@ pub struct TerritoriaApp {
     hex_grid: Option<crate::dialogs::HexGridDialog>,
     sites: Option<crate::dialogs::SitesDialog>,
     catchment: Option<crate::dialogs::CatchmentDialog>,
+    /// The search box: query and what it found.
+    search: String,
+    search_hits: Vec<crate::search::Hit>,
+    search_focus: bool,
+    /// An image waiting to go to the clipboard (needs the context).
+    to_clipboard: Option<egui::ColorImage>,
     settings_dialog: Option<crate::dialogs::SettingsDialog>,
     download: Option<DownloadDialog>,
     export_map: Option<crate::dialogs::ExportMapDialog>,
@@ -297,6 +303,10 @@ impl TerritoriaApp {
             hex_grid: None,
             sites: None,
             catchment: None,
+            search: String::new(),
+            search_hits: Vec::new(),
+            search_focus: false,
+            to_clipboard: None,
             settings_dialog: None,
             download: None,
             export_map: None,
@@ -924,6 +934,13 @@ impl TerritoriaApp {
                 }
                 Err(e) => self.error(format!("Couldn't find the addresses: {e}")),
             },
+            JobResult::Copied(result) => match result {
+                Ok(image) => {
+                    self.to_clipboard = Some(image);
+                    self.toast("The map is on the clipboard: paste it into a mail or slide.");
+                }
+                Err(e) => self.error(format!("Couldn't copy the map: {e}")),
+            },
             JobResult::Optimized { plan, result } => match result {
                 Ok(proposal) => self.territories_panel.proposal = Some((plan, proposal)),
                 Err(e) => self.error(format!("Balancing failed: {e}")),
@@ -1079,6 +1096,25 @@ impl TerritoriaApp {
         self.analyses
             .get(&self.project, &mut self.values, ml.id, &ml.kind)
             .expect("an analysis")
+    }
+
+    #[cfg(test)]
+    pub fn search_for_test(&mut self, query: &str) {
+        self.search = query.into();
+        self.search_hits = crate::search::search(&self.project, query, 12);
+        self.search_focus = true;
+    }
+
+    #[cfg(test)]
+    pub fn toasts_for_test(&self) -> Vec<String> {
+        self.toasts.iter().map(|t| t.text.clone()).collect()
+    }
+
+    #[cfg(test)]
+    pub fn measure_for_test(&mut self, points: Vec<[f64; 2]>) {
+        self.tool = Tool::Measure;
+        let map = self.ensure_map();
+        self.map_states.entry(map).or_default().measure = points;
     }
 
     #[cfg(test)]
@@ -2140,6 +2176,26 @@ impl TerritoriaApp {
                 Some(t) => self.link = Some(LinkDialog::new(&self.project, t.id)),
                 None => self.toast("Add a table first: File → Add Data."),
             },
+            Command::CopyMap => {
+                let settings = crate::dialogs::MapExportSettings {
+                    format: crate::export_map::Format::Png,
+                    scale: 2.0,
+                    title: String::new(),
+                    legend: true,
+                    scale_bar: true,
+                };
+                match self.map_svg(&settings) {
+                    Ok(svg) => {
+                        let font = egui::FontDefinitions::default().font_data["Ubuntu-Light"]
+                            .font
+                            .to_vec();
+                        self.jobs.spawn("Copying the map", move |_| {
+                            JobResult::Copied(crate::export_map::rasterize(&svg, 2.0, &font))
+                        });
+                    }
+                    Err(e) => self.error(e),
+                }
+            }
             Command::ExportMap => match self.current_map.and_then(|m| self.project.map(m)) {
                 Some(m) => {
                     let title = if self.project.title == "Untitled" {
@@ -2155,6 +2211,7 @@ impl TerritoriaApp {
                 self.download = Some(DownloadDialog::new());
                 self.load_catalog();
             }
+            Command::Find => self.search_focus = true,
             Command::Catchment => {
                 let d = crate::dialogs::CatchmentDialog::new(&self.project);
                 if d.centres.is_none() {
@@ -2780,6 +2837,7 @@ impl TerritoriaApp {
                     Command::Catchment,
                     Command::CalculatedColumn,
                     Command::ExportMap,
+                    Command::CopyMap,
                     Command::NewMap,
                     Command::ZoomToAll,
                     Command::ToolSelect,
@@ -2855,6 +2913,8 @@ impl TerritoriaApp {
             let has_plan = self.active_plan.is_some();
             ui.selectable_value(&mut self.tool, Tool::Navigate, "✋ Navigate")
                 .on_hover_text("Drag to move, scroll to zoom, click an area to inspect it (V)");
+            ui.selectable_value(&mut self.tool, Tool::Measure, "📏 Measure")
+                .on_hover_text("Click points to measure the distance along them; right-click takes the last one back, Esc starts over");
             ui.selectable_value(&mut self.tool, Tool::Select, "⬚ Select")
                 .on_hover_text("Click or drag a rectangle over areas, Alt+drag for a lasso, Shift adds. Then assign them in one go (S)");
             ui.add_enabled_ui(has_plan, |ui| {
@@ -2876,8 +2936,95 @@ impl TerritoriaApp {
                 if ui.button("⌘").on_hover_text("All commands (Ctrl+Shift+P)").clicked() {
                     commands.push(Command::ShowPalette);
                 }
+                self.search_ui(ui);
             });
         });
+    }
+
+    /// The search box with its matches below it.
+    fn search_ui(&mut self, ui: &mut Ui) {
+        let id = egui::Id::new("search-box");
+        let before = self.search.clone();
+        let r = ui.add(
+            egui::TextEdit::singleline(&mut self.search)
+                .id(id)
+                .hint_text("🔍 Find an area or territory")
+                .desired_width(210.0),
+        );
+        if std::mem::take(&mut self.search_focus) {
+            r.request_focus();
+        }
+        if self.search != before {
+            self.search_hits = crate::search::search(&self.project, &self.search, 12);
+        }
+        let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) && r.has_focus() {
+            self.search.clear();
+            self.search_hits.clear();
+        }
+        let mut pick = None;
+        if enter {
+            pick = self.search_hits.first().cloned();
+        }
+        if (r.has_focus() || r.lost_focus())
+            && !self.search_hits.is_empty()
+            && !self.search.trim().is_empty()
+        {
+            egui::Area::new(id.with("hits"))
+                .order(egui::Order::Foreground)
+                .fixed_pos(r.rect.left_bottom() + egui::vec2(0.0, 4.0))
+                .show(ui.ctx(), |ui| {
+                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        ui.set_min_width(260.0);
+                        for h in &self.search_hits {
+                            let b = ui.add(
+                                egui::Button::new(RichText::new(&h.label))
+                                    .frame(false)
+                                    .right_text(RichText::new(&h.detail).weak().small()),
+                            );
+                            if b.clicked() {
+                                pick = Some(h.clone());
+                            }
+                        }
+                    });
+                });
+        } else if r.has_focus() && !self.search.trim().is_empty() {
+            r.clone().on_hover_text("Nothing found");
+        }
+        if let Some(h) = pick {
+            self.go_to(&h.target);
+            self.search_hits.clear();
+        }
+    }
+
+    /// Shows a search hit: selects the feature or activates the territory,
+    /// and zooms there.
+    pub(crate) fn go_to(&mut self, target: &crate::search::Target) {
+        use crate::search::Target;
+        let map = self.ensure_map();
+        match *target {
+            Target::Feature(layer, f) => {
+                self.select(layer, vec![f], crate::map_view::SelectMode::Replace);
+                if let Some(s) = self.map_states.get_mut(&map) {
+                    s.zoom_to = Some((layer, vec![f]));
+                }
+            }
+            Target::Territory(plan, t) => {
+                let before = self.project.clone();
+                self.show_plan(plan);
+                self.history.push("Show territories", before);
+                self.active_territory = Some(t);
+                if let Some(p) = self.project.plan(plan) {
+                    let units: Vec<u32> = (0..p.assignment.len() as u32)
+                        .filter(|&u| p.assignment[u as usize] == Some(t))
+                        .collect();
+                    let layer = p.layer;
+                    if let Some(s) = self.map_states.get_mut(&map) {
+                        s.zoom_to = Some((layer, units));
+                    }
+                }
+            }
+        }
     }
 
     fn status_bar(&mut self, ui: &mut Ui) {
@@ -2906,6 +3053,7 @@ impl TerritoriaApp {
                     Tool::Paint => "Drag over areas to assign them. Shift+click picks a territory, Alt+drag erases.",
                     Tool::Site => "Click on the map where the territory's site is (Esc cancels).",
                     Tool::Select => "Click or drag a rectangle to select, Alt+drag for a lasso, Shift adds. Right-drag moves the map, Esc clears.",
+                    Tool::Measure => "Click points to measure; right-click takes the last one back, Esc starts over.",
                 }).weak());
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -3514,6 +3662,9 @@ impl eframe::App for TerritoriaApp {
         for r in self.jobs.poll() {
             self.handle_job(r);
         }
+        if let Some(image) = self.to_clipboard.take() {
+            ctx.copy_image(image);
+        }
         self.poll_file_dialog();
         self.handle_dropped_files(&ctx);
         self.handle_close_request(&ctx);
@@ -3543,6 +3694,11 @@ impl eframe::App for TerritoriaApp {
         if !modal_open && self.selected.is_some() && ctx.input(|i| i.key_pressed(egui::Key::Escape))
         {
             self.selected = None;
+        }
+        if self.tool == Tool::Measure && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            for s in self.map_states.values_mut() {
+                s.measure.clear();
+            }
         }
         if let Some((layer, units)) = &self.selected
             && self

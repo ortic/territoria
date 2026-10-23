@@ -16,6 +16,7 @@ mod report;
 mod resolve;
 #[cfg(test)]
 mod screenshots;
+mod search;
 mod table_view;
 mod territories;
 mod theme;

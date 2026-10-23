@@ -174,8 +174,8 @@ territoria/
 - [x] Background maps: XYZ raster tiles (OSM-style, configurable URL and attribution), cached
 - [ ] Vector background (MapLibre styles, PMTiles/MBTiles offline) (optional)
 - [x] Scale bar, north arrow, coordinates in the status bar (decimal or DMS, any EPSG) (scale bar and decimal degrees)
-- [ ] Measure distance and area
-- [ ] Search box: areas by key or name, table rows, addresses (when a geocoder is set up)
+- [x] Measure distance and area (distance along clicked points; no area yet)
+- [x] Search box: areas by key or name, table rows, addresses (when a geocoder is set up) (areas, points and territories by key or name, Ctrl+F; no addresses yet)
 - [ ] Named views (bookmarks), "focus on" a set of areas (island view) with dimmed surroundings
 - [ ] Fullscreen presentation mode
 
@@ -297,7 +297,7 @@ territoria/
 - [x] Geodata export: GeoJSON, Shapefile, GeoPackage of layers, territories (dissolved) and points; KML (GeoJSON)
 - [x] Plan export: assignment table (unit → territory per level), territory table with KPIs, assignment intervals (`1000-1099`), XLSX/CSV (no intervals)
 - [ ] Interactive HTML map (single file, offline): layers, tooltips, legends, search, filter
-- [ ] Copy map as image to the clipboard
+- [x] Copy map as image to the clipboard (Ctrl+Shift+C, rendered like the export)
 
 ### 5.11 Geo services (M7)
 

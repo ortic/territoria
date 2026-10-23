@@ -1883,3 +1883,79 @@ fn class_editor() {
     let labels: Vec<&str> = scaled.legend.iter().map(|e| e.label.as_str()).collect();
     assert_eq!(&labels[..3], &["Low", "Middle", "High"]);
 }
+
+/// The search box finds areas by key or name and territories by name.
+#[test]
+fn search_box() {
+    use crate::search::{Target, search};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    let plan = app.add_balanced_plan_now(layer, 3);
+    let key = app.project.layer(layer).unwrap().key(5);
+    let hits = search(&app.project, &key, 12);
+    assert_eq!(
+        hits[0].target,
+        Target::Feature(layer, 5),
+        "the exact key first"
+    );
+    let t = app.project.plan(plan).unwrap().territories[1].clone();
+    let hits = search(&app.project, &t.name, 12);
+    assert_eq!(hits[0].target, Target::Territory(plan, t.id));
+    app.go_to(&Target::Feature(layer, 5));
+    assert_eq!(app.selected, Some((layer, vec![5])));
+    app.go_to(&Target::Territory(plan, t.id));
+    assert_eq!(app.active_territory, Some(t.id));
+    // The popup with matches, as when typing.
+    let name = app.project.layer(layer).unwrap().display_name(7);
+    let query: String = name.chars().take(3).collect();
+    app.search_for_test(&query);
+    settle(&mut h);
+    save(&mut h, "search");
+}
+
+/// Copying the map renders it for the clipboard.
+#[test]
+fn copy_map_to_clipboard() {
+    let (mut h, _lock) = harness(false);
+    h.state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries");
+    settle(&mut h);
+    h.state_mut()
+        .run_command_for_test(crate::commands::Command::CopyMap);
+    settle(&mut h);
+    let toasts = h.state().toasts_for_test();
+    assert!(toasts.iter().any(|t| t.contains("clipboard")), "{toasts:?}");
+}
+
+/// Measuring a distance along clicked points.
+#[test]
+fn measure_distance() {
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    settle(&mut h);
+    let b = h
+        .state()
+        .project
+        .layer(layer)
+        .unwrap()
+        .geometry
+        .bbox
+        .unwrap();
+    let (min, max) = (b.min(), b.max());
+    let mid = [(min.x + max.x) / 2.0, (min.y + max.y) / 2.0];
+    h.state_mut().measure_for_test(vec![
+        [min.x + 0.1 * (max.x - min.x), mid[1]],
+        mid,
+        [mid[0], max.y - 0.1 * (max.y - min.y)],
+    ]);
+    settle(&mut h);
+    save(&mut h, "measure");
+}

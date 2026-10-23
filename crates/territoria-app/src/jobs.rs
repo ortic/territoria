@@ -56,6 +56,8 @@ pub enum JobResult {
         plan: territoria_model::PlanId,
         result: Result<crate::territories::Proposal, String>,
     },
+    /// The map as an image for the clipboard.
+    Copied(Result<egui::ColorImage, String>),
     /// Addresses of a table to be added, found (or not).
     Geocoded {
         name: String,

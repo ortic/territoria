@@ -27,6 +27,8 @@ pub enum Tool {
     Site,
     /// Click, drag a rectangle or Alt+drag a lasso to select areas.
     Select,
+    /// Click points to measure the distance along them.
+    Measure,
 }
 
 /// How a new selection combines with the current one.
@@ -51,6 +53,8 @@ pub struct MapState {
     /// Screen points of the rectangle or lasso being dragged.
     selecting: Option<Vec<Pos2>>,
     lasso: bool,
+    /// Measure tool: the clicked points (longitude, latitude).
+    pub(crate) measure: Vec<[f64; 2]>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -648,6 +652,63 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
         }
     }
 
+    // Measuring: clicked points, a line to the pointer, the total.
+    let mut measure_label: Option<(Pos2, String)> = None;
+    if cx.tool == Tool::Measure
+        && let (Ok(to_wgs), Ok(to_display)) = (
+            Transformer::new(&map.crs, &Crs::wgs84()),
+            Transformer::new(&Crs::wgs84(), &map.crs),
+        )
+    {
+        ui.ctx().set_cursor_icon(CursorIcon::Crosshair);
+        let lonlat = |s: Pos2| {
+            let d = view.to_display(s);
+            to_wgs.convert(geo_types::Coord { x: d[0], y: d[1] })
+        };
+        if response.clicked()
+            && let Some(c) = pointer.and_then(lonlat)
+        {
+            state.measure.push([c.x, c.y]);
+        }
+        if response.secondary_clicked() {
+            state.measure.pop();
+        }
+        let mut path: Vec<geo_types::Coord<f64>> = state
+            .measure
+            .iter()
+            .map(|&[x, y]| geo_types::Coord { x, y })
+            .collect();
+        if let Some(c) = pointer.and_then(lonlat).filter(|_| !path.is_empty()) {
+            path.push(c);
+        }
+        let screen: Vec<Pos2> = path
+            .iter()
+            .filter_map(|c| to_display.convert(*c))
+            .map(|d| view.to_screen([d.x, d.y]))
+            .collect();
+        let c = crate::theme::ACCENT;
+        if screen.len() > 1 {
+            shapes.push(Shape::line(screen.clone(), Stroke::new(2.0, c)));
+        }
+        for p in screen.iter().take(state.measure.len()) {
+            shapes.push(Shape::circle_filled(*p, 3.5, c));
+        }
+        let km: f64 = path
+            .windows(2)
+            .map(|w| territoria_geo::haversine(w[0], w[1]) / 1000.0)
+            .sum();
+        if let Some(last) = screen.last()
+            && path.len() > 1
+        {
+            let text = if km < 10.0 {
+                format!("{km:.2} km")
+            } else {
+                format!("{} km", territoria_analysis::format::format_value(km))
+            };
+            measure_label = Some((*last + vec2(10.0, -14.0), text));
+        }
+    }
+
     if state.painting && !response.dragged() && !ui.input(|i| i.pointer.primary_down()) {
         state.painting = false;
         state.last_paint = None;
@@ -684,6 +745,12 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
     }
     for r in &resolved {
         draw_sites(&painter, r, &view, cx.dark);
+    }
+    if let Some((at, text)) = measure_label {
+        let galley = painter.layout_no_wrap(text, FontId::proportional(13.0), text_color);
+        let rect = Rect::from_min_size(at, galley.size()).expand(4.0);
+        painter.rect_filled(rect, 4.0, halo);
+        painter.galley(at, galley, text_color);
     }
     scale_bar(&painter, &view, &map.crs, cx.dark);
     attribution(&painter, &view, map, project, cx.dark);
