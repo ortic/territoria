@@ -1685,6 +1685,26 @@ impl TerritoriaApp {
                         self.history.seal();
                     }
                 }
+                MapEvent::PlaceSite { plan, lonlat } => {
+                    if let Some(t) = self.active_territory {
+                        let name = self
+                            .project
+                            .plan(plan)
+                            .and_then(|p| p.territory(t))
+                            .map(|t| t.name.clone())
+                            .unwrap_or_default();
+                        self.edit(format!("Place site of {name}"), |p| {
+                            let rev = p.bump();
+                            if let Some(pl) = p.plan_mut(plan) {
+                                if let Some(t) = pl.territory_mut(t) {
+                                    t.site = Some(lonlat);
+                                }
+                                pl.rev = rev;
+                            }
+                        });
+                        self.tool = Tool::Navigate;
+                    }
+                }
                 MapEvent::PickTerritory { plan, territory }
                 | MapEvent::ClickTerritory { plan, territory } => {
                     self.active_plan = Some(plan);
@@ -1924,6 +1944,7 @@ impl TerritoriaApp {
                 ui.label(RichText::new(match self.tool {
                     Tool::Navigate => "Drag to move the map, scroll to zoom.",
                     Tool::Paint => "Drag over areas to assign them. Shift+click picks a territory, Alt+drag erases.",
+                    Tool::Site => "Click on the map where the territory's site is (Esc cancels).",
                 }).weak());
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -2412,6 +2433,9 @@ impl eframe::App for TerritoriaApp {
             || self.palette.is_some()
             || self.confirm.is_some()
             || self.about;
+        if self.tool == Tool::Site && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.tool = Tool::Navigate;
+        }
         let mut commands = if modal_open {
             Vec::new()
         } else {

@@ -23,6 +23,8 @@ pub enum Tool {
     Navigate,
     /// Drag over areas to assign them to the active territory.
     Paint,
+    /// Click to place the active territory's site.
+    Site,
 }
 
 /// UI state of one map tab (not saved in the project).
@@ -54,6 +56,8 @@ pub enum MapEvent {
     },
     /// The paint stroke ended.
     PaintEnd,
+    /// Site tool: the active territory's site goes here (lon/lat).
+    PlaceSite { plan: PlanId, lonlat: [f64; 2] },
     /// Shift+click in paint mode: make the territory under the pointer active.
     PickTerritory {
         plan: PlanId,
@@ -320,7 +324,7 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
     let mut resolved = Vec::new();
     for ml in map.layers.iter().filter(|l| l.visible) {
         if let Some(r) = crate::resolve::resolve(&mut rcx, &meshes, ml, &map.crs) {
-            draw_resolved(&mut shapes, &r, &view, ppp, cx.dark);
+            draw_resolved(&mut shapes, &r, &view, ppp);
             resolved.push(r);
         }
     }
@@ -367,7 +371,16 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
             };
             paint::outline(&mut shapes, mesh, level, &view, f, Stroke::new(2.0, hl));
         }
-        if let Some(plan) = plan.filter(|_| painting_tool) {
+        if cx.tool == Tool::Site
+            && let Some(plan) = cx.active_plan
+        {
+            ui.ctx().set_cursor_icon(CursorIcon::Crosshair);
+            if response.clicked()
+                && let Some(lonlat) = lonlat
+            {
+                events.push(MapEvent::PlaceSite { plan, lonlat });
+            }
+        } else if let Some(plan) = plan.filter(|_| painting_tool) {
             ui.ctx().set_cursor_icon(CursorIcon::Crosshair);
             let shift_click = response.clicked() && modifiers.shift;
             if shift_click {
@@ -449,6 +462,9 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
     for r in resolved.iter().rev() {
         draw_labels(&painter, r, &view, text_color, halo, &mut occupied);
     }
+    for r in &resolved {
+        draw_sites(&painter, r, &view, cx.dark);
+    }
     scale_bar(&painter, &view, &map.crs, cx.dark);
     attribution(&painter, &view, map, project, cx.dark);
     events
@@ -513,7 +529,7 @@ fn hover_rows(
 }
 
 /// Draws a resolved layer's shapes (not its labels).
-pub fn draw_resolved(shapes: &mut Vec<Shape>, r: &Resolved, view: &View, ppp: f32, dark: bool) {
+pub fn draw_resolved(shapes: &mut Vec<Shape>, r: &Resolved, view: &View, ppp: f32) {
     let mesh = &r.mesh;
     let level = paint::level(mesh, view, ppp);
     match mesh.kind {
@@ -546,12 +562,16 @@ pub fn draw_resolved(shapes: &mut Vec<Shape>, r: &Resolved, view: &View, ppp: f3
             });
         }
     }
+}
+
+/// Site markers, drawn above labels.
+fn draw_sites(painter: &egui::Painter, r: &Resolved, view: &View, dark: bool) {
     let border = crate::resolve::territory_border(dark);
     for (d, c) in &r.sites {
         let s = view.to_screen(*d);
-        shapes.push(Shape::circle_filled(s, 5.5, Color32::WHITE));
-        shapes.push(Shape::circle_filled(s, 4.0, *c));
-        shapes.push(Shape::circle_stroke(s, 5.5, Stroke::new(1.2, border)));
+        painter.circle_filled(s, 6.0, Color32::WHITE);
+        painter.circle_filled(s, 4.5, *c);
+        painter.circle_stroke(s, 6.0, Stroke::new(1.4, border));
     }
 }
 

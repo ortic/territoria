@@ -261,8 +261,8 @@ territoria/
 - [ ] Territory table: editable code/name/colour/weight/locks; per-unit assignment table
 - [ ] Multiple assignment (a unit shared by territories, with shares) shown hatched (optional per plan)
 - [x] Locks: pin a unit's assignment, freeze a territory, freeze a territory's outer border (children may move); shown on the map; respected by every tool and the optimizer (territory locks and unit pins; no border freeze, no map display)
-- [ ] Sites (rep homes, branches): place by coordinates, address or unit centroid; link to territories (1:1 or many); capacity
-- [ ] Generate sites at territory centroids; move sites; "site outside its territory" warning
+- [x] Sites (rep homes, branches): place by coordinates, address or unit centroid; link to territories (1:1 or many); capacity (one site per territory, placed on the map or at the centre; no capacity yet)
+- [x] Generate sites at territory centroids; move sites; "site outside its territory" warning
 - [x] Territory borders drawn from the topology (outer and inner borders, per level)
 - [x] Unassigned units: highlight, auto-assign to nearest/adjacent territory
 - [ ] Rename territories after their biggest place or site; renumber by position
@@ -275,7 +275,7 @@ territoria/
 
 - [x] Balance: improve an existing plan with as few moves as possible
 - [x] Reorganize: new territories from scratch for a given count
-- [ ] Districts for sites: territories around given sites (max distance, capacity)
+- [x] Districts for sites: territories around given sites (max distance, capacity) (sites stay in their territory and distance to them counts; no max distance or capacity)
 - [ ] Top-down: split each parent into n children (count given or from a target value)
 - [x] Several measures at once with weights and tolerance bands (no hand-built score needed) (optimizer; the panel sets one)
 - [x] Compactness and contiguity: contiguity as a hard constraint (default) or soft; compactness weight
@@ -289,7 +289,7 @@ territoria/
 
 ### 5.10 Output (M6)
 
-- [ ] Export the map view as PNG (any DPI), SVG, PDF
+- [x] Export the map view as PNG (any DPI), SVG, PDF (with title, legends, scale bar, credits; no background tiles yet)
 - [ ] Print layouts: page size/orientation, map frame(s) with scale, legend, title, text, image, scale bar, north arrow, inset map, table
 - [ ] Text templates in layouts (`{project.title}`, `{date}`, `{territory.name}`)
 - [ ] Atlas/reports: one page per territory, area, filter value or column, or combinations; merged PDF or files; data tables per page (XLSX)

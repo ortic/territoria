@@ -644,3 +644,54 @@ fn exports_map_files() {
         }
     }
 }
+
+/// Sites at the territories' centres; starting over builds territories
+/// around them, each site inside its own territory.
+#[test]
+fn territories_around_sites() {
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    let plan = app.add_balanced_plan_now(layer, 5);
+    let g = app.project.layer(layer).unwrap().geometry.clone();
+    assert_eq!(
+        app.project
+            .plan_mut(plan)
+            .unwrap()
+            .sites_at_centres(&g, true),
+        5
+    );
+    // Move one site to a corner, then start over around the sites.
+    let corner = g.label_points[0].unwrap();
+    app.project.plan_mut(plan).unwrap().territories[0].site = Some([corner.x, corner.y]);
+    let settings = crate::territories::BalanceSettings {
+        start_over: true,
+        ..Default::default()
+    };
+    let mut values = territoria_model::Cache::default();
+    let input =
+        crate::territories::balance_input(&app.project, &mut values, plan, &settings).unwrap();
+    let proposal = crate::territories::run_balance(input, &mut |_| true).unwrap();
+    let rev = app.project.bump();
+    let p = app.project.plan_mut(plan).unwrap();
+    for (u, t) in &proposal.moves {
+        p.assign(&[*u], Some(*t));
+    }
+    p.rev = rev;
+    let p = app.project.plan(plan).unwrap();
+    for (t, unit) in p.territories.iter().zip(p.site_units(&g)) {
+        let unit = unit.expect("site inside an area");
+        assert_eq!(
+            p.assignment[unit as usize],
+            Some(t.id),
+            "site of {} outside",
+            t.name
+        );
+    }
+    assert_eq!(proposal.after.split, 0);
+    settle(&mut h);
+    save(&mut h, "sites");
+}

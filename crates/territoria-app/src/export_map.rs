@@ -63,6 +63,9 @@ pub fn svg(
     for r in resolved.iter().rev() {
         labels(&mut s, r, view, &mut occupied);
     }
+    for r in resolved {
+        sites(&mut s, r, view);
+    }
     s.push_str("</g>");
     decorations(&mut s, view, crs, deco);
     s.push_str("</svg>");
@@ -225,6 +228,9 @@ fn layer(s: &mut String, r: &Resolved, view: &View) {
             }
         }
     }
+}
+
+fn sites(s: &mut String, r: &Resolved, view: &View) {
     for (d, c) in &r.sites {
         let p = view.to_screen(*d);
         let (c, _) = hex(*c);

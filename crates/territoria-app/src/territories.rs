@@ -144,6 +144,13 @@ pub fn balance_input(
             tolerance: m.tolerance,
         })
         .collect();
+    // Sites: their units stay with the territory, distance to them counts.
+    let site_units = plan.site_units(g);
+    let sites = plan
+        .territories
+        .iter()
+        .map(|t| t.site.map(|[x, y]| [(x - lon0) * kx, (y - lat0) * ky]))
+        .collect();
     let problem = Problem {
         neighbors: g.neighbors.clone(),
         positions,
@@ -157,7 +164,8 @@ pub fn balance_input(
             .iter()
             .map(|t| t.and_then(|t| index.get(&t).copied()))
             .collect(),
-        anchors: vec![None; plan.territories.len()],
+        anchors: site_units,
+        sites,
     };
     let options = Options {
         mode: if settings.start_over {
@@ -345,6 +353,10 @@ impl TerritoriesPanel {
             return actions;
         };
         let members = plan.members();
+        let site_units = project
+            .layer(plan.layer)
+            .map(|l| plan.site_units(&l.geometry))
+            .unwrap_or_default();
 
         // Territory list.
         let row_h = 24.0;
@@ -435,6 +447,10 @@ impl TerritoriesPanel {
                                             format_value(s.targets[0])
                                         ));
                                     }
+                                    if site_units.get(i).copied().flatten().is_some_and(|u| plan.assignment.get(u as usize).copied().flatten() != Some(t.id)) {
+                                        ui.label(RichText::new("📍").color(theme::WARN))
+                                            .on_hover_text("The site lies outside the territory");
+                                    }
                                     if s.parts > 1 {
                                         ui.label(RichText::new(format!("⚠{}", s.parts)).color(theme::WARN))
                                             .on_hover_text(format!("In {} separate pieces", s.parts));
@@ -452,6 +468,7 @@ impl TerritoriesPanel {
                     }
                     let id = t.id;
                     let locked = t.locked;
+                    let has_site = t.site.is_some();
                     resp.context_menu(|ui| {
                         if ui.button("Zoom to territory").clicked() {
                             actions.push(Action::ZoomTo(plan.layer, members[i].clone()));
@@ -468,6 +485,23 @@ impl TerritoriesPanel {
                                 Box::new(move |p| {
                                     if let Some(t) = p.plan_mut(plan_id).and_then(|pl| pl.territory_mut(id)) {
                                         t.locked = !t.locked;
+                                    }
+                                    touch(p, plan_id);
+                                }),
+                            ));
+                            ui.close();
+                        }
+                        if ui.button("Place site on the map").clicked() {
+                            actions.push(Action::ActivateTerritory(Some(id)));
+                            actions.push(Action::SetTool(Tool::Site));
+                            ui.close();
+                        }
+                        if has_site && ui.button("Remove site").clicked() {
+                            actions.push(Action::Edit(
+                                "Remove site".into(),
+                                Box::new(move |p| {
+                                    if let Some(t) = p.plan_mut(plan_id).and_then(|pl| pl.territory_mut(id)) {
+                                        t.site = None;
                                     }
                                     touch(p, plan_id);
                                 }),
@@ -521,6 +555,24 @@ impl TerritoriesPanel {
             }
             if ui.button("Recolour").on_hover_text("Different colours for neighbouring territories").clicked() {
                 actions.push(Action::Command(crate::commands::Command::Recolor));
+            }
+            let missing = plan.territories.iter().filter(|t| t.site.is_none()).count();
+            if missing > 0
+                && ui
+                    .button("📍 Sites at centres")
+                    .on_hover_text("Put a site (rep home, branch) at the centre of each territory without one. Start over then builds territories around the sites.")
+                    .clicked()
+            {
+                actions.push(Action::Edit(
+                    "Sites at centres".into(),
+                    Box::new(move |p| {
+                        let Some(g) = p.plan(plan_id).and_then(|pl| p.layer(pl.layer)).map(|l| l.geometry.clone()) else { return };
+                        if let Some(pl) = p.plan_mut(plan_id) {
+                            pl.sites_at_centres(&g, false);
+                        }
+                        touch(p, plan_id);
+                    }),
+                ));
             }
         });
 

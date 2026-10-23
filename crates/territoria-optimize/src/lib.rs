@@ -48,6 +48,9 @@ pub struct Problem {
     pub initial: Vec<Option<u32>>,
     /// Per territory a unit it must keep (its site), if any.
     pub anchors: Vec<Option<u32>>,
+    /// Per territory its site's position (same system as `positions`):
+    /// distance to it counts towards compactness.
+    pub sites: Vec<Option<[f64; 2]>>,
 }
 
 impl Problem {
@@ -162,6 +165,9 @@ struct State<'a> {
     cut: f64,
     moved: usize,
     w_compact: f64,
+    /// Weight of the summed distance of units to their territory's site.
+    w_distance: f64,
+    distance: f64,
     w_stable: f64,
     initial: Vec<u32>,
     /// Scratch for connectivity checks.
@@ -206,6 +212,9 @@ impl<'a> State<'a> {
         } else {
             0.0
         };
+        // Distance to the site relative to an ideal round territory's radius.
+        let radius = (total_area / k.max(1) as f64 / std::f64::consts::PI).sqrt();
+        let w_distance = options.compactness * 0.02 / (p.units().max(1) as f64 * radius.max(1e-9));
         let mut s = State {
             p,
             initial: p.initial.iter().map(|t| t.unwrap_or(NONE)).collect(),
@@ -216,6 +225,8 @@ impl<'a> State<'a> {
             cut: 0.0,
             moved: 0,
             w_compact,
+            w_distance,
+            distance: 0.0,
             w_stable,
             mark: vec![0; p.units()],
             stamp: 0,
@@ -250,12 +261,29 @@ impl<'a> State<'a> {
                 }
             }
         }
+        self.distance = (0..self.a.len())
+            .map(|u| self.site_distance(u, self.a[u]))
+            .sum();
         self.moved = self
             .a
             .iter()
             .zip(&self.initial)
             .filter(|(a, i)| **i != NONE && a != i)
             .count();
+    }
+
+    /// Distance of `u` to the site of territory `t` (0 without a site).
+    fn site_distance(&self, u: usize, t: u32) -> f64 {
+        if t == NONE {
+            return 0.0;
+        }
+        match self.p.sites.get(t as usize).copied().flatten() {
+            Some(s) => {
+                let p = self.p.positions[u];
+                ((p[0] - s[0]).powi(2) + (p[1] - s[1]).powi(2)).sqrt()
+            }
+            None => 0.0,
+        }
     }
 
     fn dev(&self, m: usize, t: usize, sum: f64) -> f64 {
@@ -289,7 +317,10 @@ impl<'a> State<'a> {
         let balance: f64 = (0..self.p.territories())
             .map(|t| self.balance_term(t, &zero))
             .sum();
-        balance + self.w_compact * self.cut + self.w_stable * self.moved as f64
+        balance
+            + self.w_compact * self.cut
+            + self.w_distance * self.distance
+            + self.w_stable * self.moved as f64
     }
 
     /// Change of the objective when `u` moves from its territory to `to`.
@@ -319,6 +350,7 @@ impl<'a> State<'a> {
             dcut += (will as i32 - was as i32) as f64 * len;
         }
         d += self.w_compact * dcut;
+        d += self.w_distance * (self.site_distance(u, to) - self.site_distance(u, from));
         let init = self.initial[u];
         if init != NONE {
             let was = (from != init) as i32;
@@ -330,6 +362,7 @@ impl<'a> State<'a> {
 
     fn apply(&mut self, u: usize, to: u32) {
         let from = self.a[u];
+        self.distance += self.site_distance(u, to) - self.site_distance(u, from);
         for &(v, len) in &self.p.neighbors[u] {
             let tv = self.a[v as usize];
             if tv == NONE {
@@ -879,6 +912,7 @@ mod tests {
             pinned: vec![false; units],
             initial: vec![None; units],
             anchors: vec![None; k],
+            sites: vec![None; k],
         }
     }
 
@@ -939,6 +973,32 @@ mod tests {
         }
         let s = optimize(&p, &Options::default(), &mut |_| true);
         assert_eq!(s.assignment, p.initial);
+    }
+
+    #[test]
+    fn territories_form_around_sites() {
+        let mut p = grid(12, 2);
+        // Sites in the left and right thirds; anchors are their units.
+        p.anchors = vec![Some(6 * 12 + 2), Some(6 * 12 + 9)];
+        p.sites = vec![Some([2.0, 6.0]), Some([9.0, 6.0])];
+        let s = optimize(
+            &p,
+            &Options {
+                mode: Mode::Reorganize,
+                compactness: 0.8,
+                ..Default::default()
+            },
+            &mut |_| true,
+        );
+        assert_eq!(s.after.split, 0);
+        assert!(s.after.max_deviation[0] <= 0.05, "{:?}", s.after);
+        // Each site's unit stays with its territory, and the left column
+        // belongs to the left site's territory.
+        let a = &s.assignment;
+        assert_eq!(a[6 * 12 + 2], Some(0));
+        assert_eq!(a[6 * 12 + 9], Some(1));
+        assert_eq!(a[0], Some(0));
+        assert_eq!(a[11], Some(1));
     }
 
     #[test]

@@ -334,6 +334,64 @@ impl Plan {
         }
     }
 
+    /// Puts each territory's site at its centre: the label point of the unit
+    /// nearest to the territory's area-weighted centre (so it's inside).
+    /// Territories with a site keep it unless `replace`.
+    pub fn sites_at_centres(&mut self, geometry: &LayerGeometry, replace: bool) -> usize {
+        let members = self.members();
+        let mut placed = 0;
+        for (t, units) in self.territories.iter_mut().zip(&members) {
+            if (t.site.is_some() && !replace) || units.is_empty() {
+                continue;
+            }
+            let (mut sx, mut sy, mut sw) = (0.0, 0.0, 0.0);
+            for &u in units {
+                if let Some(p) = geometry.label_points.get(u as usize).copied().flatten() {
+                    let w = geometry
+                        .areas
+                        .get(u as usize)
+                        .copied()
+                        .unwrap_or(1.0)
+                        .max(1e-9);
+                    sx += p.x * w;
+                    sy += p.y * w;
+                    sw += w;
+                }
+            }
+            if sw == 0.0 {
+                continue;
+            }
+            let (cx, cy) = (sx / sw, sy / sw);
+            let best = units
+                .iter()
+                .filter_map(|&u| geometry.label_points.get(u as usize).copied().flatten())
+                .min_by(|a, b| {
+                    let da = (a.x - cx).powi(2) + (a.y - cy).powi(2);
+                    let db = (b.x - cx).powi(2) + (b.y - cy).powi(2);
+                    da.total_cmp(&db)
+                });
+            if let Some(p) = best {
+                t.site = Some([p.x, p.y]);
+                placed += 1;
+            }
+        }
+        placed
+    }
+
+    /// The unit each territory's site lies in (`None` without a site or
+    /// outside every unit).
+    pub fn site_units(&self, geometry: &LayerGeometry) -> Vec<Option<u32>> {
+        self.territories
+            .iter()
+            .map(|t| {
+                let [x, y] = t.site?;
+                geometry
+                    .feature_at(geo_types::Coord { x, y }, 0.0)
+                    .map(|u| u as u32)
+            })
+            .collect()
+    }
+
     /// Units without a territory get the territory most of their assigned
     /// neighbours have, repeatedly, so enclosed gaps fill from outside in.
     /// Units with no assigned neighbour at all stay unassigned.
