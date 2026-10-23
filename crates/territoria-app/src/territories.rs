@@ -1266,8 +1266,21 @@ impl TerritoriesPanel {
                     ui.label(RichText::new("Group territories into regions: sales regions above the territories, with their own borders and figures.").weak());
                 }
                 let region_stats = plan.region_stats(stats);
+                // A territory dropped on a region (or on "No region") moves there.
+                let move_to = |t: TerritoryId, region: Option<territoria_model::RegionId>| {
+                    Action::Edit(
+                        "Move to region".into(),
+                        Box::new(move |p| {
+                            if let Some(t) = p.plan_mut(plan_id).and_then(|pl| pl.territory_mut(t)) {
+                                t.region = region;
+                            }
+                            touch(p, plan_id);
+                        }),
+                    )
+                };
                 for (r, rs) in plan.regions.iter().zip(&region_stats) {
                     let id = r.id;
+                    let (_, dropped) = ui.dnd_drop_zone::<TerritoryDrag, ()>(egui::Frame::default().inner_margin(2.0), |ui| {
                     ui.horizontal(|ui| {
                         let (rect, _) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
                         ui.painter().rect_stroke(rect, 2.0, egui::Stroke::new(2.0, color(r.color)), egui::StrokeKind::Inside);
@@ -1300,10 +1313,24 @@ impl TerritoriesPanel {
                             ));
                         }
                     });
+                    territory_chips(ui, plan, Some(id));
+                    });
+                    if let Some(d) = dropped {
+                        actions.push(move_to(d.0, Some(id)));
+                    }
                 }
                 let unassigned = plan.territories.iter().filter(|t| t.region.is_none()).count();
-                if !plan.regions.is_empty() && unassigned > 0 {
-                    ui.label(RichText::new(format!("{unassigned} territories in no region")).color(theme::WARN).small());
+                if !plan.regions.is_empty() && (unassigned > 0 || egui::DragAndDrop::has_payload_of_type::<TerritoryDrag>(ui.ctx())) {
+                    let (_, dropped) = ui.dnd_drop_zone::<TerritoryDrag, ()>(egui::Frame::default().inner_margin(2.0), |ui| {
+                        ui.label(RichText::new(format!("{unassigned} territories in no region")).color(theme::WARN).small());
+                        territory_chips(ui, plan, None);
+                    });
+                    if let Some(d) = dropped {
+                        actions.push(move_to(d.0, None));
+                    }
+                }
+                if !plan.regions.is_empty() {
+                    ui.label(RichText::new("Drag territories between regions.").weak().small());
                 }
                 ui.horizontal(|ui| {
                     if ui.button("➕ Region").clicked() {
@@ -1652,4 +1679,32 @@ fn palette_menu(ui: &mut egui::Ui, plan: &territoria_model::Plan, actions: &mut 
     })
     .response
     .on_hover_text("The colours territories take; Recolour then keeps neighbours apart");
+}
+
+/// A territory being dragged to another region.
+#[derive(Clone, Copy)]
+struct TerritoryDrag(TerritoryId);
+
+/// The territories of `region` (or of none) as small chips to drag.
+fn territory_chips(
+    ui: &mut Ui,
+    plan: &territoria_model::Plan,
+    region: Option<territoria_model::RegionId>,
+) {
+    ui.horizontal_wrapped(|ui| {
+        ui.add_space(16.0);
+        for t in plan.territories.iter().filter(|t| t.region == region) {
+            let id = egui::Id::new(("territory-chip", plan.id, t.id));
+            ui.dnd_drag_source(id, TerritoryDrag(t.id), |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 3.0;
+                    let (rect, _) = ui.allocate_exact_size(vec2(8.0, 8.0), Sense::hover());
+                    ui.painter().rect_filled(rect, 2.0, color(t.color));
+                    ui.label(RichText::new(&t.name).small());
+                });
+            })
+            .response
+            .on_hover_text("Drag onto another region");
+        }
+    });
 }

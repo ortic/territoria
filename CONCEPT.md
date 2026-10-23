@@ -254,7 +254,7 @@ territoria/
 - [ ] Hierarchy: any number of levels (e.g. territory → region → area); levels built from the level below or from other boundaries ("borders like layer X") (one level of regions above territories: grouped automatically (balanced, contiguous) or by hand, with wider borders, figures and exports; no deeper levels yet)
 - [x] Paint tool: click or drag over units to assign them to the active territory; Shift to pick a territory from the map; Alt to unassign
 - [x] Assign by rectangle, lasso, radius, list, table selection (a bar over the map assigns or unassigns the selection, shows its measure total, zooms to it; no radius or table selection yet)
-- [ ] Move a whole territory into another parent; drag in the territory tree
+- [x] Move a whole territory into another parent; drag in the territory tree (Regions list each region's territories as chips; drag one onto another region or "no region"; also the Region column of the plan table)
 - [x] KPI panel: per territory sums of chosen measures, target (mean or set), deviation in % with bars, unit count, area, parts (contiguity), compactness; totals; updates live while painting (no compactness figure)
 - [x] Measures: any numeric column of linked tables (sum/mean/count per territory), unit count, area, customer count; several at once (one in the panel; the model and optimizer take several)
 - [x] Tolerance band per measure (e.g. ±10 %); out-of-band territories flagged on map and in the panel (in the panel)

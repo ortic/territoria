@@ -3800,3 +3800,52 @@ fn tutorial_customers() {
     assert_eq!(a.city.as_deref(), Some("City"));
     assert_eq!(a.country.as_deref(), Some("Country"));
 }
+
+/// A territory dragged from one region onto another moves there.
+#[test]
+fn drag_territory_to_region() {
+    use egui_kittest::kittest::Queryable;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    let plan = app.add_balanced_plan_now(layer, 4);
+    {
+        let p = app.project.plan_mut(plan).unwrap();
+        let a = p.add_region(None);
+        let b = p.add_region(None);
+        for (i, t) in p.territories.iter_mut().enumerate() {
+            t.region = Some(if i < 2 { a } else { b });
+        }
+        p.rev += 1;
+    }
+    app.project.bump();
+    settle(&mut h);
+    let (first, target, second_region) = {
+        let p = h.state().project.plan(plan).unwrap();
+        (
+            p.territories[0].name.clone(),
+            p.territories[3].name.clone(),
+            p.regions[1].id,
+        )
+    };
+    // The chips: the territory names in the regions section (the last
+    // labels with these names; the list above has them too).
+    let from = h.get_all_by_label(&first).last().unwrap().rect().center();
+    let to = h.get_all_by_label(&target).last().unwrap().rect().center();
+    h.hover_at(from);
+    h.run_steps(1);
+    h.drag_at(from);
+    h.run_steps(1);
+    for k in 1..=6 {
+        h.hover_at(from + (to - from) * (k as f32 / 6.0));
+        h.run_steps(1);
+    }
+    save(&mut h, "drag-territory");
+    h.drop_at(to);
+    h.run_steps(3);
+    let p = h.state().project.plan(plan).unwrap();
+    assert_eq!(p.territories[0].region, Some(second_region));
+}
