@@ -515,7 +515,13 @@ fn layer(s: &mut String, r: &Resolved, view: &View, tips: Option<&[String]>, fin
         if !view.rect.expand(radius).contains(pos2(x, y)) {
             continue;
         }
-        let (c, a) = hex(r.symbol_fill);
+        let fill = r
+            .symbol_colors
+            .get(i)
+            .copied()
+            .flatten()
+            .unwrap_or(r.symbol_fill);
+        let (c, a) = hex(fill);
         let (sc, sa) = hex(r.symbol_stroke.color);
         let _ = write!(
             s,

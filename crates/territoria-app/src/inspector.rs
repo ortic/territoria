@@ -6,7 +6,7 @@ use territoria_analysis::{ColorScale, Method, RAMPS, RampKind, RampSpec, ScaleMo
 use territoria_data::{ColumnKind, MatchMode};
 use territoria_model::{
     BoundaryStyle, Cache, LabelMode, LayerId, MapId, MapLayer, MapLayerId, MapLayerKind, Normalize,
-    Project, ValueSource,
+    Project, TextSource, ValueSource,
 };
 
 use crate::app::{Action, DataRef, Selection, Tab};
@@ -1462,14 +1462,62 @@ fn map_layer(
                 .spacing([10.0, 6.0])
                 .show(ui, |ui| {
                     ui.label("Colour");
-                    if let Some(c) = rgba_button(ui, symbol.color) {
-                        actions.push(edit_layer(map, id, "Change circle colour", move |l| {
-                            if let MapLayerKind::Symbols { symbol, .. } = &mut l.kind {
-                                symbol.color = c;
-                            }
-                        }));
-                    }
+                    ui.horizontal(|ui| {
+                        if symbol.color_by.is_none()
+                            && let Some(c) = rgba_button(ui, symbol.color)
+                        {
+                            actions.push(edit_layer(map, id, "Change circle colour", move |l| {
+                                if let MapLayerKind::Symbols { symbol, .. } = &mut l.kind {
+                                    symbol.color = c;
+                                }
+                            }));
+                        }
+                        // Or a colour per category of a text column.
+                        let categories: Vec<(String, TextSource)> = colorables(project, *layer)
+                            .into_iter()
+                            .filter_map(|(label, c)| match c {
+                                Colorable::Category(s) => Some((label, s)),
+                                _ => None,
+                            })
+                            .collect();
+                        let current = symbol.color_by.as_ref().map(|(s, _)| s.clone());
+                        let mut chosen = current.clone();
+                        let text = current
+                            .as_ref()
+                            .and_then(|s| categories.iter().find(|(_, c)| c == s))
+                            .map_or("One colour".to_owned(), |(l, _)| format!("By {l}"));
+                        ComboBox::from_id_salt("symbol-color-by")
+                            .width(170.0)
+                            .selected_text(text)
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut chosen, None, "One colour");
+                                for (label, s) in &categories {
+                                    ui.selectable_value(&mut chosen, Some(s.clone()), format!("By {label}"));
+                                }
+                            });
+                        if chosen != current {
+                            actions.push(edit_layer(map, id, "Colour circles by category", move |l| {
+                                if let MapLayerKind::Symbols { symbol, .. } = &mut l.kind {
+                                    symbol.color_by =
+                                        chosen.map(|s| (s, territoria_analysis::CategoryScale::default()));
+                                }
+                            }));
+                        }
+                    });
                     ui.end_row();
+                    if let Some((_, scale)) = &symbol.color_by {
+                        ui.label("Colours");
+                        if let Some(r) = ramp_picker(ui, &scale.ramp, &[RampKind::Qualitative]) {
+                            actions.push(edit_layer(map, id, "Change colours", move |l| {
+                                if let MapLayerKind::Symbols { symbol, .. } = &mut l.kind
+                                    && let Some((_, scale)) = &mut symbol.color_by
+                                {
+                                    scale.ramp = r;
+                                }
+                            }));
+                        }
+                        ui.end_row();
+                    }
                     ui.label("Outline");
                     if let Some(c) = rgba_button(ui, symbol.outline) {
                         actions.push(edit_layer(map, id, "Change circle outline", move |l| {

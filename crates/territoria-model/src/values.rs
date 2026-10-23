@@ -182,6 +182,15 @@ pub enum TextSource {
     },
 }
 
+impl TextSource {
+    /// The column's name.
+    pub fn label(&self) -> &str {
+        match self {
+            TextSource::Attribute { column } | TextSource::Linked { column, .. } => column,
+        }
+    }
+}
+
 /// Matchings and values computed from the project, keyed by the revisions
 /// they were computed from. Lives next to the project, not in it.
 #[derive(Default)]

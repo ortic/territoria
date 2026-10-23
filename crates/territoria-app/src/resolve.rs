@@ -38,6 +38,8 @@ pub struct Resolved {
     /// Proportional circles: (feature, radius in points), largest first.
     pub symbols: Vec<(usize, f32)>,
     pub symbol_fill: Color32,
+    /// Per feature its circle's colour, when coloured by a category.
+    pub symbol_colors: Vec<Option<Color32>>,
     pub symbol_stroke: Stroke,
     /// Charts per feature, largest first.
     pub charts: Vec<Chart>,
@@ -152,6 +154,7 @@ fn resolve_one(
                 symbols: Vec::new(),
                 symbol_fill: Color32::TRANSPARENT,
                 symbol_stroke: Stroke::NONE,
+                symbol_colors: Vec::new(),
                 charts: Vec::new(),
                 flows,
                 rings: Vec::new(),
@@ -198,6 +201,7 @@ fn resolve_one(
                 symbols: Vec::new(),
                 symbol_fill: Color32::TRANSPARENT,
                 symbol_stroke: Stroke::NONE,
+                symbol_colors: Vec::new(),
                 charts: Vec::new(),
                 flows: Vec::new(),
                 rings,
@@ -264,6 +268,7 @@ fn resolve_one(
                 symbols: Vec::new(),
                 symbol_fill: Color32::TRANSPARENT,
                 symbol_stroke: Stroke::NONE,
+                symbol_colors: Vec::new(),
                 charts: Vec::new(),
                 flows: Vec::new(),
                 rings: Vec::new(),
@@ -371,6 +376,7 @@ fn resolve_one(
                 symbols: Vec::new(),
                 symbol_fill: Color32::TRANSPARENT,
                 symbol_stroke: Stroke::NONE,
+                symbol_colors: Vec::new(),
                 charts: Vec::new(),
                 flows: Vec::new(),
                 rings: Vec::new(),
@@ -405,6 +411,7 @@ fn resolve_one(
                 symbols: Vec::new(),
                 symbol_fill: Color32::TRANSPARENT,
                 symbol_stroke: Stroke::NONE,
+                symbol_colors: Vec::new(),
                 charts: Vec::new(),
                 flows: Vec::new(),
                 rings: Vec::new(),
@@ -442,6 +449,7 @@ fn resolve_one(
                 symbols: Vec::new(),
                 symbol_fill: Color32::TRANSPARENT,
                 symbol_stroke: Stroke::NONE,
+                symbol_colors: Vec::new(),
                 charts: charts(cx, *layer, parts, chart, opacity),
                 flows: Vec::new(),
                 rings: Vec::new(),
@@ -469,6 +477,20 @@ fn resolve_one(
                 })
                 .collect();
             symbols.sort_by(|a, b| b.1.total_cmp(&a.1));
+            // Coloured by a category: features without one in grey.
+            let symbol_colors = if symbol.color_by.is_some() {
+                let scaled = cx.analyses.get(project, cx.values, ml.id, &ml.kind)?;
+                let none = with_opacity(Color32::from_rgb(0xc4, 0xc4, 0xca), opacity);
+                (0..n)
+                    .map(|f| {
+                        Some(scaled.colors.get(f).copied().flatten().map_or(none, |c| {
+                            with_opacity(color(c).gamma_multiply(0.9), opacity)
+                        }))
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
             let labels = match &style.labels {
                 LabelMode::None => Labels::None,
                 LabelMode::Template(t) => cx
@@ -491,6 +513,7 @@ fn resolve_one(
                 symbols,
                 symbol_fill: with_opacity(color(symbol.color), opacity),
                 symbol_stroke: Stroke::new(0.8, with_opacity(color(symbol.outline), opacity)),
+                symbol_colors,
                 charts: Vec::new(),
                 flows: Vec::new(),
                 rings: Vec::new(),

@@ -202,6 +202,12 @@ impl AnalysisCache {
                 let v = values.normalized(project, *layer, source, normalize);
                 scale.apply(&v)
             }
+            MapLayerKind::Symbols { layer, symbol, .. } => {
+                let (source, scale) = symbol.color_by.as_ref()?;
+                let t = values.texts(project, *layer, source);
+                let refs: Vec<Option<&str>> = t.iter().map(|s| s.as_deref()).collect();
+                scale.apply(&refs)
+            }
             MapLayerKind::Bivariate {
                 layer, x, y, scale, ..
             } => {

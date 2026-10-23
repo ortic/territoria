@@ -3013,3 +3013,92 @@ fn flow_lines() {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Circles sized by sales and coloured by a customer segment.
+#[test]
+fn circles_by_category() {
+    use crate::app::Export;
+    use crate::dialogs::Placement;
+    use crate::export_map::Format;
+    use territoria_model::{MapLayer, MapLayerKind, TextSource, ValueSource};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    let mut customers = customers(app, layer, 300);
+    let segments = ["Retail", "Wholesale", "Online"];
+    customers.columns.push(Column::text(
+        "Segment",
+        ColumnKind::Text,
+        (0..300).map(|i| Some(segments[i % 3].to_owned())).collect(),
+    ));
+    app.add_table(
+        "Customers".into(),
+        customers,
+        PathBuf::from("customers.csv"),
+        Placement::Points {
+            x: "Longitude".into(),
+            y: "Latitude".into(),
+        },
+        None,
+    );
+    let points = app.project.layers.last().unwrap().id;
+    let map = app.project.maps[0].id;
+    let m = app.project.map_mut(map).unwrap();
+    for ml in &mut m.layers {
+        if ml.kind.layer() == Some(points) {
+            ml.visible = false;
+        }
+    }
+    m.layers.push(MapLayer {
+        id: territoria_model::MapLayerId(5001),
+        name: "Sales by segment".into(),
+        visible: true,
+        opacity: 1.0,
+        zoom: Default::default(),
+        kind: MapLayerKind::Symbols {
+            layer: points,
+            source: ValueSource::Attribute {
+                column: "Sales".into(),
+            },
+            normalize: Default::default(),
+            symbol: territoria_model::SymbolStyle {
+                color_by: Some((
+                    TextSource::Attribute {
+                        column: "Segment".into(),
+                    },
+                    Default::default(),
+                )),
+                ..territoria_model::SymbolStyle::for_count(300)
+            },
+            style: Default::default(),
+        },
+    });
+    settle(&mut h);
+    save(&mut h, "circles-by-category");
+    let dir = std::env::temp_dir().join(format!("territoria-segments-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("segments.svg");
+    let app = h.state_mut();
+    app.set_map_export_for_test(crate::dialogs::MapExportSettings {
+        format: Format::Svg,
+        scale: 1.0,
+        title: String::new(),
+        legend: true,
+        scale_bar: false,
+    });
+    app.export(Export::Map(Format::Svg), path.clone());
+    settle(&mut h);
+    let svg = std::fs::read_to_string(&path).unwrap();
+    assert!(svg.contains("Wholesale"), "categories in the legend");
+    assert!(svg.matches("<circle cx").count() > 100, "circles");
+    let fills: std::collections::HashSet<&str> = svg
+        .split("<circle ")
+        .skip(1)
+        .filter_map(|c| c.split("fill=\"").nth(1)?.split('"').next())
+        .collect();
+    assert!(fills.len() >= 3, "{fills:?}");
+    let _ = std::fs::remove_dir_all(dir);
+}

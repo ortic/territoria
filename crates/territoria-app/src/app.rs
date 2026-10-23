@@ -1796,17 +1796,23 @@ impl TerritoriaApp {
                         .values
                         .normalized(rcx.project, *layer, source, normalize);
                     let max = v.iter().flatten().fold(0.0f64, |a, b| a.max(*b));
-                    legends.push((
-                        ml.name.clone(),
-                        vec![territoria_analysis::LegendEntry {
-                            color: symbol.color,
-                            label: format!(
-                                "Circle areas grow with the value; largest {}",
-                                territoria_analysis::format::format_value(max)
-                            ),
-                            count: v.iter().flatten().count(),
-                        }],
-                    ));
+                    let mut entries = vec![territoria_analysis::LegendEntry {
+                        color: symbol.color,
+                        label: format!(
+                            "Circle areas grow with the value; largest {}",
+                            territoria_analysis::format::format_value(max)
+                        ),
+                        count: v.iter().flatten().count(),
+                    }];
+                    // Coloured by category: the categories follow.
+                    if symbol.color_by.is_some()
+                        && let Some(scaled) =
+                            rcx.analyses.get(rcx.project, rcx.values, ml.id, &ml.kind)
+                    {
+                        entries[0].color = territoria_analysis::Rgba::rgb(0xc4, 0xc4, 0xca);
+                        entries.extend(scaled.legend.iter().cloned());
+                    }
+                    legends.push((ml.name.clone(), entries));
                 }
                 MapLayerKind::Boundaries { .. } => {}
             }

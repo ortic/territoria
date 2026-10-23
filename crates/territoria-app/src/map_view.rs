@@ -1213,6 +1213,7 @@ fn hover_rows(
                 layer: l,
                 source,
                 normalize,
+                symbol,
                 ..
             } if *l == h.layer && custom.is_none() => {
                 let v = values
@@ -1227,6 +1228,17 @@ fn hover_rows(
                         territoria_analysis::format::format_value,
                     ),
                 ));
+                if let Some((source, _)) = &symbol.color_by {
+                    let t = values
+                        .texts(project, *l, source)
+                        .get(h.feature)
+                        .cloned()
+                        .flatten();
+                    rows.push((
+                        source.label().to_owned(),
+                        t.unwrap_or_else(|| "no data".into()),
+                    ));
+                }
             }
             MapLayerKind::Categories {
                 layer: l, source, ..
@@ -1337,7 +1349,13 @@ pub fn draw_resolved(shapes: &mut Vec<Shape>, r: &Resolved, view: &View, ppp: f3
         };
         let p = view.to_screen(mesh.to_display(lp));
         if view.rect.expand(radius).contains(p) {
-            shapes.push(Shape::circle_filled(p, radius, r.symbol_fill));
+            let fill = r
+                .symbol_colors
+                .get(f)
+                .copied()
+                .flatten()
+                .unwrap_or(r.symbol_fill);
+            shapes.push(Shape::circle_filled(p, radius, fill));
             shapes.push(Shape::circle_stroke(p, radius, r.symbol_stroke));
         }
     }

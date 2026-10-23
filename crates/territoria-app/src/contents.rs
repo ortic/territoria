@@ -222,11 +222,33 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                             } => {
                                 let v = cx.values.normalized(project, *layer, source, normalize);
                                 let max = v.iter().flatten().fold(0.0f64, |a, b| a.max(*b));
-                                if max > 0.0 {
-                                    ui.indent(("legend", ml.id.0), |ui| {
-                                        size_legend(ui, symbol, max);
-                                    });
-                                }
+                                let categories = symbol
+                                    .color_by
+                                    .is_some()
+                                    .then(|| cx.analyses.get(project, cx.values, ml.id, &ml.kind))
+                                    .flatten();
+                                ui.indent(("legend", ml.id.0), |ui| {
+                                    if max > 0.0 {
+                                        // Sizes in grey when colours mean categories.
+                                        let neutral = territoria_model::SymbolStyle {
+                                            color: territoria_analysis::Rgba::rgb(0x8a, 0x8d, 0x96),
+                                            ..symbol.clone()
+                                        };
+                                        size_legend(
+                                            ui,
+                                            if categories.is_some() { &neutral } else { symbol },
+                                            max,
+                                        );
+                                    }
+                                    for entry in categories.iter().flat_map(|s| s.legend.iter()) {
+                                        ui.horizontal(|ui| {
+                                            let (rect, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
+                                            ui.painter().circle_filled(rect.center(), 5.5, color(entry.color));
+                                            ui.label(RichText::new(&entry.label).small());
+                                            ui.label(RichText::new(format!("({})", entry.count)).small().weak());
+                                        });
+                                    }
+                                });
                             }
                             MapLayerKind::Flows { style, .. } => {
                                 if let Some(lines) = cx.analyses.flows(project, ml.id, &ml.kind) {

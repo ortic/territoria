@@ -254,6 +254,9 @@ pub struct SymbolStyle {
     pub outline: Rgba,
     /// Radius of the largest value, in screen points.
     pub max_radius: f32,
+    /// Colours by a category instead of one colour.
+    #[serde(default)]
+    pub color_by: Option<(TextSource, CategoryScale)>,
 }
 
 impl Default for SymbolStyle {
@@ -262,6 +265,7 @@ impl Default for SymbolStyle {
             color: Rgba([0xe0, 0x6c, 0x3c, 190]),
             outline: Rgba([0xff, 0xff, 0xff, 230]),
             max_radius: 22.0,
+            color_by: None,
         }
     }
 }
