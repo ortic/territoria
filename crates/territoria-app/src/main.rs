@@ -4,6 +4,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod app;
+mod cli;
 mod commands;
 mod contents;
 mod dialogs;
@@ -31,6 +32,11 @@ use tracing::{error, info, warn};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 fn main() -> anyhow::Result<()> {
+    // Command-line tasks run without a window.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(code) = cli::run(&args) {
+        std::process::exit(code);
+    }
     let paths = match Paths::detect() {
         Ok(p) => Some(p),
         Err(e) => {

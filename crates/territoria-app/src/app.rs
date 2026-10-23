@@ -275,6 +275,43 @@ impl TerritoriaApp {
         app
     }
 
+    /// Runs the background jobs to the end (for the command line).
+    pub(crate) fn finish_jobs(&mut self, timeout: Duration) {
+        let start = Instant::now();
+        loop {
+            for r in self.jobs.poll() {
+                self.handle_job(r);
+            }
+            if !self.jobs.is_busy() || start.elapsed() > timeout {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// Error messages shown so far (for the command line).
+    pub(crate) fn errors(&self) -> Vec<String> {
+        self.toasts
+            .iter()
+            .filter(|t| t.error)
+            .map(|t| t.text.clone())
+            .collect()
+    }
+
+    /// Messages shown so far (for the command line).
+    pub(crate) fn messages(&self) -> Vec<String> {
+        self.toasts
+            .iter()
+            .filter(|t| !t.error)
+            .map(|t| t.text.clone())
+            .collect()
+    }
+
+    /// Makes `map` the one exports use.
+    pub(crate) fn use_map(&mut self, map: MapId) {
+        self.current_map = Some(map);
+    }
+
     pub fn with_settings(settings: Settings, paths: Option<Paths>) -> Self {
         let tile_dir = match &paths {
             Some(p) => p.data_dir.join("tiles"),
@@ -968,7 +1005,7 @@ impl TerritoriaApp {
         });
     }
 
-    fn handle_job(&mut self, result: JobResult) {
+    pub(crate) fn handle_job(&mut self, result: JobResult) {
         match result {
             JobResult::Boundaries { path, result } => match result {
                 Ok(layers) => {
@@ -1503,6 +1540,17 @@ impl TerritoriaApp {
         self.map_render(settings, false)
     }
 
+    pub(crate) fn map_svg_for_cli(
+        &mut self,
+        settings: &crate::dialogs::MapExportSettings,
+    ) -> Result<String, String> {
+        self.map_render(settings, false)
+    }
+
+    pub(crate) fn set_map_export_settings(&mut self, settings: crate::dialogs::MapExportSettings) {
+        self.map_export = Some(settings);
+    }
+
     /// The current map as a web page (all of it, with hover texts).
     pub(crate) fn map_page(
         &mut self,
@@ -1523,15 +1571,19 @@ impl TerritoriaApp {
             .map(map_id)
             .cloned()
             .ok_or("The map was removed.")?;
-        let view = self
-            .map_states
-            .get(&map_id)
-            .and_then(|s| s.view)
-            .ok_or("Show the map once before exporting it.")?;
-        let view = territoria_render::View {
-            rect: egui::Rect::from_min_size(egui::Pos2::ZERO, view.rect.size()),
-            ..view
-        };
+        // The view on screen, else the one kept with the map, else all of it.
+        let on_screen = self.map_states.get(&map_id).and_then(|s| s.view);
+        let rect = egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            on_screen.map_or(egui::vec2(1600.0, 1000.0), |v| v.rect.size()),
+        );
+        let kept_view = on_screen
+            .map(|v| territoria_render::View { rect, ..v })
+            .or(map.view.map(|(center, scale)| territoria_render::View {
+                center,
+                scale,
+                rect,
+            }));
         let mut meshes = HashMap::new();
         let mut cells = HashMap::new();
         for ml in map.layers.iter().filter(|l| l.visible) {
@@ -1565,6 +1617,27 @@ impl TerritoriaApp {
                 }
             }
         }
+        let view = match kept_view {
+            Some(v) => v,
+            None => {
+                let mut extent = territoria_render::Bounds::EMPTY;
+                for m in meshes.values() {
+                    if !m.extent.is_empty() {
+                        let (a, b) = (m.to_display(m.extent.min), m.to_display(m.extent.max));
+                        extent.add([a[0] as f32, a[1] as f32]);
+                        extent.add([b[0] as f32, b[1] as f32]);
+                    }
+                }
+                if extent.is_empty() {
+                    return Err("The map is empty.".into());
+                }
+                territoria_render::View::fit(
+                    [extent.min[0] as f64, extent.min[1] as f64],
+                    [extent.max[0] as f64, extent.max[1] as f64],
+                    rect,
+                )
+            }
+        };
         let mut rcx = crate::resolve::Context {
             project: &self.project,
             values: &mut self.values,

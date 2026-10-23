@@ -309,7 +309,7 @@ territoria/
 
 ### 5.12 Automation & polish (M8)
 
-- [ ] CLI: open a project, refresh linked data, export maps/reports/data, run an optimization
+- [x] CLI: open a project, refresh linked data, export maps/reports/data, run an optimization (exports of maps (PNG, SVG, PDF, web page), reports and plan workbooks; no refresh or optimization from the command line yet)
 - [ ] Project templates (styles, layouts, analyses) and "new from template"
 - [ ] Theme/corporate profile: default colours, fonts, logos
 - [ ] German UI translation

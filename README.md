@@ -64,6 +64,16 @@ cargo build --release
 ./target/release/territoria
 ```
 
+## Command line
+
+Exports run without a window, for scripts and scheduled jobs:
+
+```sh
+territoria --export-map map.pdf project.territoria          # .png .svg .pdf .html
+territoria --export-report report.pdf --plan "Sales" project.territoria
+territoria --export-plan territories.xlsx project.territoria
+```
+
 ## Development
 
 ```sh
