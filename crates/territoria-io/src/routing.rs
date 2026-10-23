@@ -50,18 +50,38 @@ struct TableResponse {
     distances: Option<Vec<Vec<Option<f64>>>>,
 }
 
-/// For each origin (longitude/latitude) the destination reached fastest,
-/// with minutes and km; `None` where none can be reached. `progress` gets
-/// (done, total) requests and stops the work by returning false.
-pub fn nearest_by_road(
+/// Minutes by road from every origin to every destination (`None` where
+/// no road leads), asked in blocks; `progress` as for [`nearest_by_road`].
+pub fn matrix(
     settings: &RoutingSettings,
     origins: &[Coord<f64>],
     destinations: &[Coord<f64>],
     progress: &mut dyn FnMut(usize, usize) -> bool,
-) -> Result<Vec<Option<Nearest>>, ImportError> {
-    let mut best: Vec<Option<Nearest>> = vec![None; origins.len()];
+) -> Result<Vec<Vec<Option<f64>>>, ImportError> {
+    let mut out = vec![vec![None; destinations.len()]; origins.len()];
+    for_blocks(
+        settings,
+        origins,
+        destinations,
+        progress,
+        &mut |o, d, minutes, _| {
+            out[o][d] = Some(minutes);
+        },
+    )?;
+    Ok(out)
+}
+
+/// Asks the table service block by block and hands each found pair
+/// (origin, destination, minutes, km) to `found`.
+fn for_blocks(
+    settings: &RoutingSettings,
+    origins: &[Coord<f64>],
+    destinations: &[Coord<f64>],
+    progress: &mut dyn FnMut(usize, usize) -> bool,
+    found: &mut dyn FnMut(usize, usize, f64, f64),
+) -> Result<(), ImportError> {
     if origins.is_empty() || destinations.is_empty() {
-        return Ok(best);
+        return Ok(());
     }
     let batch = settings.batch.max(2);
     // Destinations take at most half of each request.
@@ -120,29 +140,54 @@ pub fn nearest_by_road(
             let durations = r.durations.unwrap_or_default();
             let distances = r.distances.unwrap_or_default();
             for (i, row) in durations.iter().enumerate() {
-                let o = oc * per_origin + i;
                 for (j, d) in row.iter().enumerate() {
                     let Some(seconds) = d else { continue };
-                    let minutes = seconds / 60.0;
-                    if best[o].is_none_or(|b| minutes < b.minutes) {
-                        let metres = distances
-                            .get(i)
-                            .and_then(|r| r.get(j))
-                            .copied()
-                            .flatten()
-                            .unwrap_or(f64::NAN);
-                        best[o] = Some(Nearest {
-                            destination: dc * per_dest + j,
-                            minutes,
-                            km: metres / 1000.0,
-                        });
-                    }
+                    let metres = distances
+                        .get(i)
+                        .and_then(|r| r.get(j))
+                        .copied()
+                        .flatten()
+                        .unwrap_or(f64::NAN);
+                    found(
+                        oc * per_origin + i,
+                        dc * per_dest + j,
+                        seconds / 60.0,
+                        metres / 1000.0,
+                    );
                 }
             }
             done += 1;
         }
     }
     progress(total, total);
+    Ok(())
+}
+
+/// For each origin (longitude/latitude) the destination reached fastest,
+/// with minutes and km; `None` where none can be reached. `progress` gets
+/// (done, total) requests and stops the work by returning false.
+pub fn nearest_by_road(
+    settings: &RoutingSettings,
+    origins: &[Coord<f64>],
+    destinations: &[Coord<f64>],
+    progress: &mut dyn FnMut(usize, usize) -> bool,
+) -> Result<Vec<Option<Nearest>>, ImportError> {
+    let mut best: Vec<Option<Nearest>> = vec![None; origins.len()];
+    for_blocks(
+        settings,
+        origins,
+        destinations,
+        progress,
+        &mut |o, d, minutes, km| {
+            if best[o].is_none_or(|b| minutes < b.minutes) {
+                best[o] = Some(Nearest {
+                    destination: d,
+                    minutes,
+                    km,
+                });
+            }
+        },
+    )?;
     Ok(best)
 }
 

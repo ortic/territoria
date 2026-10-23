@@ -281,7 +281,7 @@ territoria/
 - [x] Several measures at once with weights and tolerance bands (no hand-built score needed) (optimizer; the panel sets one)
 - [x] Compactness and contiguity: contiguity as a hard constraint (default) or soft; compactness weight
 - [x] Respect locks, weights/capacities, unassignable units
-- [ ] Distance model: straight line (default), drive time/distance from a matrix (M7), barriers (units not adjacent across) (barriers: lines drawn with the measure tool; areas joined across them are no longer neighbours for balancing, contiguity and gap filling; kept in the project; drive times as columns and zones, not yet in balancing)
+- [x] Distance model: straight line (default), drive time/distance from a matrix (M7), barriers (units not adjacent across) (barriers: lines drawn with the measure tool; areas joined across them are no longer neighbours for balancing, contiguity and gap filling; kept in the project; drive times as columns and zones, and in balancing: "Distances to the sites by road" asks the routing service for minutes from every site to every area first)
 - [x] Runs in the background with progress, live preview, cancel, deterministic seed (no live preview)
 - [x] Result as a proposal: KPI before/after, moved units listed, accept or discard (counts, not a list)
 - [x] Diagnostics instead of silent failure (a unit alone exceeds the target, too few units, negative values) (also areas without data and islands; each with a button that selects the areas)

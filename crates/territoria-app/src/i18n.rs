@@ -303,6 +303,14 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
         // Panels: properties, territories, contents, tables.
         ("of", "von"),
         (
+            "Distances to the sites by road",
+            "Distanzen zu den Standorten über die Strasse",
+        ),
+        (
+            "Travel times from the routing service (Settings) instead of straight lines: areas go to the site they reach fastest. Asks the service first.",
+            "Fahrzeiten vom Routing-Dienst (Einstellungen) statt Luftlinien: Gebiete gehen zum Standort, den sie am schnellsten erreichen. Fragt zuerst den Dienst.",
+        ),
+        (
             "⛔ Make this line a barrier",
             "⛔ Diese Linie zur Barriere machen",
         ),

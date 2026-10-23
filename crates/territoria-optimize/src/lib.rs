@@ -51,6 +51,10 @@ pub struct Problem {
     /// Per territory its site's position (same system as `positions`):
     /// distance to it counts towards compactness.
     pub sites: Vec<Option<[f64; 2]>>,
+    /// Per territory, per unit the cost of reaching it from the site (e.g.
+    /// minutes by road, on the scale of km); used instead of the straight
+    /// distance where finite.
+    pub site_costs: Option<Vec<Vec<f64>>>,
 }
 
 impl Problem {
@@ -276,6 +280,16 @@ impl<'a> State<'a> {
     fn site_distance(&self, u: usize, t: u32) -> f64 {
         if t == NONE {
             return 0.0;
+        }
+        if let Some(c) = self
+            .p
+            .site_costs
+            .as_ref()
+            .and_then(|c| c.get(t as usize))
+            .and_then(|c| c.get(u))
+            .filter(|c| c.is_finite())
+        {
+            return *c;
         }
         match self.p.sites.get(t as usize).copied().flatten() {
             Some(s) => {
@@ -913,6 +927,7 @@ mod tests {
             initial: vec![None; units],
             anchors: vec![None; k],
             sites: vec![None; k],
+            site_costs: None,
         }
     }
 

@@ -81,10 +81,13 @@ pub struct Proposal {
     pub stopped_early: bool,
 }
 
+#[derive(Clone)]
 pub struct BalanceSettings {
     pub start_over: bool,
     pub compactness: f64,
     pub stability: f64,
+    /// Distances to the sites by road (from the routing service).
+    pub by_road: Option<territoria_io::routing::RoutingSettings>,
 }
 
 impl Default for BalanceSettings {
@@ -93,6 +96,7 @@ impl Default for BalanceSettings {
             start_over: false,
             compactness: 0.4,
             stability: 0.3,
+            by_road: None,
         }
     }
 }
@@ -200,6 +204,7 @@ pub fn group_regions(
         initial: vec![None; n],
         anchors: vec![None; k],
         sites: vec![None; k],
+        site_costs: None,
     };
     let options = Options {
         mode: Mode::Reorganize,
@@ -295,6 +300,7 @@ pub fn split_territory(
         initial: vec![None; units.len()],
         anchors: vec![None; k],
         sites: vec![None; k],
+        site_costs: None,
     };
     let options = Options {
         mode: Mode::Reorganize,
@@ -319,7 +325,17 @@ pub struct BalanceInput {
     problem: Problem,
     options: Options,
     territories: Vec<TerritoryId>,
+    /// Travel by road to ask for first: the service, the units' and the
+    /// sites' places (longitude/latitude).
+    road: Option<RoadInput>,
 }
+
+/// The routing service, the units' places and the sites' places.
+type RoadInput = (
+    territoria_io::routing::RoutingSettings,
+    Vec<geo_types::Coord<f64>>,
+    Vec<Option<geo_types::Coord<f64>>>,
+);
 
 pub fn balance_input(
     project: &Project,
@@ -387,6 +403,7 @@ pub fn balance_input(
             .collect(),
         anchors: site_units,
         sites,
+        site_costs: None,
     };
     let options = Options {
         mode: if settings.start_over {
@@ -398,19 +415,61 @@ pub fn balance_input(
         stability: settings.stability,
         ..Default::default()
     };
+    let road = settings.by_road.clone().and_then(|routing| {
+        let sites: Vec<Option<geo_types::Coord<f64>>> = plan
+            .territories
+            .iter()
+            .map(|t| t.site.map(|[x, y]| geo_types::Coord { x, y }))
+            .collect();
+        (g.geographic && sites.iter().any(Option::is_some)).then(|| {
+            let units = g
+                .label_points
+                .iter()
+                .map(|p| p.unwrap_or(geo_types::Coord { x: 0.0, y: 0.0 }))
+                .collect();
+            (routing, units, sites)
+        })
+    });
     Some(BalanceInput {
         problem,
         options,
         territories: plan.territories.iter().map(|t| t.id).collect(),
+        road,
     })
 }
 
 /// Runs the optimizer; `keep_going(share_done)` reports progress and
 /// returns `false` to stop early.
 pub fn run_balance(
-    input: BalanceInput,
+    mut input: BalanceInput,
     keep_going: &mut dyn FnMut(f32) -> bool,
 ) -> Result<Proposal, String> {
+    // By road: minutes from each site to every unit (a minute counts as a
+    // km would), asked before optimizing.
+    if let Some((routing, units, sites)) = input.road.take() {
+        let places: Vec<geo_types::Coord<f64>> = sites.iter().flatten().copied().collect();
+        let minutes =
+            territoria_io::routing::matrix(&routing, &units, &places, &mut |done, total| {
+                keep_going(0.3 * done as f32 / total.max(1) as f32)
+            })
+            .map_err(|e| e.to_string())?;
+        let mut k = 0;
+        let costs = sites
+            .iter()
+            .map(|s| {
+                if s.is_none() {
+                    return vec![f64::NAN; units.len()];
+                }
+                let column: Vec<f64> = minutes
+                    .iter()
+                    .map(|row| row[k].unwrap_or(f64::NAN))
+                    .collect();
+                k += 1;
+                column
+            })
+            .collect();
+        input.problem.site_costs = Some(costs);
+    }
     let solution = territoria_optimize::optimize(&input.problem, &input.options, keep_going);
     let moves = solution
         .assignment
@@ -1198,6 +1257,17 @@ impl TerritoriesPanel {
                                 .show_value(false),
                         );
                     });
+                }
+                // With sites: how far areas are from them, by road.
+                if plan.territories.iter().any(|t| t.site.is_some()) {
+                    let mut road = self.settings.by_road.is_some();
+                    if ui
+                        .checkbox(&mut road, tr("Distances to the sites by road"))
+                        .on_hover_text(tr("Travel times from the routing service (Settings) instead of straight lines: areas go to the site they reach fastest. Asks the service first."))
+                        .changed()
+                    {
+                        self.settings.by_road = road.then(Default::default);
+                    }
                 }
                 ui.horizontal(|ui| {
                     if cx.busy {

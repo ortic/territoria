@@ -4341,3 +4341,50 @@ fn barriers_between_areas() {
     assert_eq!(l.barriers.len(), 1);
     assert_eq!(crossing(&l.geometry), 0, "still cut after opening");
 }
+
+/// Balancing with distances to the sites by road asks the routing service
+/// first, and reports when it can't.
+#[test]
+fn balance_by_road() {
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    let plan = app.add_balanced_plan_now(layer, 3);
+    let g = app.project.layer(layer).unwrap().geometry.clone();
+    app.project
+        .plan_mut(plan)
+        .unwrap()
+        .sites_at_centres(&g, true, None);
+    let routing = territoria_io::routing::RoutingSettings {
+        url: territoria_io::routing::mock_server(),
+        interval_ms: 0,
+        ..Default::default()
+    };
+    let settings = crate::territories::BalanceSettings {
+        start_over: true,
+        by_road: Some(routing),
+        ..Default::default()
+    };
+    let mut values = territoria_model::Cache::default();
+    let input =
+        crate::territories::balance_input(&app.project, &mut values, plan, &settings).unwrap();
+    let proposal = crate::territories::run_balance(input, &mut |_| true).expect("balanced by road");
+    assert_eq!(proposal.after.split, 0);
+    assert!(proposal.after.out_of_tolerance.iter().all(|&n| n == 0));
+    // No service: an error, not a silent straight-line result.
+    let settings = crate::territories::BalanceSettings {
+        start_over: true,
+        by_road: Some(territoria_io::routing::RoutingSettings {
+            url: "http://127.0.0.1:9".into(),
+            interval_ms: 0,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let input =
+        crate::territories::balance_input(&app.project, &mut values, plan, &settings).unwrap();
+    assert!(crate::territories::run_balance(input, &mut |_| true).is_err());
+}

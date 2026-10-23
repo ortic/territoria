@@ -4406,12 +4406,14 @@ impl TerritoriaApp {
     }
 
     fn start_balance(&mut self, plan: PlanId) {
-        let Some(input) = crate::territories::balance_input(
-            &self.project,
-            &mut self.values,
-            plan,
-            &self.territories_panel.settings,
-        ) else {
+        let mut settings = self.territories_panel.settings.clone();
+        // By road: with the routing service as set up.
+        if settings.by_road.is_some() {
+            settings.by_road = Some(self.settings.routing.clone());
+        }
+        let Some(input) =
+            crate::territories::balance_input(&self.project, &mut self.values, plan, &settings)
+        else {
             self.toast("The plan needs territories and areas to balance.");
             return;
         };
