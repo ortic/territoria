@@ -277,7 +277,7 @@ territoria/
 - [x] Balance: improve an existing plan with as few moves as possible
 - [x] Reorganize: new territories from scratch for a given count
 - [x] Districts for sites: territories around given sites (max distance, capacity) (sites stay in their territory and distance to them counts; no max distance or capacity)
-- [ ] Top-down: split each parent into n children (count given or from a target value)
+- [x] Top-down: split each parent into n children (count given or from a target value) (a territory split into 2–5 contiguous, balanced territories; merge two territories; no target-driven count yet)
 - [x] Several measures at once with weights and tolerance bands (no hand-built score needed) (optimizer; the panel sets one)
 - [x] Compactness and contiguity: contiguity as a hard constraint (default) or soft; compactness weight
 - [x] Respect locks, weights/capacities, unassignable units

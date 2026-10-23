@@ -218,6 +218,101 @@ pub fn group_regions(
     )
 }
 
+/// Splits a territory's units into `k` contiguous parts of about equal
+/// measure: per unit (of the whole layer) the part it goes to.
+pub fn split_territory(
+    project: &Project,
+    values: &mut Cache,
+    plan: PlanId,
+    territory: TerritoryId,
+    k: usize,
+) -> Option<Vec<(u32, usize)>> {
+    let p = project.plan(plan)?;
+    let g = &project.layer(p.layer)?.geometry;
+    let units: Vec<u32> = (0..p.assignment.len() as u32)
+        .filter(|&u| p.assignment[u as usize] == Some(territory))
+        .collect();
+    if units.len() < k || k < 2 {
+        return None;
+    }
+    let local: HashMap<u32, u32> = units
+        .iter()
+        .enumerate()
+        .map(|(i, u)| (*u, i as u32))
+        .collect();
+    let neighbors = units
+        .iter()
+        .map(|&u| {
+            g.neighbors
+                .get(u as usize)
+                .map(Vec::as_slice)
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|(n, len)| local.get(n).map(|l| (*l, *len)))
+                .collect()
+        })
+        .collect();
+    let (lon0, lat0) = g.bbox.map_or((0.0, 0.0), |b| (b.center().x, b.center().y));
+    let (kx, ky) = if g.geographic {
+        (111.32 * lat0.to_radians().cos(), 110.57)
+    } else {
+        (0.001, 0.001)
+    };
+    let positions = units
+        .iter()
+        .map(|&u| {
+            g.label_points
+                .get(u as usize)
+                .copied()
+                .flatten()
+                .map_or([0.0, 0.0], |c| [(c.x - lon0) * kx, (c.y - lat0) * ky])
+        })
+        .collect();
+    let source = p
+        .measures
+        .first()
+        .map_or(ValueSource::Units, |m| m.source.clone());
+    let all = values.values(project, p.layer, &source);
+    let problem = Problem {
+        neighbors,
+        positions,
+        areas: units
+            .iter()
+            .map(|&u| g.areas.get(u as usize).copied().unwrap_or(0.0))
+            .collect(),
+        measures: vec![territoria_optimize::Measure {
+            values: units
+                .iter()
+                .map(|&u| all.get(u as usize).copied().flatten().unwrap_or(0.0))
+                .collect(),
+            importance: 1.0,
+            tolerance: 0.1,
+        }],
+        capacity: vec![1.0; k],
+        locked: vec![false; k],
+        pinned: vec![false; units.len()],
+        initial: vec![None; units.len()],
+        anchors: vec![None; k],
+        sites: vec![None; k],
+    };
+    let options = Options {
+        mode: Mode::Reorganize,
+        compactness: 0.5,
+        contiguous: true,
+        assign_unassigned: true,
+        max_seconds: 3.0,
+        ..Default::default()
+    };
+    let solution = territoria_optimize::optimize(&problem, &options, &mut |_| true);
+    Some(
+        units
+            .iter()
+            .zip(&solution.assignment)
+            .map(|(u, part)| (*u, part.unwrap_or(0) as usize))
+            .collect(),
+    )
+}
+
 /// What the optimizer needs, gathered on the UI thread.
 pub struct BalanceInput {
     problem: Problem,
@@ -752,6 +847,57 @@ impl TerritoriesPanel {
                             self.editing = Some((id, plan.territory(id).map(|t| t.name.clone()).unwrap_or_default()));
                             ui.close();
                         }
+                        ui.menu_button("Split into", |ui| {
+                            for k in 2..=5 {
+                                if ui
+                                    .button(format!("{k} territories"))
+                                    .on_hover_text("Its areas become contiguous parts of about equal size by the measure")
+                                    .clicked()
+                                {
+                                    if let Some(parts) = split_territory(project, cx.values, plan_id, id, k) {
+                                        let base = plan.territory(id).map(|t| t.name.clone()).unwrap_or_default();
+                                        actions.push(Action::Edit(
+                                            "Split territory".into(),
+                                            Box::new(move |p| {
+                                                if let Some(pl) = p.plan_mut(plan_id) {
+                                                    let new: Vec<TerritoryId> = (2..=k)
+                                                        .map(|i| pl.add_territory(None, Some(format!("{base} {i}"))))
+                                                        .collect();
+                                                    for (u, part) in &parts {
+                                                        if *part > 0 {
+                                                            pl.assign(&[*u], Some(new[part - 1]));
+                                                        }
+                                                    }
+                                                }
+                                                touch(p, plan_id);
+                                            }),
+                                        ));
+                                    }
+                                    ui.close();
+                                }
+                            }
+                        });
+                        ui.menu_button("Merge into", |ui| {
+                            for other in plan.territories.iter().filter(|o| o.id != id) {
+                                if ui.button(&other.name).clicked() {
+                                    let into = other.id;
+                                    actions.push(Action::Edit(
+                                        "Merge territories".into(),
+                                        Box::new(move |p| {
+                                            if let Some(pl) = p.plan_mut(plan_id) {
+                                                let units: Vec<u32> = (0..pl.assignment.len() as u32)
+                                                    .filter(|&u| pl.assignment[u as usize] == Some(id))
+                                                    .collect();
+                                                pl.assign(&units, Some(into));
+                                                pl.remove_territory(id);
+                                            }
+                                            touch(p, plan_id);
+                                        }),
+                                    ));
+                                    ui.close();
+                                }
+                            }
+                        });
                         ui.separator();
                         if ui.button("Delete").clicked() {
                             actions.push(Action::Edit(

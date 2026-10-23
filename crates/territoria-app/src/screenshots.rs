@@ -2173,3 +2173,34 @@ fn filtered_analysis() {
     settle(&mut h);
     save(&mut h, "filtered");
 }
+
+/// A territory split into contiguous, balanced parts.
+#[test]
+fn split_territory() {
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    let plan = app.add_balanced_plan_now(layer, 2);
+    let t = app.project.plan(plan).unwrap().territories[0].id;
+    let mut values = territoria_model::Cache::default();
+    let parts =
+        crate::territories::split_territory(&app.project, &mut values, plan, t, 3).expect("parts");
+    let g = &app.project.layer(layer).unwrap().geometry;
+    let total = parts.len() as f64;
+    for k in 0..3 {
+        let units: Vec<u32> = parts
+            .iter()
+            .filter(|(_, p)| *p == k)
+            .map(|(u, _)| *u)
+            .collect();
+        assert_eq!(g.components(&units), 1, "part {k} in one piece");
+        let share = units.len() as f64 / total;
+        assert!(
+            (share - 1.0 / 3.0).abs() < 0.25 / 3.0 + 0.02,
+            "part {k}: {share}"
+        );
+    }
+}
