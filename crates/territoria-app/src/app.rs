@@ -4815,10 +4815,10 @@ impl TerritoriaApp {
                     }
                     for (d, name) in data {
                         ui.menu_button(name, |ui| {
-                            if ui.button("Excel…").clicked() {
+                            if ui.button(tr("Excel…")).clicked() {
                                 exports.push(Export::Data(d, true, None));
                             }
-                            if ui.button("CSV…").clicked() {
+                            if ui.button(tr("CSV…")).clicked() {
                                 exports.push(Export::Data(d, false, None));
                             }
                             if let DataRef::Layer(l) = d

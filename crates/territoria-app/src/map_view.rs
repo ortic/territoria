@@ -952,7 +952,7 @@ fn selection_bar(
                     if ui
                         .toggle_value(&mut focus, tr("Focus"))
                         .on_hover_text(
-                            "Fade everything else, e.g. to present one territory or region",
+                            tr("Fade everything else, e.g. to present one territory or region"),
                         )
                         .clicked()
                     {
@@ -960,7 +960,7 @@ fn selection_bar(
                     }
                     if ui
                         .button("✖")
-                        .on_hover_text("Clear the selection (Esc)")
+                        .on_hover_text(tr("Clear the selection (Esc)"))
                         .clicked()
                     {
                         events.push(MapEvent::ClearSelection);

@@ -506,10 +506,10 @@ impl TerritoriesPanel {
         let project = cx.project;
         if project.plans.is_empty() {
             ui.add_space(8.0);
-            ui.label("No territory plan yet.");
-            ui.label(RichText::new("A plan groups areas into territories: sales regions, service areas, delivery districts.").weak());
+            ui.label(tr("No territory plan yet."));
+            ui.label(RichText::new(tr("A plan groups areas into territories: sales regions, service areas, delivery districts.")).weak());
             ui.add_space(6.0);
-            if ui.button("⬣ New territory plan…").clicked() {
+            if ui.button(tr("⬣ New territory plan…")).clicked() {
                 actions.push(Action::Command(crate::commands::Command::NewPlan));
             }
             return actions;
@@ -612,35 +612,35 @@ impl TerritoriesPanel {
                         "No other plan on the same areas. Duplicate this one to try changes.",
                     );
                 });
-                if ui.button("✏ Rename").clicked() {
+                if ui.button(tr("✏ Rename")).clicked() {
                     self.renaming = Some(plan.name.clone());
                 }
                 if ui
-                    .button("▦ Open as table")
+                    .button(tr("▦ Open as table"))
                     .on_hover_text("All territories in a table: edit codes, names, regions, sizes; sort by any figure")
                     .clicked()
                 {
                     actions.push(Action::OpenTab(crate::app::Tab::Plan(plan_id)));
                 }
-                if ui.button("Export (Excel)…").clicked() {
+                if ui.button(tr("Export (Excel)…")).clicked() {
                     actions.push(Action::Export(Export::PlanExcel(plan_id)));
                 }
                 if ui
-                    .button("Excel, a sheet per territory…")
+                    .button(tr("Excel, a sheet per territory…"))
                     .on_hover_text("The territories, and each territory's areas with their figures on a sheet of its own, e.g. to hand to each rep")
                     .clicked()
                 {
                     actions.push(Action::Export(Export::PlanSheets(plan_id)));
                 }
                 if ui
-                    .button("Report (PDF)…")
-                    .on_hover_text("An overview and a page per territory")
+                    .button(tr("Report (PDF)…"))
+                    .on_hover_text(tr("An overview and a page per territory"))
                     .clicked()
                 {
                     actions.push(Action::Export(Export::Report(plan_id)));
                 }
                 ui.separator();
-                if ui.button("🗑 Delete plan…").clicked() {
+                if ui.button(tr("🗑 Delete plan…")).clicked() {
                     actions.push(Action::RemovePlan(plan_id));
                 }
             });
@@ -832,16 +832,16 @@ impl TerritoriesPanel {
                     let locked = t.locked;
                     let has_site = t.site.is_some();
                     resp.context_menu(|ui| {
-                        if ui.button("Zoom to territory").clicked() {
+                        if ui.button(tr("Zoom to territory")).clicked() {
                             actions.push(Action::ZoomTo(plan.layer, members[i].clone()));
                             ui.close();
                         }
-                        if ui.button("Paint with it").clicked() {
+                        if ui.button(tr("Paint with it")).clicked() {
                             actions.push(Action::ActivateTerritory(Some(id)));
                             actions.push(Action::SetTool(Tool::Paint));
                             ui.close();
                         }
-                        if ui.button(if locked { "Unlock" } else { "Lock (keep its areas)" }).clicked() {
+                        if ui.button(if locked { tr("Unlock") } else { "Lock (keep its areas)" }).clicked() {
                             actions.push(Action::Edit(
                                 if locked { "Unlock territory".into() } else { "Lock territory".into() },
                                 Box::new(move |p| {
@@ -853,12 +853,12 @@ impl TerritoriesPanel {
                             ));
                             ui.close();
                         }
-                        if ui.button("Place site on the map").clicked() {
+                        if ui.button(tr("Place site on the map")).clicked() {
                             actions.push(Action::ActivateTerritory(Some(id)));
                             actions.push(Action::SetTool(Tool::Site));
                             ui.close();
                         }
-                        if has_site && ui.button("Remove site").clicked() {
+                        if has_site && ui.button(tr("Remove site")).clicked() {
                             actions.push(Action::Edit(
                                 "Remove site".into(),
                                 Box::new(move |p| {
@@ -874,7 +874,7 @@ impl TerritoriesPanel {
                             self.editing = Some((id, plan.territory(id).map(|t| t.name.clone()).unwrap_or_default()));
                             ui.close();
                         }
-                        ui.menu_button("Split into", |ui| {
+                        ui.menu_button(tr("Split into"), |ui| {
                             for k in 2..=5 {
                                 if ui
                                     .button(format!("{k} territories"))
@@ -904,7 +904,7 @@ impl TerritoriesPanel {
                                 }
                             }
                         });
-                        ui.menu_button("Merge into", |ui| {
+                        ui.menu_button(tr("Merge into"), |ui| {
                             for other in plan.territories.iter().filter(|o| o.id != id) {
                                 if ui.button(&other.name).clicked() {
                                     let into = other.id;
@@ -926,7 +926,7 @@ impl TerritoriesPanel {
                             }
                         });
                         ui.separator();
-                        if ui.button("Delete").clicked() {
+                        if ui.button(tr("Delete")).clicked() {
                             actions.push(Action::Edit(
                                 "Delete territory".into(),
                                 Box::new(move |p| {
@@ -943,11 +943,11 @@ impl TerritoriesPanel {
             });
 
         ui.horizontal_wrapped(|ui| {
-            if ui.button(tr("➕ Territory")).on_hover_text("Add a territory and paint it (Ctrl+Shift+T)").clicked() {
+            if ui.button(tr("➕ Territory")).on_hover_text(tr("Add a territory and paint it (Ctrl+Shift+T)")).clicked() {
                 actions.push(Action::Command(crate::commands::Command::NewTerritory));
             }
             if let Some(t) = cx.active_territory.filter(|t| plan.territory(*t).is_some())
-                && ui.button("🗑").on_hover_text("Delete the active territory; its areas become unassigned").clicked()
+                && ui.button("🗑").on_hover_text(tr("Delete the active territory; its areas become unassigned")).clicked()
             {
                 actions.push(Action::Edit(
                     "Delete territory".into(),
@@ -960,19 +960,19 @@ impl TerritoriesPanel {
                 ));
                 actions.push(Action::ActivateTerritory(None));
             }
-            if cx.tool != Tool::Paint && ui.button(tr("✏ Paint")).on_hover_text("Assign areas by dragging over them (B)").clicked() {
+            if cx.tool != Tool::Paint && ui.button(tr("✏ Paint")).on_hover_text(tr("Assign areas by dragging over them (B)")).clicked() {
                 actions.push(Action::SetTool(Tool::Paint));
             }
-            if stats.unassigned > 0 && ui.button(tr("Fill gaps")).on_hover_text("Give unassigned areas to the neighbouring territory they share most border with").clicked() {
+            if stats.unassigned > 0 && ui.button(tr("Fill gaps")).on_hover_text(tr("Give unassigned areas to the neighbouring territory they share most border with")).clicked() {
                 actions.push(Action::Command(crate::commands::Command::FillGaps));
             }
-            if ui.button(tr("Recolour")).on_hover_text("Different colours for neighbouring territories").clicked() {
+            if ui.button(tr("Recolour")).on_hover_text(tr("Different colours for neighbouring territories")).clicked() {
                 actions.push(Action::Command(crate::commands::Command::Recolor));
             }
             palette_menu(ui, plan, &mut actions);
             ui.menu_button(tr("Names"), |ui| {
                 if ui
-                    .button("Name after the largest place")
+                    .button(tr("Name after the largest place"))
                     .on_hover_text("Each territory takes the name of its largest area by the measure (or by size). Locked territories keep theirs.")
                     .clicked()
                 {
@@ -991,7 +991,7 @@ impl TerritoriesPanel {
                     ui.close();
                 }
                 if ui
-                    .button("Renumber north to south")
+                    .button(tr("Renumber north to south"))
                     .on_hover_text("Codes 01, 02, … in reading order on the map; default names follow")
                     .clicked()
                 {
@@ -1028,7 +1028,7 @@ impl TerritoriesPanel {
             };
             ui.menu_button(tr("📍 Sites"), |ui| {
                 if ui
-                    .add_enabled(missing > 0, egui::Button::new("Sites at centres"))
+                    .add_enabled(missing > 0, egui::Button::new(tr("Sites at centres")))
                     .on_hover_text(format!("A site (rep home, branch) for each territory without one, in the area nearest the centre of its {what}. Start over then builds territories around the sites."))
                     .clicked()
                 {
@@ -1036,7 +1036,7 @@ impl TerritoriesPanel {
                     ui.close();
                 }
                 if ui
-                    .add_enabled(any_site, egui::Button::new("Move all sites to the centres"))
+                    .add_enabled(any_site, egui::Button::new(tr("Move all sites to the centres")))
                     .on_hover_text(format!("Every site goes to the area nearest the centre of its territory's {what}"))
                     .clicked()
                 {
@@ -1045,7 +1045,7 @@ impl TerritoriesPanel {
                 }
                 let has_points = project.layers.iter().any(|l| l.kind() == territoria_io::GeometryKind::Point && l.id != plan.layer);
                 if ui
-                    .add_enabled(has_points, egui::Button::new("Sites from points…"))
+                    .add_enabled(has_points, egui::Button::new(tr("Sites from points…")))
                     .on_hover_text("Rep homes or branches from a point layer, matched to the territories; or the best of many possible locations")
                     .on_disabled_hover_text("Add points first (a table with coordinates or addresses)")
                     .clicked()
@@ -1053,7 +1053,7 @@ impl TerritoriesPanel {
                     actions.push(Action::SitesFromPoints(plan_id));
                     ui.close();
                 }
-                if ui.add_enabled(any_site, egui::Button::new("Remove all sites")).clicked() {
+                if ui.add_enabled(any_site, egui::Button::new(tr("Remove all sites"))).clicked() {
                     actions.push(Action::Edit(
                         "Remove sites".into(),
                         Box::new(move |p| {
@@ -1143,8 +1143,8 @@ impl TerritoriesPanel {
                         ui.label(RichText::new(icon).color(color));
                         if !d.units.is_empty()
                             && ui
-                                .small_button("Show")
-                                .on_hover_text("Select these areas on the map")
+                                .small_button(tr("Show"))
+                                .on_hover_text(tr("Select these areas on the map"))
                                 .clicked()
                         {
                             actions.push(Action::SelectUnits(plan.layer, d.units.clone()));
@@ -1169,9 +1169,9 @@ impl TerritoriesPanel {
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.radio_value(&mut self.settings.start_over, false, tr("Improve current"))
-                        .on_hover_text("Move as few areas as needed");
+                        .on_hover_text(tr("Move as few areas as needed"));
                     ui.radio_value(&mut self.settings.start_over, true, tr("Start over"))
-                        .on_hover_text("New territories from scratch (locked ones stay)");
+                        .on_hover_text(tr("New territories from scratch (locked ones stay)"));
                 });
                 ui.horizontal(|ui| {
                     ui.label(tr("Compact shapes"));
@@ -1192,7 +1192,7 @@ impl TerritoriesPanel {
                 ui.horizontal(|ui| {
                     if cx.busy {
                         ui.spinner();
-                        ui.label("Balancing…");
+                        ui.label(tr("Balancing…"));
                     } else if ui.button(RichText::new(tr("⚖ Balance")).strong()).clicked() {
                         actions.push(Action::Balance(plan_id));
                     }
@@ -1202,7 +1202,7 @@ impl TerritoriesPanel {
                 {
                     egui::Frame::group(ui.style()).show(ui, |ui| {
                         ui.set_width(ui.available_width());
-                        ui.label(RichText::new("Proposal").strong());
+                        ui.label(RichText::new(tr("Proposal")).strong());
                         let b = proposal
                             .before
                             .max_deviation
@@ -1239,9 +1239,9 @@ impl TerritoriesPanel {
                         ));
                         if proposal.stopped_early {
                             ui.label(
-                                RichText::new(
+                                RichText::new(tr(
                                     "Stopped early: the result may improve with another run.",
-                                )
+                                ))
                                 .weak(),
                             );
                         }
@@ -1283,7 +1283,7 @@ impl TerritoriesPanel {
             .default_open(!plan.regions.is_empty())
             .show(ui, |ui| {
                 if plan.regions.is_empty() {
-                    ui.label(RichText::new("Group territories into regions: sales regions above the territories, with their own borders and figures.").weak());
+                    ui.label(RichText::new(tr("Group territories into regions: sales regions above the territories, with their own borders and figures.")).weak());
                 }
                 let region_stats = plan.region_stats(stats);
                 // A territory dropped on a region (or on "No region") moves there.
@@ -1321,7 +1321,7 @@ impl TerritoriesPanel {
                             ui.label(RichText::new(format_value(*v)).monospace());
                             deviation_bar(ui, *d, tolerance);
                         }
-                        if ui.small_button("✖").on_hover_text("Remove the region (its territories stay)").clicked() {
+                        if ui.small_button("✖").on_hover_text(tr("Remove the region (its territories stay)")).clicked() {
                             actions.push(Action::Edit(
                                 "Remove region".into(),
                                 Box::new(move |p| {
@@ -1364,10 +1364,10 @@ impl TerritoriesPanel {
                             }),
                         ));
                     }
-                    ui.label("Group into");
+                    ui.label(tr("Group into"));
                     ui.add(egui::DragValue::new(&mut self.region_count).range(1..=n.max(1)));
                     if ui
-                        .add_enabled(n > 1, egui::Button::new("regions"))
+                        .add_enabled(n > 1, egui::Button::new(tr("regions")))
                         .on_hover_text("Neighbouring territories become regions of about equal size by the measure; existing regions are replaced")
                         .clicked()
                         && let Some(groups) = group_regions(project, stats, plan_id, self.region_count)
@@ -1426,7 +1426,7 @@ impl TerritoriesPanel {
                             actions.push(edit("Rename territory", Box::new(move |t| t.name = name)));
                         }
                         ui.end_row();
-                        ui.label("Code").on_hover_text("What people call it: T01, a rep number, a region code");
+                        ui.label(tr("Code")).on_hover_text("What people call it: T01, a rep number, a region code");
                         let mut code = t.code.clone();
                         if ui.add(egui::TextEdit::singleline(&mut code).desired_width(120.0)).changed() {
                             actions.push(edit("Change code", Box::new(move |t| t.code = code)));
@@ -1442,7 +1442,7 @@ impl TerritoriesPanel {
                         }
                         ui.end_row();
                         if !plan.regions.is_empty() {
-                            ui.label("Region");
+                            ui.label(tr("Region"));
                             let current = t.region.and_then(|r| plan.region(r)).map_or("None".to_owned(), |r| r.name.clone());
                             let mut region = t.region;
                             ComboBox::from_id_salt("territory-region").selected_text(current).show_ui(ui, |ui| {
@@ -1456,10 +1456,10 @@ impl TerritoriesPanel {
                             }
                             ui.end_row();
                         }
-                        ui.label("Locked");
+                        ui.label(tr("Locked"));
                         let mut locked = t.locked;
                         if ui
-                            .checkbox(&mut locked, "keeps its areas")
+                            .checkbox(&mut locked, tr("keeps its areas"))
                             .on_hover_text("Painting and balancing leave it as it is")
                             .changed()
                         {
@@ -1469,7 +1469,7 @@ impl TerritoriesPanel {
                             ));
                         }
                         ui.end_row();
-                        ui.label("Site");
+                        ui.label(tr("Site"));
                         ui.horizontal(|ui| {
                             match t.site {
                                 Some([lon, lat]) => {
@@ -1479,15 +1479,15 @@ impl TerritoriesPanel {
                                     }
                                 }
                                 None => {
-                                    ui.label(RichText::new("none").weak());
+                                    ui.label(RichText::new(tr("none")).weak());
                                 }
                             }
-                            if ui.small_button("📍 Place on the map").clicked() {
+                            if ui.small_button(tr("📍 Place on the map")).clicked() {
                                 actions.push(Action::SetTool(Tool::Site));
                             }
                         });
                         ui.end_row();
-                        ui.label("Notes");
+                        ui.label(tr("Notes"));
                         let mut notes = t.notes.clone();
                         if ui
                             .add(egui::TextEdit::multiline(&mut notes).desired_rows(2).desired_width(f32::INFINITY))
@@ -1519,12 +1519,12 @@ impl TerritoriesPanel {
         egui::Frame::group(ui.style()).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Compared with").strong());
+                ui.label(RichText::new(tr("Compared with")).strong());
                 ui.label(&base_plan.name);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
                         .small_button("✖")
-                        .on_hover_text("End the comparison")
+                        .on_hover_text(tr("End the comparison"))
                         .clicked()
                     {
                         close = true;
@@ -1540,8 +1540,10 @@ impl TerritoriesPanel {
             let r = &c.result;
             if r.moves.is_empty() {
                 ui.label(
-                    RichText::new("No changes yet. Paint or balance this plan to try changes.")
-                        .weak(),
+                    RichText::new(tr(
+                        "No changes yet. Paint or balance this plan to try changes.",
+                    ))
+                    .weak(),
                 );
                 return;
             }
@@ -1558,7 +1560,7 @@ impl TerritoriesPanel {
                     }
                 }
             });
-            ui.checkbox(&mut mark, "Mark them on the map");
+            ui.checkbox(&mut mark, tr("Mark them on the map"));
             let changed: Vec<_> = r
                 .territories
                 .iter()
@@ -1629,7 +1631,7 @@ impl TerritoriesPanel {
                         }),
                     ));
                 }
-                if ui.button("Export changes (Excel)…").clicked() {
+                if ui.button(tr("Export changes (Excel)…")).clicked() {
                     actions.push(Action::Export(Export::Changes(base, plan)));
                 }
             });
@@ -1724,7 +1726,7 @@ fn territory_chips(
                 });
             })
             .response
-            .on_hover_text("Drag onto another region");
+            .on_hover_text(tr("Drag onto another region"));
         }
     });
 }

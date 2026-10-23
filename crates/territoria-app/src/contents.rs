@@ -59,7 +59,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                         let mut visible = ml.visible;
                         if ui
                             .checkbox(&mut visible, "")
-                            .on_hover_text("Show or hide")
+                            .on_hover_text(tr("Show or hide"))
                             .changed()
                         {
                             actions.push(Action::Edit(
@@ -129,7 +129,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                                 ui.close();
                             }
                             ui.separator();
-                            if ui.button("Remove from map").clicked() {
+                            if ui.button(tr("Remove from map")).clicked() {
                                 actions.push(Action::Edit(
                                     "Remove from map".into(),
                                     Box::new(move |p| {
@@ -293,7 +293,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                                         }
                                         let max = totals.iter().copied().fold(0.0f64, f64::max);
                                         if max > 0.0 {
-                                            ui.label(RichText::new("Total").small().weak());
+                                            ui.label(RichText::new(tr("Total")).small().weak());
                                             let symbol = territoria_model::SymbolStyle {
                                                 color: territoria_analysis::Rgba::rgb(0x8a, 0x8d, 0x96),
                                                 max_radius: chart.max_size,
@@ -307,7 +307,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                             MapLayerKind::Heatmap { ramp, .. } => {
                                 ui.indent(("legend", ml.id.0), |ui| {
                                     ui.horizontal(|ui| {
-                                        ui.label(RichText::new("fewer").small());
+                                        ui.label(RichText::new(tr("fewer")).small());
                                         let (rect, _) = ui.allocate_exact_size(vec2(90.0, 10.0), Sense::hover());
                                         let stops = ramp.colors(9);
                                         let step = rect.width() / stops.len() as f32;
@@ -315,7 +315,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                                             let r = egui::Rect::from_min_size(rect.min + vec2(i as f32 * step, 0.0), vec2(step + 0.5, rect.height()));
                                             ui.painter().rect_filled(r, 0.0, color(*c));
                                         }
-                                        ui.label(RichText::new("more").small());
+                                        ui.label(RichText::new(tr("more")).small());
                                     });
                                 });
                             }
@@ -373,7 +373,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                         }
                     }
                     ui.separator();
-                    if ui.button("🎨 Colour areas by value…").clicked() {
+                    if ui.button(tr("🎨 Colour areas by value…")).clicked() {
                         actions.push(Action::Command(Command::ColorByValue));
                         ui.close();
                     }
@@ -410,7 +410,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                         actions.push(Action::OpenTab(Tab::Table(DataRef::Layer(id))));
                         ui.close();
                     }
-                    if ui.button("Show on map").clicked() {
+                    if ui.button(tr("Show on map")).clicked() {
                         actions.push(Action::AddToMap(id));
                         ui.close();
                     }
@@ -418,13 +418,13 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                         actions.push(Action::ColorBy(Some(id)));
                         ui.close();
                     }
-                    if ui.button("Merge areas into a new layer…").clicked() {
+                    if ui.button(tr("Merge areas into a new layer…")).clicked() {
                         actions.push(Action::Select(Selection::Data(DataRef::Layer(id))));
                         actions.push(Action::Command(Command::MergeAreas));
                         ui.close();
                     }
                     if ui
-                        .button("Replace with a newer version…")
+                        .button(tr("Replace with a newer version…"))
                         .on_hover_text("New boundaries from a file; data, colourings and territories carry over by key or by position")
                         .clicked()
                     {
@@ -459,13 +459,13 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                         actions.push(Action::OpenTab(Tab::Table(DataRef::Table(id))));
                         ui.close();
                     }
-                    if ui.button("Link to map…").clicked() {
+                    if ui.button(tr("Link to map…")).clicked() {
                         actions.push(Action::LinkTable(id));
                         ui.close();
                     }
                     if t.source.path.is_some()
                         && ui
-                            .button("↻ Reload from file")
+                            .button(tr("↻ Reload from file"))
                             .on_hover_text("Read the file again (e.g. this month's figures); links and colourings stay")
                             .clicked()
                     {
@@ -595,7 +595,7 @@ fn background_ui(ui: &mut Ui, map: &territoria_model::Map, actions: &mut Vec<Act
                     }
                 }
                 if ui
-                    .selectable_label(current == "Custom", "Custom tile server…")
+                    .selectable_label(current == tr("Custom"), "Custom tile server…")
                     .on_hover_text(
                         "Any XYZ tile server in Web Mercator: a URL with {z}, {x} and {y}",
                     )
@@ -632,7 +632,7 @@ fn background_ui(ui: &mut Ui, map: &territoria_model::Map, actions: &mut Vec<Act
     }
     if !matches!(map.background, Background::None) && !map.crs.is_web_mercator() {
         ui.label(
-            RichText::new("Background maps need the Web Mercator projection.")
+            RichText::new(tr("Background maps need the Web Mercator projection."))
                 .small()
                 .weak(),
         );
@@ -776,7 +776,7 @@ fn views_ui(ui: &mut Ui, map: &territoria_model::Map, actions: &mut Vec<Action>)
                     ui.horizontal(|ui| {
                         if ui
                             .button(&v.name)
-                            .on_hover_text("Go to this view")
+                            .on_hover_text(tr("Go to this view"))
                             .clicked()
                         {
                             actions.push(Action::GoToView(map_id, v.center, v.scale));
@@ -800,7 +800,7 @@ fn views_ui(ui: &mut Ui, map: &territoria_model::Map, actions: &mut Vec<Action>)
                         }
                         if ui
                             .small_button("✖")
-                            .on_hover_text("Forget this view")
+                            .on_hover_text(tr("Forget this view"))
                             .clicked()
                         {
                             actions.push(Action::Edit(
@@ -819,7 +819,7 @@ fn views_ui(ui: &mut Ui, map: &territoria_model::Map, actions: &mut Vec<Action>)
                 if !map.views.is_empty() {
                     ui.separator();
                 }
-                if ui.button("➕ Keep this view").clicked() {
+                if ui.button(tr("➕ Keep this view")).clicked() {
                     actions.push(Action::Command(Command::SaveView));
                     ui.close();
                 }
@@ -879,7 +879,7 @@ fn projection_ui(
                 }
                 if let Some(c) = centre
                     && ui
-                        .selectable_label(local, "Equal area (local)")
+                        .selectable_label(local, tr("Equal area (local)"))
                         .on_hover_text("Lambert equal-area around your data: true sizes, for print and comparisons")
                         .clicked()
                     && let Ok(crs) = Crs::from_proj(&format!(
@@ -911,7 +911,7 @@ fn projection_ui(
         )
     {
         ui.label(
-            RichText::new("Background maps show in Web Mercator only.")
+            RichText::new(tr("Background maps show in Web Mercator only."))
                 .small()
                 .color(crate::theme::WARN),
         );

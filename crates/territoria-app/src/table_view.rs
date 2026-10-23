@@ -48,14 +48,14 @@ pub fn show(
         DataRef::Layer(id) => match project.layer(id) {
             Some(l) => (&l.attributes, l.rev, l.key_column.as_deref()),
             None => {
-                ui.label("This layer was removed.");
+                ui.label(tr("This layer was removed."));
                 return actions;
             }
         },
         DataRef::Table(id) => match project.table(id) {
             Some(t) => (&t.table, t.rev, None),
             None => {
-                ui.label("This table was removed.");
+                ui.label(tr("This table was removed."));
                 return actions;
             }
         },
@@ -119,7 +119,7 @@ pub fn show(
                 }
                 ui.separator();
                 if ui
-                    .button("New segment…")
+                    .button(tr("New segment…"))
                     .on_hover_text("A yes/no calculated column, e.g. [Sales] > 10000: it filters tables and analyses")
                     .clicked()
                 {
@@ -131,14 +131,14 @@ pub fn show(
         ui.label(RichText::new(format!("{} rows", format_value(state.order.len() as f64))).weak());
         if selection.is_some() {
             ui.checkbox(&mut state.only_selected, tr("Only the selection"))
-                .on_hover_text("Rows of the areas selected on the map");
+                .on_hover_text(tr("Rows of the areas selected on the map"));
         }
     });
     // What can be done with the table, on a row of its own.
     ui.horizontal_wrapped(|ui| {
             if ui
                 .button(tr("ƒ Calculated column…"))
-                .on_hover_text("A new column computed from the others with a formula")
+                .on_hover_text(tr("A new column computed from the others with a formula"))
                 .clicked()
             {
                 actions.push(Action::Formula(data, None));
@@ -170,10 +170,10 @@ pub fn show(
                 actions.push(Action::AddRow(data));
             }
             ui.menu_button(tr("Export"), |ui| {
-                if ui.button("Excel…").clicked() {
+                if ui.button(tr("Excel…")).clicked() {
                     actions.push(Action::Export(Export::Data(data, true, state.segment.clone())));
                 }
-                if ui.button("CSV…").clicked() {
+                if ui.button(tr("CSV…")).clicked() {
                     actions.push(Action::Export(Export::Data(data, false, state.segment.clone())));
                 }
             })
@@ -290,10 +290,10 @@ pub fn show(
                         });
                         if c.formula.is_some() {
                             r.context_menu(|ui| {
-                                if ui.button("✏ Edit formula…").clicked() {
+                                if ui.button(tr("✏ Edit formula…")).clicked() {
                                     actions.push(Action::Formula(data, Some(c.name.clone())));
                                 }
-                                if ui.button("🗑 Delete column").clicked() {
+                                if ui.button(tr("🗑 Delete column")).clicked() {
                                     actions.push(Action::DeleteColumn(data, c.name.clone()));
                                 }
                             });
@@ -395,7 +395,7 @@ pub fn show(
                     }
                     if matches!(data, DataRef::Table(_)) {
                         resp.context_menu(|ui| {
-                            if ui.button("🗑 Delete row").clicked() {
+                            if ui.button(tr("🗑 Delete row")).clicked() {
                                 actions.push(Action::DeleteRows(data, vec![r]));
                                 ui.close();
                             }

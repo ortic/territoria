@@ -71,9 +71,9 @@ pub fn show(
         .show(ui, |ui| match selection {
             Selection::None => {
                 ui.label(
-                    RichText::new(
+                    RichText::new(tr(
                         "Select a map layer or data in the Contents panel to see its settings.",
-                    )
+                    ))
                     .weak(),
                 );
             }
@@ -112,11 +112,11 @@ pub fn show(
                         ui.label(RichText::new(p.display().to_string()).small().weak());
                     }
                     ui.add_space(6.0);
-                    if ui.button("▦ Open table").clicked() {
+                    if ui.button(tr("▦ Open table")).clicked() {
                         actions.push(Action::OpenTab(Tab::Table(DataRef::Table(id))));
                     }
                     ui.add_space(6.0);
-                    ui.label(RichText::new("Linked to").strong());
+                    ui.label(RichText::new(tr("Linked to")).strong());
                     let mut any = false;
                     for link in project.links.iter().filter(|l| l.table == id) {
                         any = true;
@@ -135,18 +135,18 @@ pub fn show(
                         ui.add_space(4.0);
                     }
                     if !any {
-                        ui.label(RichText::new("Not linked to any areas yet.").weak());
+                        ui.label(RichText::new(tr("Not linked to any areas yet.")).weak());
                     }
                     ui.horizontal(|ui| {
-                        if ui.button("🔗 Link to map…").clicked() {
+                        if ui.button(tr("🔗 Link to map…")).clicked() {
                             actions.push(Action::LinkTable(id));
                         }
                         if t.source.path.is_some()
                             && ui
-                                .button("↻ Reload")
-                                .on_hover_text(
+                                .button(tr("↻ Reload"))
+                                .on_hover_text(tr(
                                     "Read the file again; links, types and calculated columns stay",
-                                )
+                                ))
                                 .clicked()
                         {
                             actions.push(Action::ReloadTable(id));
@@ -157,7 +157,9 @@ pub fn show(
                         ui.label(RichText::new(tr("Columns")).strong());
                         if ui
                             .small_button(tr("ƒ Calculated column…"))
-                            .on_hover_text("A new column computed from the others with a formula")
+                            .on_hover_text(tr(
+                                "A new column computed from the others with a formula",
+                            ))
                             .clicked()
                         {
                             actions.push(Action::Formula(crate::app::DataRef::Table(id), None));
@@ -238,12 +240,12 @@ fn layer(ui: &mut Ui, project: &Project, id: LayerId, actions: &mut Vec<Action>)
         .spacing([10.0, 6.0])
         .show(ui, |ui| {
             ui.label(tr("Key"))
-                .on_hover_text("Data is matched to areas by this column");
+                .on_hover_text(tr("Data is matched to areas by this column"));
             let mut key = l.key_column.clone();
             ComboBox::from_id_salt("lkey")
                 .selected_text(key.clone().unwrap_or("Row number".into()))
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut key, None, "Row number");
+                    ui.selectable_value(&mut key, None, tr("Row number"));
                     for c in &l.attributes.columns {
                         ui.selectable_value(&mut key, Some(c.name.clone()), &c.name);
                     }
@@ -293,7 +295,7 @@ fn layer(ui: &mut Ui, project: &Project, id: LayerId, actions: &mut Vec<Action>)
             .on_hover_text(&l.source.crs_note);
             ui.end_row();
             if let Some(a) = &l.source.attribution {
-                ui.label("Credit");
+                ui.label(tr("Credit"));
                 ui.add_sized(
                     [max, 16.0],
                     egui::Label::new(RichText::new(a).small()).truncate(),
@@ -323,10 +325,10 @@ fn layer(ui: &mut Ui, project: &Project, id: LayerId, actions: &mut Vec<Action>)
         });
     ui.add_space(8.0);
     ui.horizontal(|ui| {
-        if ui.button("▦ Open table").clicked() {
+        if ui.button(tr("▦ Open table")).clicked() {
             actions.push(Action::OpenTab(Tab::Table(DataRef::Layer(id))));
         }
-        if ui.button("🎨 Colour by value…").clicked() {
+        if ui.button(tr("🎨 Colour by value…")).clicked() {
             actions.push(Action::ColorBy(Some(id)));
         }
     });
@@ -355,7 +357,7 @@ fn template_editor(
     let table = values.feature_table(project, layer);
     ui.horizontal(|ui| {
         if let Some(table) = &table {
-            ui.menu_button("➕ Insert", |ui| {
+            ui.menu_button(tr("➕ Insert"), |ui| {
                 egui::ScrollArea::vertical()
                     .max_height(300.0)
                     .show(ui, |ui| {
@@ -499,9 +501,9 @@ fn style_ui(
                         ui.separator();
                         if ui
                             .selectable_label(matches!(labels, LabelMode::Template(_)), "Template…")
-                            .on_hover_text(
+                            .on_hover_text(tr(
                                 "Your own text with values, e.g. the name and the revenue below it",
-                            )
+                            ))
                             .clicked()
                             && !matches!(labels, LabelMode::Template(_))
                         {
@@ -539,7 +541,7 @@ fn style_ui(
                 .width(170.0)
                 .selected_text(text)
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut chosen, None, "All alike");
+                    ui.selectable_value(&mut chosen, None, tr("All alike"));
                     for (label, s) in &numbers {
                         ui.selectable_value(&mut chosen, Some(s.clone()), format!("By {label}"));
                     }
@@ -563,7 +565,7 @@ fn style_ui(
                         .speed(0.1)
                         .suffix(" pt"),
                 );
-                ui.label("to");
+                ui.label(tr("to"));
                 let b = ui.add(
                     egui::DragValue::new(&mut hi)
                         .range(0.1..=40.0)
@@ -603,7 +605,7 @@ fn style_ui(
                 .width(170.0)
                 .selected_text(text)
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut chosen, None, "All alike");
+                    ui.selectable_value(&mut chosen, None, tr("All alike"));
                     for (label, s) in &numbers {
                         ui.selectable_value(&mut chosen, Some(s.clone()), format!("By {label}"));
                     }
@@ -626,7 +628,7 @@ fn style_ui(
                         .range(5.0..=40.0)
                         .suffix(" pt"),
                 );
-                ui.label("to");
+                ui.label(tr("to"));
                 let b = ui.add(
                     egui::DragValue::new(&mut hi)
                         .range(5.0..=60.0)
@@ -647,7 +649,7 @@ fn style_ui(
     }
     if let LabelMode::Template(text) = &style.labels {
         ui.add_space(4.0);
-        ui.label(RichText::new("Label template").strong());
+        ui.label(RichText::new(tr("Label template")).strong());
         if let Some(new) = template_editor(ui, project, values, layer.id, text, "label-template") {
             actions.push(edit_layer(map, id, "Change label template", move |l| {
                 if let Some(s) = l.kind.style_mut() {
@@ -660,7 +662,7 @@ fn style_ui(
     let mut custom = style.tooltip.is_some();
     if ui
         .checkbox(&mut custom, tr("Own text in the hover card"))
-        .on_hover_text("What the card under the mouse shows for this layer")
+        .on_hover_text(tr("What the card under the mouse shows for this layer"))
         .changed()
     {
         let text = custom.then(|| match &style.labels {
@@ -764,7 +766,7 @@ fn scale_ui(
                 let s = set.scale.clone();
                 if ui
                     .button(&set.name)
-                    .on_hover_text("Use these classes, colours and labels here")
+                    .on_hover_text(tr("Use these classes, colours and labels here"))
                     .clicked()
                 {
                     actions.push(edit("Use a class set", Box::new(move |scale| *scale = s)));
@@ -776,11 +778,11 @@ fn scale_ui(
             }
             let name_id = ui.id().with("class-set-name");
             let mut name: String = ui.data_mut(|d| d.get_temp(name_id).unwrap_or_default());
-            ui.label("Keep these classes as");
+            ui.label(tr("Keep these classes as"));
             ui.horizontal(|ui| {
                 ui.add(
                     egui::TextEdit::singleline(&mut name)
-                        .hint_text("Name, e.g. Revenue bands")
+                        .hint_text(tr("Name, e.g. Revenue bands"))
                         .desired_width(160.0),
                 );
                 if ui
@@ -871,7 +873,7 @@ fn scale_ui(
                     ui.end_row();
                     ui.label("");
                     let mut round = scale.round;
-                    if ui.checkbox(&mut round, "Round class limits").changed() {
+                    if ui.checkbox(&mut round, tr("Round class limits")).changed() {
                         actions.push(edit(
                             "Round class limits",
                             Box::new(move |s| s.round = round),
@@ -1062,7 +1064,7 @@ fn zoom_ui(
         ui.label(tr("Shown"));
         ui.menu_button(summary, |ui| {
             let Some(now) = view else {
-                ui.label(RichText::new("Open the map to set zoom levels.").weak());
+                ui.label(RichText::new(tr("Open the map to set zoom levels.")).weak());
                 return;
             };
             let here = crate::map_view::scale_text(now.0, &now);
@@ -1106,7 +1108,7 @@ fn zoom_ui(
             }
         });
         if ml.visible && view.is_some_and(|v| !z.contains(v.0)) {
-            ui.label(RichText::new("hidden now").weak());
+            ui.label(RichText::new(tr("hidden now")).weak());
         }
     });
 }
@@ -1208,7 +1210,7 @@ fn map_layer(
                                         ui.selectable_value(
                                             &mut chosen,
                                             FlowEnd::Own,
-                                            "The row's own place",
+                                            tr("The row's own place"),
                                         );
                                     }
                                     let layer = match end {
@@ -1229,7 +1231,7 @@ fn map_layer(
                                     }
                                 });
                             if let FlowEnd::Column { layer, .. } = end {
-                                ui.label("in");
+                                ui.label(tr("in"));
                                 ComboBox::from_id_salt(("flow-layer", which))
                                     .width(110.0)
                                     .selected_text(
@@ -1260,7 +1262,7 @@ fn map_layer(
                         .width(180.0)
                         .selected_text(v.clone().unwrap_or_else(|| "Number of rows".into()))
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut v, None, "Number of rows");
+                            ui.selectable_value(&mut v, None, tr("Number of rows"));
                             if let Some(t) = table {
                                 for c in t.columns.iter().filter(|c| c.kind.is_numeric()) {
                                     ui.selectable_value(&mut v, Some(c.name.clone()), &c.name);
@@ -1282,7 +1284,7 @@ fn map_layer(
                         ));
                     }
                     ui.end_row();
-                    ui.label("Widest");
+                    ui.label(tr("Widest"));
                     let mut w = style.max_width;
                     if ui
                         .add(egui::Slider::new(&mut w, 1.0..=40.0).suffix(" pt"))
@@ -1297,14 +1299,14 @@ fn map_layer(
                     ui.label("");
                     ui.horizontal(|ui| {
                         let mut curved = style.curved;
-                        if ui.checkbox(&mut curved, "Curved").changed() {
+                        if ui.checkbox(&mut curved, tr("Curved")).changed() {
                             actions.push(edit_flow(
                                 "Curve flows",
                                 Box::new(move |_, _, _, s| s.curved = curved),
                             ));
                         }
                         let mut arrows = style.arrows;
-                        if ui.checkbox(&mut arrows, "Arrows").changed() {
+                        if ui.checkbox(&mut arrows, tr("Arrows")).changed() {
                             actions.push(edit_flow(
                                 "Flow arrows",
                                 Box::new(move |_, _, _, s| s.arrows = arrows),
@@ -1371,8 +1373,8 @@ fn map_layer(
                     }
                     ui.label("");
                     if ui
-                        .button("⇄ Swap")
-                        .on_hover_text("Swap the two values")
+                        .button(tr("⇄ Swap"))
+                        .on_hover_text(tr("Swap the two values"))
                         .clicked()
                     {
                         actions.push(edit_layer(map, id, "Swap values", |l| {
@@ -1501,7 +1503,7 @@ fn map_layer(
                 .num_columns(2)
                 .spacing([10.0, 6.0])
                 .show(ui, |ui| {
-                    ui.label("Weight");
+                    ui.label(tr("Weight"));
                     let text = weight
                         .clone()
                         .unwrap_or_else(|| "Each point counts 1".into());
@@ -1509,7 +1511,7 @@ fn map_layer(
                     ComboBox::from_id_salt("heat-weight")
                         .selected_text(text)
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut w, None, "Each point counts 1");
+                            ui.selectable_value(&mut w, None, tr("Each point counts 1"));
                             if let Some(l) = l {
                                 for c in l.attributes.columns.iter().filter(|c| c.kind.is_numeric())
                                 {
@@ -1525,8 +1527,8 @@ fn map_layer(
                         }));
                     }
                     ui.end_row();
-                    ui.label("Spread")
-                        .on_hover_text("How far each point reaches");
+                    ui.label(tr("Spread"))
+                        .on_hover_text(tr("How far each point reaches"));
                     let mut r = *radius_km;
                     if ui
                         .add(
@@ -1598,7 +1600,7 @@ fn map_layer(
                     if parts.len() > 1
                         && ui
                             .small_button("🗑")
-                            .on_hover_text("Remove this value")
+                            .on_hover_text(tr("Remove this value"))
                             .clicked()
                     {
                         actions.push(edit_chart(
@@ -1622,7 +1624,7 @@ fn map_layer(
                 })
                 .collect();
             if !options.is_empty() {
-                ui.menu_button("➕ Add a value", |ui| {
+                ui.menu_button(tr("➕ Add a value"), |ui| {
                     egui::ScrollArea::vertical()
                         .max_height(300.0)
                         .show(ui, |ui| {
@@ -1650,7 +1652,7 @@ fn map_layer(
                 .num_columns(2)
                 .spacing([10.0, 6.0])
                 .show(ui, |ui| {
-                    ui.label("Chart");
+                    ui.label(tr("Chart"));
                     ui.horizontal(|ui| {
                         for shape in territoria_model::ChartShape::ALL {
                             if ui
@@ -1666,7 +1668,7 @@ fn map_layer(
                     });
                     ui.end_row();
                     let bars = chart.shape.is_bars();
-                    ui.label(if bars { "Tallest" } else { "Largest" }).on_hover_text(if bars {
+                    ui.label(if bars { tr("Tallest") } else { "Largest" }).on_hover_text(if bars {
                         "Height of the bar for the largest value"
                     } else {
                         "Radius of the largest pie"
@@ -1685,7 +1687,7 @@ fn map_layer(
                         ui.label("");
                         let mut sized = chart.sized;
                         if ui
-                            .checkbox(&mut sized, "Sized by the total")
+                            .checkbox(&mut sized, tr("Sized by the total"))
                             .on_hover_text("Pie areas grow with the sum of the values; else all pies are alike")
                             .changed()
                         {
@@ -1758,7 +1760,7 @@ fn map_layer(
                     }
                     ui.end_row();
                 });
-            if ui.button("Figures within the rings…").clicked() {
+            if ui.button(tr("Figures within the rings…")).clicked() {
                 actions.push(Action::Command(crate::commands::Command::Catchment));
             }
         }
@@ -1804,7 +1806,7 @@ fn map_layer(
                             .width(170.0)
                             .selected_text(text)
                             .show_ui(ui, |ui| {
-                                ui.selectable_value(&mut chosen, None, "One colour");
+                                ui.selectable_value(&mut chosen, None, tr("One colour"));
                                 for (label, s) in &categories {
                                     ui.selectable_value(&mut chosen, Some(s.clone()), format!("By {label}"));
                                 }
@@ -1921,7 +1923,7 @@ fn map_layer(
                 }));
             }
             ui.horizontal(|ui| {
-                ui.label("Most frequent");
+                ui.label(tr("Most frequent"));
                 let mut n = scale.max_categories;
                 if ui.add(egui::Slider::new(&mut n, 2..=24)).changed() {
                     actions.push(edit_layer(map, id, "Change categories", move |l| {
@@ -1964,7 +1966,7 @@ fn map_layer(
                 }
             });
             ui.horizontal(|ui| {
-                ui.label("Territory borders");
+                ui.label(tr("Territory borders"));
                 let mut w = style.border_width;
                 if ui
                     .add(
@@ -1983,7 +1985,7 @@ fn map_layer(
             });
             if project.plan(*plan).is_some_and(|p| !p.regions.is_empty()) {
                 ui.horizontal(|ui| {
-                    ui.label("Region borders");
+                    ui.label(tr("Region borders"));
                     let mut w = style.region_border_width;
                     if ui
                         .add(
@@ -2003,17 +2005,17 @@ fn map_layer(
             }
             let mut ub = style.unit_borders;
             if ui
-                .checkbox(&mut ub, "Show area borders inside territories")
+                .checkbox(&mut ub, tr("Show area borders inside territories"))
                 .changed()
             {
                 actions.push(edit("Area borders", Box::new(move |s| s.unit_borders = ub)));
             }
             let mut lb = style.labels;
-            if ui.checkbox(&mut lb, "Territory names").changed() {
+            if ui.checkbox(&mut lb, tr("Territory names")).changed() {
                 actions.push(edit("Territory names", Box::new(move |s| s.labels = lb)));
             }
             ui.add_space(6.0);
-            if ui.button("Open the Territories panel").clicked() {
+            if ui.button(tr("Open the Territories panel")).clicked() {
                 actions.push(Action::ShowPlan(*plan));
             }
         }
@@ -2068,7 +2070,7 @@ fn histogram(
         .filter(|x| x.is_finite())
         .collect();
     if v.is_empty() || edges.len() < 2 {
-        ui.label(RichText::new("No values to show: check the link to the data.").weak());
+        ui.label(RichText::new(tr("No values to show: check the link to the data.")).weak());
         return;
     }
     let edit = |label: &str, f: Box<dyn FnOnce(&mut ColorScale)>| {
@@ -2244,11 +2246,11 @@ fn segments_menu(
             ui.separator();
             let name_id = ui.id().with("segment-name");
             let mut name: String = ui.data_mut(|d| d.get_temp(name_id).unwrap_or_default());
-            ui.label("Keep this filter as a segment");
+            ui.label(tr("Keep this filter as a segment"));
             ui.horizontal(|ui| {
                 ui.add(
                     egui::TextEdit::singleline(&mut name)
-                        .hint_text("Name, e.g. Key accounts")
+                        .hint_text(tr("Name, e.g. Key accounts"))
                         .desired_width(160.0),
                 );
                 let ok = !name.trim().is_empty() && table.column(name.trim()).is_none();
@@ -2389,7 +2391,7 @@ fn value_ui(
             let changed = ui
                 .add(
                     egui::TextEdit::singleline(&mut text)
-                        .hint_text("all rows")
+                        .hint_text(tr("all rows"))
                         .font(egui::TextStyle::Monospace)
                         .desired_width(200.0),
                 )
