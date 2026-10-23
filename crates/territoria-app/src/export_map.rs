@@ -525,7 +525,7 @@ fn layer(s: &mut String, r: &Resolved, view: &View, tips: Option<&[String]>, fin
                 let _ = write!(
                     s,
                     r#"<path d="{d}" fill="none" stroke="{c}" stroke-opacity="{a:.3}" stroke-width="{:.2}" stroke-linejoin="round"/>"#,
-                    r.line_width
+                    r.line_widths.get(i).copied().unwrap_or(r.line_width)
                 );
             }
         }

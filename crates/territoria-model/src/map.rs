@@ -520,6 +520,9 @@ pub struct BoundaryStyle {
     /// Labels sized by a number instead of all alike.
     #[serde(default)]
     pub label_size: Option<LabelSize>,
+    /// Lines as wide as a number (`min`/`max` in points) instead of alike.
+    #[serde(default)]
+    pub width_by: Option<LabelSize>,
 }
 
 /// Label font sizes from a number: the smallest value gets `min` points,
@@ -563,6 +566,7 @@ impl Default for BoundaryStyle {
             labels: LabelMode::None,
             tooltip: None,
             label_size: None,
+            width_by: None,
         }
     }
 }

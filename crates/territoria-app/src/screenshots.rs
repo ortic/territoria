@@ -3963,3 +3963,77 @@ fn symbol_shapes() {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Lines as wide as a number, on screen and in exports.
+#[test]
+fn line_widths_by_value() {
+    use crate::app::Export;
+    use crate::export_map::Format;
+    use territoria_model::MapLayerKind;
+    let dir = std::env::temp_dir().join(format!("territoria-lines-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // Ten roads, each busier than the one before.
+    let features: Vec<String> = (0..10)
+        .map(|i| {
+            let y = 46.5 + i as f64 * 0.05;
+            format!(
+                r#"{{"type":"Feature","properties":{{"Road":"R{i}","Traffic":{}}},"geometry":{{"type":"LineString","coordinates":[[7.0,{y}],[7.5,{:.3}],[8.0,{y}]]}}}}"#,
+                (i + 1) * 1000,
+                y + 0.02
+            )
+        })
+        .collect();
+    let path = dir.join("roads.geojson");
+    std::fs::write(
+        &path,
+        format!(
+            r#"{{"type":"FeatureCollection","features":[{}]}}"#,
+            features.join(",")
+        ),
+    )
+    .unwrap();
+    let (mut h, _lock) = harness(false);
+    let layer = h.state_mut().add_boundaries_now(&path).expect("roads")[0];
+    let app = h.state_mut();
+    let map = app.project.maps[0].id;
+    for ml in &mut app.project.map_mut(map).unwrap().layers {
+        if let MapLayerKind::Boundaries { style, .. } = &mut ml.kind {
+            style.width_by = Some(territoria_model::map::LabelSize {
+                source: territoria_model::ValueSource::Attribute {
+                    column: "Traffic".into(),
+                },
+                min: 1.0,
+                max: 10.0,
+            });
+        }
+    }
+    assert_eq!(
+        app.project.layer(layer).unwrap().kind(),
+        territoria_io::GeometryKind::Line
+    );
+    settle(&mut h);
+    save(&mut h, "line-widths");
+    let svg_path = dir.join("roads.svg");
+    let app = h.state_mut();
+    app.set_map_export_for_test(crate::dialogs::MapExportSettings {
+        format: Format::Svg,
+        scale: 1.0,
+        title: String::new(),
+        legend: false,
+        scale_bar: false,
+        page: Default::default(),
+        footer: String::new(),
+    });
+    app.export(Export::Map(Format::Svg), svg_path.clone());
+    settle(&mut h);
+    let svg = std::fs::read_to_string(&svg_path).unwrap();
+    assert!(
+        svg.contains(r#"stroke-width="1.00" stroke-linejoin"#),
+        "thinnest"
+    );
+    assert!(
+        svg.contains(r#"stroke-width="10.00" stroke-linejoin"#),
+        "widest"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

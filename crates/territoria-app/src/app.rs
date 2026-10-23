@@ -2096,6 +2096,7 @@ impl TerritoriaApp {
                     .collect(),
                 arcs: Vec::new(),
                 line_width: 1.0,
+                line_widths: Vec::new(),
                 point_radius: 0.0,
                 point_stroke: egui::Stroke::NONE,
                 labels: crate::resolve::Labels::None,

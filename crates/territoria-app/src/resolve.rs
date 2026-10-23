@@ -32,6 +32,8 @@ pub struct Resolved {
     pub arcs: Vec<Option<Stroke>>,
     /// Lines: width; points: radius and outline.
     pub line_width: f32,
+    /// Lines: per feature its width (empty: `line_width` for all).
+    pub line_widths: Vec<f32>,
     pub point_radius: f32,
     pub point_stroke: Stroke,
     pub labels: Labels,
@@ -150,6 +152,7 @@ fn resolve_one(
                 fills: Vec::new(),
                 arcs: Vec::new(),
                 line_width: 1.0,
+                line_widths: Vec::new(),
                 point_radius: 0.0,
                 point_stroke: Stroke::NONE,
                 labels: Labels::None,
@@ -198,6 +201,7 @@ fn resolve_one(
                 fills: Vec::new(),
                 arcs: Vec::new(),
                 line_width: 1.0,
+                line_widths: Vec::new(),
                 point_radius: 0.0,
                 point_stroke: Stroke::NONE,
                 labels: Labels::None,
@@ -257,6 +261,12 @@ fn resolve_one(
                 fills,
                 arcs,
                 line_width: style.stroke_width.max(1.0),
+                line_widths: match &style.width_by {
+                    Some(w) if l.kind() == GeometryKind::Line => {
+                        w.sizes(&cx.values.values(project, *layer, &w.source))
+                    }
+                    _ => Vec::new(),
+                },
                 point_radius: style.point_size,
                 point_stroke: stroke,
                 labels,
@@ -366,6 +376,7 @@ fn resolve_one(
                 fills,
                 arcs,
                 line_width: 1.0,
+                line_widths: Vec::new(),
                 point_radius: 3.5,
                 point_stroke: Stroke::new(1.0, border),
                 labels,
@@ -402,6 +413,7 @@ fn resolve_one(
                 fills: dot_fills,
                 arcs: Vec::new(),
                 line_width: 1.0,
+                line_widths: Vec::new(),
                 point_radius: 3.0,
                 point_stroke: Stroke::new(0.8, with_opacity(border, 0.7 * opacity)),
                 labels: Labels::None,
@@ -432,6 +444,7 @@ fn resolve_one(
                 fills: vec![None; n],
                 arcs: Vec::new(),
                 line_width: 1.0,
+                line_widths: Vec::new(),
                 point_radius: 0.0,
                 point_stroke: Stroke::NONE,
                 labels,
@@ -488,6 +501,7 @@ fn resolve_one(
                 fills: vec![None; n],
                 arcs: Vec::new(),
                 line_width: 1.0,
+                line_widths: Vec::new(),
                 point_radius: 0.0,
                 point_stroke: Stroke::NONE,
                 labels,

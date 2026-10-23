@@ -1353,7 +1353,7 @@ pub fn draw_resolved(shapes: &mut Vec<Shape>, r: &Resolved, view: &View, ppp: f3
                     .get(f)
                     .copied()
                     .flatten()
-                    .map(|c| Stroke::new(r.line_width, c))
+                    .map(|c| Stroke::new(r.line_widths.get(f).copied().unwrap_or(r.line_width), c))
             });
         }
         GeometryKind::Point => {

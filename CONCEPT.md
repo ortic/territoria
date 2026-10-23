@@ -234,7 +234,7 @@ territoria/
 - [x] Hex or square grid aggregation of points (equal-area hexagons over points or areas, points counted and summed per cell; usable as territory units; no square grid)
 - [x] Bivariate choropleth (two variables, 2×2/3×3 colour matrix) with quadrant labels (quantile classes, three colour grids, swap; legend grid tells ranges and counts on hover; in exports and web pages; no quadrant labels yet)
 - [ ] Hatching for several values per area / overlapping territories
-- [ ] Lines: style a line layer by data
+- [x] Lines: style a line layer by data (colour by value or category like areas; width from any number between two widths, on screen and in exports)
 - [x] Flows: origin–destination lines with width/colour by data, curved, arrows (rows of a table or layer; each end the row's own point or a column naming a feature by key or name, guessed; equal pairs add up; width by a number or row count; one colour; in exports)
 - [x] Radius/catchment circles around points, several rings; count and sum of what lies inside (around points or territory sites; points counted and summed, areas' values summed; a results table; labelled rings in exports)
 - [x] Data-driven labels (text templates, font size/colour by data) (templates with several lines; font size by any number between two sizes, bigger labels placed first, on screen and in exports; no colour by data yet)

@@ -518,6 +518,70 @@ fn style_ui(
             }
         });
     let Some(layer) = layer else { return };
+    // Lines as wide as a number (traffic on roads, deliveries on routes).
+    if layer.kind() == territoria_io::GeometryKind::Line {
+        let numbers: Vec<(String, ValueSource)> = colorables(project, layer.id)
+            .into_iter()
+            .filter_map(|(label, c)| match c {
+                Colorable::Number(s) => Some((label, s)),
+                _ => None,
+            })
+            .collect();
+        ui.horizontal(|ui| {
+            ui.label("Line width");
+            let current = style.width_by.as_ref().map(|s| s.source.clone());
+            let mut chosen = current.clone();
+            let text = current.as_ref().map_or("All alike".to_owned(), |s| {
+                format!("By {}", s.label(project))
+            });
+            ComboBox::from_id_salt("width-by")
+                .width(170.0)
+                .selected_text(text)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut chosen, None, "All alike");
+                    for (label, s) in &numbers {
+                        ui.selectable_value(&mut chosen, Some(s.clone()), format!("By {label}"));
+                    }
+                });
+            if chosen != current {
+                actions.push(edit_layer(map, id, "Line widths", move |l| {
+                    if let Some(s) = l.kind.style_mut() {
+                        s.width_by = chosen.map(|source| territoria_model::map::LabelSize {
+                            source,
+                            min: 0.5,
+                            max: 8.0,
+                        });
+                    }
+                }));
+            }
+            if let Some(w) = &style.width_by {
+                let (mut lo, mut hi) = (w.min, w.max);
+                let a = ui.add(
+                    egui::DragValue::new(&mut lo)
+                        .range(0.1..=20.0)
+                        .speed(0.1)
+                        .suffix(" pt"),
+                );
+                ui.label("to");
+                let b = ui.add(
+                    egui::DragValue::new(&mut hi)
+                        .range(0.1..=40.0)
+                        .speed(0.1)
+                        .suffix(" pt"),
+                );
+                if a.changed() || b.changed() {
+                    actions.push(edit_layer(map, id, "Line widths", move |l| {
+                        if let Some(s) = l.kind.style_mut()
+                            && let Some(w) = &mut s.width_by
+                        {
+                            w.min = lo;
+                            w.max = hi.max(lo);
+                        }
+                    }));
+                }
+            }
+        });
+    }
     // Label sizes from a number: bigger values, bigger labels.
     if style.labels != LabelMode::None {
         let numbers: Vec<(String, ValueSource)> = colorables(project, layer.id)
