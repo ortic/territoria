@@ -8,7 +8,7 @@ use crate::i18n::{tr, trf};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use egui::{ComboBox, RichText, Ui};
+use egui::{ComboBox, RichText, Sense, Ui};
 use territoria_analysis::format::{format_percent, format_value};
 use territoria_data::{Aggregate, ColumnKind, MatchMode, MatchStats, Matching, Table, keys};
 use territoria_io::{GeometryKind, TableInfo, TableOptions};
@@ -2215,10 +2215,16 @@ pub struct MapExportSettings {
     pub overview: bool,
     /// Pages: the territories' figures beside the map.
     pub figures: bool,
+    /// Pages arranged by hand (`None`: automatic).
+    pub layout: Option<territoria_model::map::PageLayout>,
 }
 
 pub struct ExportMapDialog {
     pub settings: MapExportSettings,
+    /// The part of the arranged page being edited.
+    selected: Option<usize>,
+    /// "Image…" was clicked: the app asks for the file.
+    pub wants_image: bool,
 }
 
 impl ExportMapDialog {
@@ -2234,7 +2240,29 @@ impl ExportMapDialog {
                 footer: "{map} · {date}".into(),
                 overview: false,
                 figures: false,
+                layout: None,
             },
+            selected: None,
+            wants_image: false,
+        }
+    }
+
+    /// Puts an image (data URI, width / height) on the arranged page.
+    pub fn add_image(&mut self, uri: String, aspect: f32) {
+        if let Some(l) = &mut self.settings.layout {
+            let page = self
+                .settings
+                .page
+                .size()
+                .unwrap_or(egui::vec2(842.0, 595.0));
+            // About a sixth of the page wide, in its shape.
+            let w = 0.18;
+            let h = (w * page.x / aspect.max(0.05) / page.y).min(0.4);
+            l.items.push(territoria_model::map::PageItem {
+                part: territoria_model::map::PagePart::Image { uri },
+                rect: [0.06, 0.12, w, h],
+            });
+            self.selected = Some(l.items.len() - 1);
         }
     }
 
@@ -2286,7 +2314,7 @@ impl ExportMapDialog {
                     ui.label(tr("Title"));
                     ui.add(egui::TextEdit::singleline(&mut s.title).desired_width(260.0));
                     ui.end_row();
-                    if s.page != crate::export_map::PageSize::Screen {
+                    if s.page != crate::export_map::PageSize::Screen && s.layout.is_none() {
                         ui.label("");
                         ui.checkbox(&mut s.overview, tr("Overview map"))
                             .on_hover_text(tr("A small map of everything in the corner, with the page's part marked"));
@@ -2295,6 +2323,8 @@ impl ExportMapDialog {
                         ui.checkbox(&mut s.figures, tr("Territory figures"))
                             .on_hover_text(tr("A table of the territories on the map with their measure and deviation, beside the legend"));
                         ui.end_row();
+                    }
+                    if s.page != crate::export_map::PageSize::Screen {
                         ui.label(tr("Footer"));
                         ui.add(
                             egui::TextEdit::singleline(&mut s.footer)
@@ -2311,6 +2341,33 @@ impl ExportMapDialog {
                     ui.checkbox(&mut s.scale_bar, tr("Scale bar"));
                     ui.end_row();
                 });
+            // The page arranged by hand: parts dragged into place.
+            if let Some(size) = s.page.size() {
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    if s.layout.is_none() {
+                        if ui
+                            .button(tr("Arrange the page…"))
+                            .on_hover_text(tr("Place the map, title, legend, figures, overview and logo where you like, and add texts and images"))
+                            .clicked()
+                        {
+                            s.layout = Some(crate::export_map::automatic_layout(size, s.figures, s.overview));
+                        }
+                    } else if ui
+                        .button(tr("Automatic layout"))
+                        .on_hover_text(tr("Back to the usual arrangement"))
+                        .clicked()
+                    {
+                        s.layout = None;
+                        self.selected = None;
+                    }
+                });
+                if let Some(layout) = &mut s.layout {
+                    if layout_editor(ui, layout, size, &mut self.selected) {
+                        self.wants_image = true;
+                    }
+                }
+            }
             ui.label(
                 RichText::new(tr("Background maps aren't part of exports yet."))
                     .weak()
@@ -2331,6 +2388,191 @@ impl ExportMapDialog {
         }
         outcome
     }
+}
+
+/// What a part of a page is called in the arranging view.
+fn page_part_label(part: &territoria_model::map::PagePart) -> String {
+    use territoria_model::map::PagePart;
+    match part {
+        PagePart::Map => tr("Map").to_owned(),
+        PagePart::Title => tr("Title").to_owned(),
+        PagePart::Legend => tr("Legend").to_owned(),
+        PagePart::Figures => tr("Territory figures").to_owned(),
+        PagePart::Overview => tr("Overview map").to_owned(),
+        PagePart::Logo => tr("Logo").to_owned(),
+        PagePart::Text { text, .. } => {
+            let first = text.lines().next().unwrap_or_default();
+            if first.trim().is_empty() {
+                tr("Text").to_owned()
+            } else {
+                first.to_owned()
+            }
+        }
+        PagePart::Image { .. } => tr("Image").to_owned(),
+    }
+}
+
+/// A page in small with its parts as boxes: drag one to move it, its
+/// corner to size it; below, what the selected one says and what can be
+/// added. True when an image should be chosen.
+fn layout_editor(
+    ui: &mut Ui,
+    layout: &mut territoria_model::map::PageLayout,
+    page: egui::Vec2,
+    selected: &mut Option<usize>,
+) -> bool {
+    use territoria_model::map::{PageItem, PagePart};
+    let mut wants_image = false;
+    let k = (ui.available_width().min(420.0) / page.x).min(340.0 / page.y);
+    let (canvas, _) = ui.allocate_exact_size(page * k, Sense::hover());
+    let painter = ui.painter_at(canvas.expand(2.0));
+    painter.rect_filled(canvas, 0.0, egui::Color32::WHITE);
+    painter.rect_stroke(
+        canvas,
+        0.0,
+        egui::Stroke::new(1.0, egui::Color32::from_gray(150)),
+        egui::StrokeKind::Outside,
+    );
+    let to_screen = |r: &[f32; 4]| {
+        egui::Rect::from_min_size(
+            canvas.min + egui::vec2(r[0], r[1]) * canvas.size(),
+            egui::vec2(r[2], r[3]) * canvas.size(),
+        )
+    };
+    let fill = |part: &PagePart| match part {
+        PagePart::Map => egui::Color32::from_rgb(0xe6, 0xe2, 0xd6),
+        PagePart::Overview => egui::Color32::from_rgb(0xd8, 0xe4, 0xd0),
+        PagePart::Legend | PagePart::Figures => egui::Color32::from_rgb(0xd6, 0xe2, 0xf0),
+        PagePart::Image { .. } | PagePart::Logo => egui::Color32::from_rgb(0xf0, 0xdc, 0xe6),
+        PagePart::Title | PagePart::Text { .. } => egui::Color32::from_rgb(0xf4, 0xec, 0xc8),
+    };
+    // Bodies first, then the corner handles over them; later parts on top.
+    let mut moved: Option<(usize, egui::Vec2, bool)> = None;
+    for (i, item) in layout.items.iter().enumerate() {
+        let r = to_screen(&item.rect);
+        let id = ui.id().with(("page-part", i));
+        let body = ui.interact(r, id, Sense::click_and_drag());
+        if body.clicked() || body.drag_started() {
+            *selected = Some(i);
+        }
+        if body.dragged() {
+            moved = Some((i, body.drag_delta(), false));
+        }
+        let handle = egui::Rect::from_center_size(r.max, egui::vec2(9.0, 9.0));
+        let corner = ui
+            .interact(handle, id.with("corner"), Sense::drag())
+            .on_hover_cursor(egui::CursorIcon::ResizeNwSe);
+        if corner.drag_started() {
+            *selected = Some(i);
+        }
+        if corner.dragged() {
+            moved = Some((i, corner.drag_delta(), true));
+        }
+        let on = *selected == Some(i);
+        painter.rect_filled(r, 2.0, fill(&item.part).gamma_multiply(0.9));
+        painter.rect_stroke(
+            r,
+            2.0,
+            egui::Stroke::new(
+                if on { 2.0 } else { 0.75 },
+                if on {
+                    crate::theme::ACCENT
+                } else {
+                    egui::Color32::from_gray(120)
+                },
+            ),
+            egui::StrokeKind::Inside,
+        );
+        painter.text(
+            r.center(),
+            egui::Align2::CENTER_CENTER,
+            page_part_label(&item.part),
+            egui::FontId::proportional(10.0),
+            egui::Color32::from_gray(50),
+        );
+        painter.rect_filled(
+            handle.shrink(2.0),
+            1.0,
+            if on {
+                crate::theme::ACCENT
+            } else {
+                egui::Color32::from_gray(140)
+            },
+        );
+    }
+    if let Some((i, delta, resize)) = moved {
+        let d = delta / canvas.size();
+        let r = &mut layout.items[i].rect;
+        if resize {
+            r[2] = (r[2] + d.x).clamp(0.03, 1.0 - r[0]);
+            r[3] = (r[3] + d.y).clamp(0.02, 1.0 - r[1]);
+        } else {
+            r[0] = (r[0] + d.x).clamp(0.0, 1.0 - r[2]);
+            r[1] = (r[1] + d.y).clamp(0.0, 1.0 - r[3]);
+        }
+    }
+    ui.label(
+        RichText::new(tr("Drag a part to move it, its corner to size it."))
+            .weak()
+            .small(),
+    );
+    // The selected part: its text, or to take it away.
+    if let Some(i) = selected.filter(|&i| i < layout.items.len()) {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(page_part_label(&layout.items[i].part)).strong());
+            if layout.items[i].part != PagePart::Map && ui.button(tr("Remove")).clicked() {
+                layout.items.remove(i);
+                *selected = None;
+            }
+        });
+        if let Some(PageItem {
+            part: PagePart::Text { text, size },
+            ..
+        }) = layout.items.get_mut(i)
+        {
+            ui.add(
+                egui::TextEdit::multiline(text)
+                    .desired_rows(2)
+                    .desired_width(f32::INFINITY)
+                    .hint_text(tr("{project}, {map} and {date} are filled in")),
+            );
+            ui.horizontal(|ui| {
+                ui.label(tr("Size"));
+                ui.add(egui::DragValue::new(size).range(6.0..=48.0).suffix(" pt"));
+            });
+        }
+    }
+    // What can be added: own texts and images, and parts taken away.
+    ui.horizontal_wrapped(|ui| {
+        ui.label(tr("Add"));
+        if ui.button(tr("Text")).clicked() {
+            layout.items.push(PageItem {
+                part: PagePart::Text {
+                    text: tr("Text").to_owned(),
+                    size: 11.0,
+                },
+                rect: [0.06, 0.12, 0.3, 0.05],
+            });
+            *selected = Some(layout.items.len() - 1);
+        }
+        if ui
+            .button(tr("Image…"))
+            .on_hover_text(tr("A PNG, JPEG or SVG image, kept in the project"))
+            .clicked()
+        {
+            wants_image = true;
+        }
+        let defaults = crate::export_map::automatic_layout(page, true, true);
+        for d in defaults.items {
+            if !layout.items.iter().any(|i| i.part == d.part)
+                && ui.button(page_part_label(&d.part)).clicked()
+            {
+                layout.items.push(d);
+                *selected = Some(layout.items.len() - 1);
+            }
+        }
+    });
+    wants_image
 }
 
 /// A calculated column: a formula over the other columns of a table.

@@ -21,6 +21,53 @@ pub struct Map {
     /// Views kept by name, to come back to.
     #[serde(default)]
     pub views: Vec<NamedView>,
+    /// Printed pages arranged by hand (`None`: the automatic layout).
+    #[serde(default)]
+    pub page_layout: Option<PageLayout>,
+}
+
+/// A printed page arranged by hand: where each part goes.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PageLayout {
+    pub items: Vec<PageItem>,
+}
+
+/// A part of a printed page and its place: x, y, width and height as
+/// fractions of the page, from the top left, so a layout fits any size.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PageItem {
+    pub part: PagePart,
+    pub rect: [f32; 4],
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum PagePart {
+    /// The map in its frame, with north arrow and scale bar.
+    Map,
+    Title,
+    Legend,
+    /// The territories' figures.
+    Figures,
+    /// A small map of everything.
+    Overview,
+    /// The company logo from the settings.
+    Logo,
+    /// Text of one's own; `{project}`, `{map}` and `{date}` filled in.
+    Text {
+        text: String,
+        size: f32,
+    },
+    /// An image kept in the project, as a data URI.
+    Image {
+        uri: String,
+    },
+}
+
+impl PagePart {
+    /// Parts a page has only once.
+    pub fn is_unique(&self) -> bool {
+        !matches!(self, PagePart::Text { .. } | PagePart::Image { .. })
+    }
 }
 
 /// A view kept by name: centre in display coordinates and units per point.
@@ -41,6 +88,7 @@ impl Map {
             view: None,
             background: Background::default(),
             views: Vec::new(),
+            page_layout: None,
         }
     }
 

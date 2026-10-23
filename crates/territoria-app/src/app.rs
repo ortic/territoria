@@ -140,6 +140,8 @@ enum FileAction {
     ReplaceLayer(LayerId),
     /// The company logo for exports.
     Logo,
+    /// An image for the arranged page being exported.
+    PageImage,
 }
 
 /// What a map atlas makes pages of, and how it is written.
@@ -580,7 +582,7 @@ impl TerritoriaApp {
             FileAction::AddData => dialog
                 .add_filter("Tables (CSV, Excel)", territoria_io::TABLE_EXTENSIONS)
                 .add_filter("All files", &["*"]),
-            FileAction::Logo => {
+            FileAction::Logo | FileAction::PageImage => {
                 dialog.add_filter("Images (PNG, JPEG, SVG)", &["png", "jpg", "jpeg", "svg"])
             }
             FileAction::Export(e) => {
@@ -696,6 +698,25 @@ impl TerritoriaApp {
             FileAction::ReplaceLayer(layer) => self.read_replacement(layer, path),
             FileAction::AddData => self.import_table_file(path, TableOptions::default()),
             FileAction::Export(e) => self.export(e, path),
+            FileAction::PageImage => {
+                const MAX_BYTES: u64 = 8 << 20;
+                let too_big = std::fs::metadata(&path).is_ok_and(|m| m.len() > MAX_BYTES);
+                match crate::export_map::Logo::load(&path, 1000.0, 1000.0) {
+                    Some(image) if !too_big => {
+                        if let Some(d) = &mut self.export_map {
+                            d.add_image(image.uri, image.width / image.height);
+                        }
+                    }
+                    Some(_) => self.error(trf(
+                        "{file} is too big for a page (at most 8 MB).",
+                        &[("file", &file_name(&path))],
+                    )),
+                    None => self.error(trf(
+                        "{file} isn't a PNG, JPEG or SVG image.",
+                        &[("file", &file_name(&path))],
+                    )),
+                }
+            }
             FileAction::Logo => {
                 if crate::export_map::Logo::load(&path, 140.0, 44.0).is_some() {
                     self.settings.logo = Some(path);
@@ -751,6 +772,7 @@ impl TerritoriaApp {
                 footer: String::new(),
                 overview: false,
                 figures: false,
+                layout: None,
             };
             let page = match self.map_page(&settings) {
                 Ok(p) => p,
@@ -2022,8 +2044,14 @@ impl TerritoriaApp {
         } else {
             None
         };
-        let frame = page_size
-            .map(|p| crate::export_map::page_frame(p, !settings.title.is_empty(), settings.legend));
+        // Arranged by hand, or the automatic layout.
+        let placed = page_size
+            .zip(settings.layout.as_ref())
+            .map(|(p, l)| crate::export_map::place(l, p));
+        let frame = page_size.map(|p| match &placed {
+            Some(placed) => placed.map,
+            None => crate::export_map::page_frame(p, !settings.title.is_empty(), settings.legend),
+        });
         let rect = frame.unwrap_or_else(|| {
             egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
@@ -2307,13 +2335,26 @@ impl TerritoriaApp {
         let today = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| (d.as_secs() / 86_400) as i32);
-        let footer = settings
-            .footer
-            .replace("{project}", &self.project.title)
-            .replace("{map}", &map.name)
-            .replace("{date}", &territoria_data::date::format(today));
+        let fill_in = |text: &str| {
+            text.replace("{project}", &self.project.title)
+                .replace("{map}", &map.name)
+                .replace("{date}", &territoria_data::date::format(today))
+        };
+        let footer = fill_in(&settings.footer);
         // A printed page's overview: all the map's layers in a corner.
-        let overview = frame.filter(|_| settings.overview).and_then(|frame| {
+        let overview_rect = match &placed {
+            Some(p) => p.overview,
+            None => frame.filter(|_| settings.overview).map(|frame| {
+                egui::Rect::from_min_size(
+                    egui::pos2(
+                        frame.min.x + 10.0,
+                        frame.max.y - 10.0 - frame.height() * 0.3,
+                    ),
+                    egui::vec2(frame.width() * 0.24, frame.height() * 0.3),
+                )
+            }),
+        };
+        let overview = overview_rect.and_then(|room| {
             let mut extent = territoria_render::Bounds::EMPTY;
             for m in meshes.values().chain(cells.values()) {
                 if !m.extent.is_empty() {
@@ -2325,14 +2366,13 @@ impl TerritoriaApp {
             if extent.is_empty() {
                 return None;
             }
+            // The room's width, unless that makes it too tall; at its
+            // bottom left.
             let (ew, eh) = (extent.width().max(1e-9), extent.height().max(1e-9));
-            let w = frame.width() * 0.24;
-            let h = (w * eh / ew).min(frame.height() * 0.3);
+            let h = (room.width() * eh / ew).min(room.height());
             let w = h * ew / eh;
-            let rect = egui::Rect::from_min_size(
-                egui::pos2(frame.min.x + 10.0, frame.max.y - 10.0 - h),
-                egui::vec2(w, h),
-            );
+            let rect =
+                egui::Rect::from_min_size(egui::pos2(room.min.x, room.max.y - h), egui::vec2(w, h));
             Some(territoria_render::View::fit(
                 [extent.min[0] as f64, extent.min[1] as f64],
                 [extent.max[0] as f64, extent.max[1] as f64],
@@ -2340,50 +2380,53 @@ impl TerritoriaApp {
             ))
         });
         // A printed page's table of the territories' figures.
-        let figures = (page_size.is_some() && settings.figures)
-            .then(|| {
-                map.layers
-                    .iter()
-                    .rev()
-                    .filter(|l| l.shown_at(view.scale))
-                    .find_map(|l| l.kind.plan())
-            })
-            .flatten()
-            .and_then(|plan_id| {
-                let plan = self.project.plan(plan_id)?;
-                let stats = plan.stats(&self.project, &mut self.values);
-                let measure = plan
-                    .measures
-                    .first()
-                    .map_or("Areas".to_owned(), |m| m.source.label(&self.project));
-                let rows = plan
-                    .territories
-                    .iter()
-                    .zip(&stats.territories)
-                    .map(|(t, s)| {
-                        let d = s.deviations.first().copied().unwrap_or(0.0);
-                        (
-                            crate::map_view::color(t.color),
-                            vec![
-                                t.name.clone(),
-                                s.values.first().map_or("–".into(), |v| {
-                                    territoria_analysis::format::format_value(*v)
-                                }),
-                                format!(
-                                    "{}{}",
-                                    if d > 0.0 { "+" } else { "" },
-                                    territoria_analysis::format::format_percent(d)
-                                ),
-                            ],
-                        )
-                    })
-                    .collect();
-                Some(crate::export_map::FiguresTable {
-                    title: plan.name.clone(),
-                    headers: vec![tr("Territory").to_owned(), measure, "±".to_owned()],
-                    rows,
+        let figures = (page_size.is_some()
+            && placed
+                .as_ref()
+                .map_or(settings.figures, |p| p.figures.is_some()))
+        .then(|| {
+            map.layers
+                .iter()
+                .rev()
+                .filter(|l| l.shown_at(view.scale))
+                .find_map(|l| l.kind.plan())
+        })
+        .flatten()
+        .and_then(|plan_id| {
+            let plan = self.project.plan(plan_id)?;
+            let stats = plan.stats(&self.project, &mut self.values);
+            let measure = plan
+                .measures
+                .first()
+                .map_or("Areas".to_owned(), |m| m.source.label(&self.project));
+            let rows = plan
+                .territories
+                .iter()
+                .zip(&stats.territories)
+                .map(|(t, s)| {
+                    let d = s.deviations.first().copied().unwrap_or(0.0);
+                    (
+                        crate::map_view::color(t.color),
+                        vec![
+                            t.name.clone(),
+                            s.values.first().map_or("–".into(), |v| {
+                                territoria_analysis::format::format_value(*v)
+                            }),
+                            format!(
+                                "{}{}",
+                                if d > 0.0 { "+" } else { "" },
+                                territoria_analysis::format::format_percent(d)
+                            ),
+                        ],
+                    )
                 })
-            });
+                .collect();
+            Some(crate::export_map::FiguresTable {
+                title: plan.name.clone(),
+                headers: vec![tr("Territory").to_owned(), measure, "±".to_owned()],
+                rows,
+            })
+        });
         let deco = crate::export_map::Decorations {
             footer,
             overview,
@@ -2506,6 +2549,23 @@ impl TerritoriaApp {
                     ));
                 }
             }
+        }
+        if let (Some(size), Some(placed)) = (page_size, &placed) {
+            // Own texts with {project}, {map} and {date} filled in.
+            let mut placed = placed.clone();
+            for (_, text, _) in &mut placed.texts {
+                *text = fill_in(text);
+            }
+            return Ok(crate::export_map::arranged_svg(
+                &resolved,
+                &view,
+                &map.crs,
+                &deco,
+                size,
+                "sans-serif",
+                &overlays,
+                &placed,
+            ));
         }
         if let Some(size) = page_size {
             return Ok(crate::export_map::page_svg(
@@ -4178,6 +4238,7 @@ impl TerritoriaApp {
                 footer: String::new(),
                 overview: false,
                 figures: false,
+                layout: None,
             };
             let svg = self.map_render(&settings, false, Some(&page))?;
             pages.push(AtlasSheet {
@@ -4380,6 +4441,7 @@ impl TerritoriaApp {
                     footer: String::new(),
                     overview: false,
                     figures: false,
+                    layout: None,
                 };
                 match self.map_svg(&settings) {
                     Ok(svg) => {
@@ -4400,7 +4462,13 @@ impl TerritoriaApp {
                     } else {
                         self.project.title.clone()
                     };
-                    self.export_map = Some(crate::dialogs::ExportMapDialog::new(title));
+                    let mut d = crate::dialogs::ExportMapDialog::new(title);
+                    // A page arranged before, on the page it was made for.
+                    if let Some(layout) = &m.page_layout {
+                        d.settings.layout = Some(layout.clone());
+                        d.settings.page = crate::export_map::PageSize::A4Landscape;
+                    }
+                    self.export_map = Some(d);
                 }
                 None => self.toast("There's no map to export yet."),
             },
@@ -5657,8 +5725,27 @@ impl TerritoriaApp {
         }
         if let Some(mut d) = self.export_map.take() {
             let mut open = true;
-            match d.show(ctx, &mut open) {
+            let outcome = d.show(ctx, &mut open);
+            if std::mem::take(&mut d.wants_image) {
+                self.ask_file(FileAction::PageImage);
+            }
+            match outcome {
                 Some(settings) => {
+                    // An arranged page stays with the map.
+                    if let Some(map) = self.current_map
+                        && settings.page != crate::export_map::PageSize::Screen
+                        && self
+                            .project
+                            .map(map)
+                            .is_some_and(|m| m.page_layout != settings.layout)
+                    {
+                        let layout = settings.layout.clone();
+                        self.edit("Arrange page", move |p| {
+                            if let Some(m) = p.map_mut(map) {
+                                m.page_layout = layout;
+                            }
+                        });
+                    }
                     let format = settings.format;
                     self.map_export = Some(settings);
                     self.ask_file(FileAction::Export(Export::Map(format)));

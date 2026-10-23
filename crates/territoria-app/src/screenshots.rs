@@ -656,6 +656,7 @@ fn exports_map_files() {
             footer: String::new(),
             overview: false,
             figures: false,
+            layout: None,
         });
         app.export(Export::Map(format), path.clone());
         settle(&mut h);
@@ -1033,6 +1034,7 @@ fn label_templates() {
         footer: String::new(),
         overview: false,
         figures: false,
+        layout: None,
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -1343,6 +1345,7 @@ fn proportional_circles() {
         footer: String::new(),
         overview: false,
         figures: false,
+        layout: None,
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -2696,6 +2699,7 @@ fn heat_map() {
         footer: String::new(),
         overview: false,
         figures: false,
+        layout: None,
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -2797,6 +2801,7 @@ fn charts_per_area() {
         footer: String::new(),
         overview: false,
         figures: false,
+        layout: None,
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -2863,6 +2868,7 @@ fn two_values_at_once() {
         footer: String::new(),
         overview: false,
         figures: false,
+        layout: None,
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -2912,6 +2918,7 @@ fn zoom_dependent_layer() {
         footer: String::new(),
         overview: false,
         figures: false,
+        layout: None,
     };
     app.set_map_export_for_test(settings());
     settle(&mut h);
@@ -3118,6 +3125,7 @@ fn flow_lines() {
         footer: String::new(),
         overview: false,
         figures: false,
+        layout: None,
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -3208,6 +3216,7 @@ fn circles_by_category() {
         footer: String::new(),
         overview: false,
         figures: false,
+        layout: None,
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -3498,6 +3507,7 @@ fn company_logo_on_exports() {
         footer: String::new(),
         overview: false,
         figures: false,
+        layout: None,
     };
     let svg_path = dir.join("map.svg");
     h.state_mut().set_map_export_for_test(settings());
@@ -3803,6 +3813,7 @@ fn labels_sized_by_value() {
         footer: String::new(),
         overview: false,
         figures: false,
+        layout: None,
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -3863,6 +3874,7 @@ fn printed_page_layout() {
             footer: "{project} · {map} · {date}".into(),
             overview: true,
             figures: false,
+            layout: None,
         };
         let svg_path = dir.join(format!("{name}.svg"));
         h.state_mut().set_map_export_for_test(settings());
@@ -4064,6 +4076,7 @@ fn symbol_shapes() {
         footer: String::new(),
         overview: false,
         figures: false,
+        layout: None,
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -4136,6 +4149,7 @@ fn line_widths_by_value() {
         footer: String::new(),
         overview: false,
         figures: false,
+        layout: None,
     });
     app.export(Export::Map(Format::Svg), svg_path.clone());
     settle(&mut h);
@@ -4559,6 +4573,7 @@ fn printed_page_with_figures() {
         footer: "{date}".into(),
         overview: false,
         figures: true,
+        layout: None,
     };
     let svg_path = dir.join("page.svg");
     h.state_mut().set_map_export_for_test(settings(Format::Svg));
@@ -4575,6 +4590,103 @@ fn printed_page_with_figures() {
         settle(&mut h);
         std::fs::copy(&png, out.join("page-figures.png")).unwrap();
     }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A printed page arranged by hand: the map on the left, the legend and
+/// figures under the title on the right, an own text and an image; the
+/// arrangement stays with the map.
+#[test]
+fn arranged_page() {
+    use crate::app::Export;
+    use crate::export_map::{Format, PageSize};
+    use territoria_model::map::{PageItem, PageLayout, PagePart};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    h.state_mut().add_balanced_plan_now(layer, 5);
+    settle(&mut h);
+    let dir = std::env::temp_dir().join(format!("territoria-arranged-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // A 2×1 red PNG.
+    let png_pixel = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4nGP4z8AARAAI/gH/xp559wAAAABJRU5ErkJggg==";
+    let item = |part, rect| PageItem { part, rect };
+    let layout = PageLayout {
+        items: vec![
+            item(PagePart::Map, [0.04, 0.05, 0.6, 0.85]),
+            item(PagePart::Title, [0.68, 0.05, 0.3, 0.06]),
+            item(PagePart::Legend, [0.68, 0.14, 0.28, 0.3]),
+            item(PagePart::Figures, [0.68, 0.5, 0.28, 0.35]),
+            item(PagePart::Overview, [0.05, 0.7, 0.15, 0.18]),
+            item(
+                PagePart::Text {
+                    text: "Prepared for {map}\nConfidential".into(),
+                    size: 10.0,
+                },
+                [0.68, 0.88, 0.28, 0.05],
+            ),
+            item(
+                PagePart::Image {
+                    uri: format!("data:image/png;base64,{png_pixel}"),
+                },
+                [0.9, 0.9, 0.06, 0.03],
+            ),
+        ],
+    };
+    let settings = |format| crate::dialogs::MapExportSettings {
+        format,
+        scale: 1.5,
+        title: "Arranged".into(),
+        legend: true,
+        scale_bar: true,
+        page: PageSize::A4Landscape,
+        footer: "{date}".into(),
+        overview: false,
+        figures: false,
+        layout: Some(layout.clone()),
+    };
+    let svg_path = dir.join("page.svg");
+    h.state_mut().set_map_export_for_test(settings(Format::Svg));
+    h.state_mut()
+        .export(Export::Map(Format::Svg), svg_path.clone());
+    settle(&mut h);
+    let svg = std::fs::read_to_string(&svg_path).unwrap();
+    // The map's frame where it was put: 4 % and 5 % in on A4 landscape.
+    let frame = format!(
+        r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="#f3f1ec"/>"##,
+        0.04 * 842.0,
+        0.05 * 595.0,
+        0.6 * 842.0,
+        0.85 * 595.0
+    );
+    assert!(svg.contains(&frame), "the map in its box");
+    assert!(
+        svg.contains(">Prepared for Map</text>"),
+        "own text, filled in"
+    );
+    assert!(svg.contains(">Confidential</text>"), "a second line");
+    assert!(svg.contains("data:image/png;base64,"), "the image");
+    assert!(
+        svg.contains(">Territory 05</text>"),
+        "figures because they're placed"
+    );
+    assert!(svg.contains(">Arranged</text>"));
+    if let Some(out) = out_dir() {
+        let png = dir.join("page.png");
+        h.state_mut().set_map_export_for_test(settings(Format::Png));
+        h.state_mut().export(Export::Map(Format::Png), png.clone());
+        settle(&mut h);
+        std::fs::copy(&png, out.join("page-arranged.png")).unwrap();
+    }
+    // The dialog shows the arrangement to change, and keeps it with the map.
+    let map = h.state().project.maps[0].id;
+    h.state_mut().project.map_mut(map).unwrap().page_layout = Some(layout.clone());
+    h.state_mut()
+        .run_command_for_test(crate::commands::Command::ExportMap);
+    h.run_steps(3);
+    save(&mut h, "arrange-dialog");
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -4648,6 +4760,7 @@ fn shared_areas() {
         footer: String::new(),
         overview: false,
         figures: false,
+        layout: None,
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);

@@ -8,6 +8,7 @@ use egui::{Color32, Rect, Stroke, pos2, vec2};
 use territoria_analysis::LegendEntry;
 use territoria_geo::{Crs, Transformer};
 use territoria_io::GeometryKind;
+use territoria_model::map::{PageItem, PageLayout, PagePart};
 use territoria_render::{LayerMesh, Level, View};
 
 use crate::resolve::{Labels, Resolved};
@@ -1214,6 +1215,38 @@ pub fn page_svg(
     if let Some(logo) = &deco.logo {
         logo.svg(&mut s, w - PAGE_MARGIN - logo.width, PAGE_MARGIN - 4.0);
     }
+    frame_svg(&mut s, resolved, view, crs, deco, overlays);
+    // The legend beside the map, or below it on portrait pages; the
+    // figures under it.
+    let end = if h > w {
+        legends_at(&mut s, deco, w - PAGE_MARGIN, frame.max.y + 12.0)
+    } else {
+        legends_at(&mut s, deco, w - PAGE_MARGIN, frame.min.y)
+    };
+    if let Some(t) = &deco.figures {
+        if h > w {
+            // Portrait: beside the legend, at the left margin's side.
+            figures_at(&mut s, t, w / 2.0, frame.max.y + 12.0);
+        } else {
+            figures_at(&mut s, t, w - PAGE_MARGIN, end + 6.0);
+        }
+    }
+    footer_svg(&mut s, deco, w, h);
+    s.push_str("</svg>");
+    s
+}
+
+/// The map in its frame (`view.rect`) with the overview, north arrow,
+/// scale bar and border.
+fn frame_svg(
+    s: &mut String,
+    resolved: &[Resolved],
+    view: &View,
+    crs: &Crs,
+    deco: &Decorations,
+    overlays: &str,
+) {
+    let frame = view.rect;
     let _ = write!(
         s,
         r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="#f3f1ec"/>"##,
@@ -1222,7 +1255,7 @@ pub fn page_svg(
         frame.width(),
         frame.height()
     );
-    map_into(&mut s, resolved, view, "frame");
+    map_into(s, resolved, view, "frame");
     s.push_str(overlays);
     // The overview: everything small, the page's part marked.
     if let Some(ov) = &deco.overview {
@@ -1235,7 +1268,7 @@ pub fn page_svg(
             r.width(),
             r.height()
         );
-        map_into(&mut s, resolved, ov, "overview");
+        map_into(s, resolved, ov, "overview");
         let a = ov.to_screen(view.to_display(frame.min));
         let b = ov.to_screen(view.to_display(frame.max));
         let part = Rect::from_two_pos(a, b).intersect(r);
@@ -1271,7 +1304,7 @@ pub fn page_svg(
         ny + 30.0
     );
     if deco.scale_bar {
-        scale_bar_at(&mut s, view, crs, frame.max.x - 12.0, frame.max.y - 12.0);
+        scale_bar_at(s, view, crs, frame.max.x - 12.0, frame.max.y - 12.0);
     }
     let _ = write!(
         s,
@@ -1281,22 +1314,10 @@ pub fn page_svg(
         frame.width(),
         frame.height()
     );
-    // The legend beside the map, or below it on portrait pages; the
-    // figures under it.
-    let end = if h > w {
-        legends_at(&mut s, deco, w - PAGE_MARGIN, frame.max.y + 12.0)
-    } else {
-        legends_at(&mut s, deco, w - PAGE_MARGIN, frame.min.y)
-    };
-    if let Some(t) = &deco.figures {
-        if h > w {
-            // Portrait: beside the legend, at the left margin's side.
-            figures_at(&mut s, t, w / 2.0, frame.max.y + 12.0);
-        } else {
-            figures_at(&mut s, t, w - PAGE_MARGIN, end + 6.0);
-        }
-    }
-    // Footer: the text on the left, credits on the right.
+}
+
+/// Footer: the text on the left, credits on the right.
+fn footer_svg(s: &mut String, deco: &Decorations, w: f32, h: f32) {
     let y = h - PAGE_MARGIN;
     let _ = write!(
         s,
@@ -1320,6 +1341,203 @@ pub fn page_svg(
             escape(&deco.credits.join(" · "))
         );
     }
+}
+
+/// Where the parts of a page arranged by hand go, in points.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Placed {
+    pub map: Rect,
+    pub title: Option<Rect>,
+    pub legend: Option<Rect>,
+    pub figures: Option<Rect>,
+    pub overview: Option<Rect>,
+    pub logo: Option<Rect>,
+    /// Own texts (`{project}` & co. still to fill in) with their size.
+    pub texts: Vec<(Rect, String, f32)>,
+    pub images: Vec<(Rect, String)>,
+}
+
+/// A layout's parts on a page of `page` points; without a map frame,
+/// the automatic one.
+pub fn place(layout: &PageLayout, page: egui::Vec2) -> Placed {
+    let to_rect = |r: &[f32; 4]| {
+        Rect::from_min_size(
+            pos2(r[0] * page.x, r[1] * page.y),
+            vec2(r[2] * page.x, r[3] * page.y),
+        )
+    };
+    let mut p = Placed {
+        map: page_frame(page, true, true),
+        title: None,
+        legend: None,
+        figures: None,
+        overview: None,
+        logo: None,
+        texts: Vec::new(),
+        images: Vec::new(),
+    };
+    for item in &layout.items {
+        let r = to_rect(&item.rect);
+        match &item.part {
+            PagePart::Map => p.map = r,
+            PagePart::Title => p.title = Some(r),
+            PagePart::Legend => p.legend = Some(r),
+            PagePart::Figures => p.figures = Some(r),
+            PagePart::Overview => p.overview = Some(r),
+            PagePart::Logo => p.logo = Some(r),
+            PagePart::Text { text, size } => p.texts.push((r, text.clone(), *size)),
+            PagePart::Image { uri } => p.images.push((r, uri.clone())),
+        }
+    }
+    p
+}
+
+/// What the automatic layout does, as a layout to arrange by hand.
+pub fn automatic_layout(page: egui::Vec2, figures: bool, overview: bool) -> PageLayout {
+    let (w, h) = (page.x, page.y);
+    let frame = page_frame(page, true, true);
+    let portrait = h > w;
+    let mut items = vec![
+        (PagePart::Map, frame),
+        (
+            PagePart::Title,
+            Rect::from_min_size(
+                pos2(PAGE_MARGIN, PAGE_MARGIN),
+                vec2(w - 2.0 * PAGE_MARGIN - 156.0, 30.0),
+            ),
+        ),
+        (
+            PagePart::Logo,
+            Rect::from_min_size(
+                pos2(w - PAGE_MARGIN - 140.0, PAGE_MARGIN - 4.0),
+                vec2(140.0, 44.0),
+            ),
+        ),
+        (
+            PagePart::Legend,
+            if portrait {
+                Rect::from_min_max(
+                    pos2(w / 2.0 + 10.0, frame.max.y + 12.0),
+                    pos2(w - PAGE_MARGIN, h - PAGE_MARGIN - 26.0),
+                )
+            } else {
+                Rect::from_min_max(
+                    pos2(frame.max.x + 14.0, frame.min.y),
+                    pos2(w - PAGE_MARGIN, frame.min.y + 240.0),
+                )
+            },
+        ),
+    ];
+    if figures {
+        items.push((
+            PagePart::Figures,
+            if portrait {
+                Rect::from_min_max(
+                    pos2(PAGE_MARGIN, frame.max.y + 12.0),
+                    pos2(w / 2.0, h - PAGE_MARGIN - 26.0),
+                )
+            } else {
+                Rect::from_min_max(
+                    pos2(frame.max.x + 14.0, frame.min.y + 250.0),
+                    pos2(w - PAGE_MARGIN, frame.max.y),
+                )
+            },
+        ));
+    }
+    if overview {
+        let ow = frame.width() * 0.24;
+        let oh = frame.height() * 0.3;
+        items.push((
+            PagePart::Overview,
+            Rect::from_min_size(
+                pos2(frame.min.x + 10.0, frame.max.y - 10.0 - oh),
+                vec2(ow, oh),
+            ),
+        ));
+    }
+    PageLayout {
+        items: items
+            .into_iter()
+            .map(|(part, r)| PageItem {
+                part,
+                rect: [r.min.x / w, r.min.y / h, r.width() / w, r.height() / h],
+            })
+            .collect(),
+    }
+}
+
+/// A printed page arranged by hand: each part in its place; the map in
+/// `view.rect`, the overview (if any) in its own view.
+#[allow(clippy::too_many_arguments)]
+pub fn arranged_svg(
+    resolved: &[Resolved],
+    view: &View,
+    crs: &Crs,
+    deco: &Decorations,
+    page: egui::Vec2,
+    font: &str,
+    overlays: &str,
+    placed: &Placed,
+) -> String {
+    let (w, h) = (page.x, page.y);
+    let mut s = String::new();
+    let _ = write!(
+        s,
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" font-family="{font}"><rect width="{w}" height="{h}" fill="#ffffff"/>"##
+    );
+    for (r, uri) in &placed.images {
+        let _ = write!(
+            s,
+            r#"<image x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" preserveAspectRatio="xMidYMid meet" href="{uri}"/>"#,
+            r.min.x,
+            r.min.y,
+            r.width(),
+            r.height()
+        );
+    }
+    if let Some(r) = placed.title.filter(|_| !deco.title.is_empty()) {
+        let size = (r.height() * 0.7).clamp(8.0, 48.0);
+        let mut title = deco.title.clone();
+        while text_width(&title, size) > r.width() && title.chars().count() > 1 {
+            title.pop();
+        }
+        let _ = write!(
+            s,
+            r##"<text x="{:.1}" y="{:.1}" font-size="{size:.1}" fill="#202328">{}</text>"##,
+            r.min.x,
+            r.min.y + size * 1.1,
+            escape(&title)
+        );
+    }
+    if let (Some(r), Some(logo)) = (placed.logo, &deco.logo) {
+        // Fitted into its box, keeping its shape.
+        let k = (r.width() / logo.width).min(r.height() / logo.height);
+        let fitted = Logo {
+            uri: logo.uri.clone(),
+            width: logo.width * k,
+            height: logo.height * k,
+        };
+        fitted.svg(&mut s, r.min.x, r.min.y);
+    }
+    frame_svg(&mut s, resolved, view, crs, deco, overlays);
+    if let Some(r) = placed.legend {
+        legends_at(&mut s, deco, r.max.x, r.min.y);
+    }
+    if let (Some(r), Some(t)) = (placed.figures, &deco.figures) {
+        figures_at(&mut s, t, r.max.x, r.min.y);
+    }
+    for (r, text, size) in &placed.texts {
+        for (i, line) in text.lines().enumerate() {
+            let _ = write!(
+                s,
+                r##"<text x="{:.1}" y="{:.1}" font-size="{size:.1}" fill="#303338">{}</text>"##,
+                r.min.x,
+                r.min.y + size * (1.1 + 1.3 * i as f32),
+                escape(line)
+            );
+        }
+    }
+    footer_svg(&mut s, deco, w, h);
     s.push_str("</svg>");
     s
 }

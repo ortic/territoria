@@ -919,6 +919,34 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
         ("Light", "Hell"),
         ("Dark", "Dunkel"),
         (
+            "{file} is too big for a page (at most 8 MB).",
+            "{file} ist zu gross für eine Seite (höchstens 8 MB).",
+        ),
+        ("Arrange page", "Seite anordnen"),
+        ("Arrange the page…", "Seite anordnen…"),
+        (
+            "Place the map, title, legend, figures, overview and logo where you like, and add texts and images",
+            "Karte, Titel, Legende, Kennzahlen, Übersicht und Logo frei platzieren und Texte und Bilder hinzufügen",
+        ),
+        ("Automatic layout", "Automatische Anordnung"),
+        (
+            "Back to the usual arrangement",
+            "Zurück zur üblichen Anordnung",
+        ),
+        ("Logo", "Logo"),
+        ("Text", "Text"),
+        ("Image", "Bild"),
+        (
+            "Drag a part to move it, its corner to size it.",
+            "Einen Teil ziehen, um ihn zu verschieben, seine Ecke, um die Grösse zu ändern.",
+        ),
+        ("Add", "Hinzufügen"),
+        ("Image…", "Bild…"),
+        (
+            "A PNG, JPEG or SVG image, kept in the project",
+            "Ein PNG-, JPEG- oder SVG-Bild, im Projekt gespeichert",
+        ),
+        (
             "Regions ({n}) · {levels} levels",
             "Regionen ({n}) · {levels} Ebenen",
         ),
