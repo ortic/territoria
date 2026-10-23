@@ -1,0 +1,3 @@
+/target
+*.snap.new
+/.claude/worktrees

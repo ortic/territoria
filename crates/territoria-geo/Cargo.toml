@@ -1,0 +1,14 @@
+[package]
+name = "territoria-geo"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+crs-definitions.workspace = true
+geo.workspace = true
+geo-types = { workspace = true, features = ["serde"] }
+polylabel = "3.3"
+proj4rs.workspace = true
+rstar.workspace = true
+serde.workspace = true

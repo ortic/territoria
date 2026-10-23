@@ -1,0 +1,23 @@
+[package]
+name = "territoria-io"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+calamine.workspace = true
+csv.workspace = true
+dbase = { workspace = true, features = ["encoding_rs"] }
+encoding_rs.workspace = true
+geo.workspace = true
+geo-types.workspace = true
+geojson.workspace = true
+rust_xlsxwriter.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+shapefile = { workspace = true, features = ["encoding_rs"] }
+territoria-data.workspace = true
+territoria-geo.workspace = true
+thiserror.workspace = true
+ureq.workspace = true
+zip.workspace = true

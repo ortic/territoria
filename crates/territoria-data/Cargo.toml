@@ -1,0 +1,8 @@
+[package]
+name = "territoria-data"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
