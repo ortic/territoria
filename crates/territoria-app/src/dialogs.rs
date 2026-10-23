@@ -4,6 +4,7 @@
 //! Each dialog shows itself and returns an outcome; the app applies it
 //! (with undo) so dialogs never mutate the project directly.
 
+use crate::i18n::tr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -256,14 +257,14 @@ impl ImportLayers {
                             );
                         });
                         egui::Grid::new(("import-grid", i)).num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
-                            ui.label("Coordinates");
+                            ui.label(tr("Coordinates"));
                             let color = if imported.source_crs.is_some() { ui.visuals().text_color() } else { theme::WARN };
                             ui.label(RichText::new(&imported.crs_note).color(color));
                             ui.end_row();
-                            ui.label("Key").on_hover_text("The column that identifies each area: what your data's codes are matched against (postcode, municipality number, …).");
+                            ui.label(tr("Key")).on_hover_text("The column that identifies each area: what your data's codes are matched against (postcode, municipality number, …).");
                             column_combo(ui, &format!("key{i}"), &imported.attributes, &mut l.key_column, |_| true, Some("Row number"));
                             ui.end_row();
-                            ui.label("Name").on_hover_text("A readable name for lists, labels and tooltips.");
+                            ui.label(tr("Name")).on_hover_text("A readable name for lists, labels and tooltips.");
                             column_combo(ui, &format!("name{i}"), &imported.attributes, &mut l.name_column, |k| k == ColumnKind::Text || k == ColumnKind::Key, Some("None"));
                             ui.end_row();
                         });
@@ -329,7 +330,7 @@ impl ImportLayers {
                         self.path.clone(),
                     ));
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -530,7 +531,7 @@ impl ImportTable {
         let mut cancel = false;
         *open = modal(ctx, "import-table", "Add data", 760.0, |ui| {
             ui.horizontal(|ui| {
-                ui.label("Name");
+                ui.label(tr("Name"));
                 ui.add(egui::TextEdit::singleline(&mut self.name).desired_width(260.0));
                 ui.label(
                     RichText::new(format!("{} rows", format_value(self.table.rows() as f64)))
@@ -840,7 +841,7 @@ impl ImportTable {
                         Err(e) => self.crs_error = Some(e.to_string()),
                     }
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -1147,7 +1148,7 @@ impl LinkDialog {
                         color_by: self.color_by.clone().map(|c| (c, self.agg)),
                     });
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -1367,7 +1368,7 @@ impl ColorByDialog {
                         ui.end_row();
                     }
                     if self.chart.is_none() {
-                        ui.label("Value");
+                        ui.label(tr("Value"));
                         ComboBox::from_id_salt("cb-value")
                             .width(280.0)
                             .selected_text(
@@ -1406,10 +1407,10 @@ impl ColorByDialog {
                     {
                         let mut circles = self.circles.unwrap_or(points);
                         let single = self.chart.is_none() && self.second.is_none();
-                        ui.label("Show as");
+                        ui.label(tr("Show as"));
                         ui.horizontal_wrapped(|ui| {
                             if ui
-                                .radio(single && !circles && !self.heat, "Colours")
+                                .radio(single && !circles && !self.heat, tr("Colours"))
                                 .on_hover_text("Each area coloured by its class")
                                 .clicked()
                             {
@@ -1432,7 +1433,7 @@ impl ColorByDialog {
                             }
                             if points
                                 && ui
-                                    .radio(single && self.heat, "Heat map")
+                                    .radio(single && self.heat, tr("Heat map"))
                                     .on_hover_text(
                                         "Where the points are dense, weighted by the value",
                                     )
@@ -1522,7 +1523,7 @@ impl ColorByDialog {
                             options.get(self.choice).is_some()
                         };
                         let create = ui
-                            .add_enabled(ready, egui::Button::new(RichText::new("Create").strong()))
+                            .add_enabled(ready, egui::Button::new(RichText::new(tr("Create")).strong()))
                             .clicked();
                         if create
                             && let (Some(layer), Some(second)) = (self.layer, self.second)
@@ -1560,7 +1561,7 @@ impl ColorByDialog {
                                 heat: self.heat && points,
                             });
                         }
-                        if ui.button("Cancel").clicked() {
+                        if ui.button(tr("Cancel")).clicked() {
                             cancel = true;
                         }
                     });
@@ -1664,7 +1665,7 @@ impl NewPlanDialog {
                 .num_columns(2)
                 .spacing([12.0, 8.0])
                 .show(ui, |ui| {
-                    ui.label("Name");
+                    ui.label(tr("Name"));
                     ui.add(egui::TextEdit::singleline(&mut self.name).desired_width(260.0));
                     ui.end_row();
                     ui.label("Built from").on_hover_text(
@@ -1693,7 +1694,7 @@ impl NewPlanDialog {
                     });
                     ui.end_row();
                     if self.start == PlanStart::Empty {
-                        ui.label("Territories");
+                        ui.label(tr("Territories"));
                         ui.add(egui::DragValue::new(&mut self.count).range(1..=500));
                         ui.end_row();
                     }
@@ -1799,7 +1800,10 @@ impl NewPlanDialog {
                     && (self.start == PlanStart::Empty
                         || self.preview.as_ref().is_some_and(|p| !p.names.is_empty()));
                 if ui
-                    .add_enabled(ready, egui::Button::new(RichText::new("Create").strong()))
+                    .add_enabled(
+                        ready,
+                        egui::Button::new(RichText::new(tr("Create")).strong()),
+                    )
                     .clicked()
                     && let Some(layer) = self.layer
                 {
@@ -1816,7 +1820,7 @@ impl NewPlanDialog {
                         },
                     });
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -1941,7 +1945,7 @@ impl MergeDialog {
                                 );
                             }
                         }
-                        ui.label("Name");
+                        ui.label(tr("Name"));
                         ui.add(egui::TextEdit::singleline(&mut self.name).desired_width(260.0));
                         ui.end_row();
                     }
@@ -1951,7 +1955,10 @@ impl MergeDialog {
             ui.horizontal(|ui| {
                 let ready = self.layer.is_some() && self.column.is_some();
                 if ui
-                    .add_enabled(ready, egui::Button::new(RichText::new("Create").strong()))
+                    .add_enabled(
+                        ready,
+                        egui::Button::new(RichText::new(tr("Create")).strong()),
+                    )
                     .clicked()
                     && let (Some(layer), Some(column)) = (self.layer, self.column.clone())
                 {
@@ -1962,7 +1969,7 @@ impl MergeDialog {
                         name: self.name.clone(),
                     });
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -2155,7 +2162,7 @@ impl DownloadDialog {
                         simplified: self.simplified,
                     });
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -2279,7 +2286,7 @@ impl ExportMapDialog {
                 if ui.button(RichText::new("Export…").strong()).clicked() {
                     outcome = Some(self.settings.clone());
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -2499,7 +2506,7 @@ impl FormulaDialog {
             ui.label(RichText::new("A column computed from the others, e.g. revenue per customer: [Revenue] / [Customers]. It updates when you edit the formula.").weak());
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                ui.label("Name");
+                ui.label(tr("Name"));
                 ui.add(
                     egui::TextEdit::singleline(&mut self.name)
                         .hint_text("e.g. Revenue per customer")
@@ -2667,7 +2674,7 @@ impl FormulaDialog {
                         source: self.source.trim().to_owned(),
                     });
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -2734,7 +2741,7 @@ impl SelectListDialog {
                 {
                     outcome = units;
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -2806,14 +2813,21 @@ impl SettingsDialog {
                 .num_columns(2)
                 .spacing([14.0, 10.0])
                 .show(ui, |ui| {
-                    ui.label("Theme");
+                    ui.label(tr("Theme"));
                     ui.horizontal(|ui| {
-                        ui.radio_value(&mut settings.theme, ThemeChoice::System, "Like the system");
-                        ui.radio_value(&mut settings.theme, ThemeChoice::Light, "Light");
-                        ui.radio_value(&mut settings.theme, ThemeChoice::Dark, "Dark");
+                        ui.radio_value(&mut settings.theme, ThemeChoice::System, tr("Like the system"));
+                        ui.radio_value(&mut settings.theme, ThemeChoice::Light, tr("Light"));
+                        ui.radio_value(&mut settings.theme, ThemeChoice::Dark, tr("Dark"));
                     });
                     ui.end_row();
-                    ui.label("Size");
+                    ui.label(tr("Language"));
+                    ui.horizontal(|ui| {
+                        for l in territoria_config::Language::ALL {
+                            ui.radio_value(&mut settings.language, l, l.label());
+                        }
+                    });
+                    ui.end_row();
+                    ui.label(tr("Size"));
                     let mut pct = (settings.ui_scale * 100.0).round();
                     if ui
                         .add(egui::Slider::new(&mut pct, 60.0..=250.0).step_by(10.0).suffix(" %"))
@@ -2823,7 +2837,7 @@ impl SettingsDialog {
                         settings.ui_scale = pct / 100.0;
                     }
                     ui.end_row();
-                    ui.label("Autosave");
+                    ui.label(tr("Autosave"));
                     ui.horizontal(|ui| {
                         ui.label("every");
                         ui.add(egui::DragValue::new(&mut settings.autosave_minutes).range(0..=60));
@@ -2832,7 +2846,7 @@ impl SettingsDialog {
                     .response
                     .on_hover_text("Unsaved changes are kept in a recovery copy, in case something goes wrong");
                     ui.end_row();
-                    ui.label("New maps");
+                    ui.label(tr("New maps"));
                     let current = settings.background.clone().unwrap_or_else(|| "No background".into());
                     ComboBox::from_id_salt("settings-background")
                         .width(240.0)
@@ -2852,7 +2866,7 @@ impl SettingsDialog {
                             }
                         });
                     ui.end_row();
-                    ui.label("Recent projects");
+                    ui.label(tr("Recent projects"));
                     ui.horizontal(|ui| {
                         ui.label(format!("{}", settings.recent_projects.len()));
                         if ui
@@ -2863,7 +2877,7 @@ impl SettingsDialog {
                         }
                     });
                     ui.end_row();
-                    ui.label("Geocoding");
+                    ui.label(tr("Geocoding"));
                     ui.vertical(|ui| {
                         let g = &mut settings.geocoder;
                         ui.horizontal(|ui| {
@@ -2885,7 +2899,7 @@ impl SettingsDialog {
                         .on_hover_text("Between requests: the public Nominatim allows one per second; your own server may allow 0");
                     });
                     ui.end_row();
-                    ui.label("Company");
+                    ui.label(tr("Company"));
                     ui.vertical(|ui| {
                         ui.add(egui::TextEdit::singleline(&mut settings.company).hint_text("Name on exported maps and reports").desired_width(260.0));
                         ui.horizontal(|ui| {
@@ -2898,13 +2912,13 @@ impl SettingsDialog {
                             if ui.button("Choose…").on_hover_text("A PNG, JPEG or SVG image for exported maps and reports").clicked() {
                                 outcome = Some(SettingsOutcome::ChooseLogo);
                             }
-                            if settings.logo.is_some() && ui.button("Remove").clicked() {
+                            if settings.logo.is_some() && ui.button(tr("Remove")).clicked() {
                                 settings.logo = None;
                             }
                         });
                     });
                     ui.end_row();
-                    ui.label("Territory colours");
+                    ui.label(tr("Territory colours"));
                     ComboBox::from_id_salt("settings-palette")
                         .selected_text(settings.territory_colors.clone().unwrap_or_else(|| "Pastel".into()))
                         .show_ui(ui, |ui| {
@@ -2921,7 +2935,7 @@ impl SettingsDialog {
                         .response
                         .on_hover_text("For new territory plans; a plan's Colours menu changes its own");
                     ui.end_row();
-                    ui.label("Routing");
+                    ui.label(tr("Routing"));
                     ui.vertical(|ui| {
                         let r = &mut settings.routing;
                         ui.add(egui::TextEdit::singleline(&mut r.url).hint_text("OSRM server address").desired_width(260.0))
@@ -2945,7 +2959,7 @@ impl SettingsDialog {
                         });
                     });
                     ui.end_row();
-                    ui.label("Map tiles");
+                    ui.label(tr("Map tiles"));
                     ui.horizontal(|ui| {
                         ui.label(format!("{:.1} MB stored", self.tile_bytes as f64 / 1_048_576.0));
                         if ui
@@ -2963,7 +2977,7 @@ impl SettingsDialog {
                 .id_salt("settings-keys")
                 .show(ui, |ui| self.shortcuts_ui(ui, settings));
             ui.add_space(8.0);
-            if ui.button("Close").clicked() {
+            if ui.button(tr("Close")).clicked() {
                 close = true;
             }
         });
@@ -3238,7 +3252,7 @@ impl HexGridDialog {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 if ui
-                    .add_enabled(ok, egui::Button::new(RichText::new("Create").strong()))
+                    .add_enabled(ok, egui::Button::new(RichText::new(tr("Create")).strong()))
                     .clicked()
                     && let Some(spec) = spec
                 {
@@ -3248,7 +3262,7 @@ impl HexGridDialog {
                     );
                     outcome = Some((spec, name));
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -3341,7 +3355,7 @@ impl SitesDialog {
                 {
                     apply = true;
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -3500,7 +3514,7 @@ impl CatchmentDialog {
                                 Colorable::Category(_) => None,
                             })
                             .collect();
-                        ui.label("Value");
+                        ui.label(tr("Value"));
                         ComboBox::from_id_salt("catch-value")
                             .width(260.0)
                             .selected_text(
@@ -3546,7 +3560,7 @@ impl CatchmentDialog {
                         areas,
                     });
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -3823,7 +3837,7 @@ impl JoinDialog {
                 {
                     apply = true;
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -3943,14 +3957,14 @@ impl SummariseDialog {
                             });
                     });
                     ui.end_row();
-                    ui.label("Only where");
+                    ui.label(tr("Only where"));
                     ui.add(
                         egui::TextEdit::singleline(&mut self.filter)
                             .hint_text("all rows, or e.g. [Year] = 2026")
                             .desired_width(260.0),
                     );
                     ui.end_row();
-                    ui.label("Name");
+                    ui.label(tr("Name"));
                     let default = format!(
                         "{} per {}",
                         project_name(project, self.data),
@@ -3992,7 +4006,7 @@ impl SummariseDialog {
                     }
                     apply = true;
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -4150,7 +4164,7 @@ impl ScoreDialog {
                 {
                     done = true;
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -4406,12 +4420,15 @@ impl FlowDialog {
                     ui.horizontal(|ui| {
                         let ok = self.placed.as_ref().is_some_and(|p| p.1 > 0);
                         if ui
-                            .add_enabled(ok, egui::Button::new(RichText::new("Create").strong()))
+                            .add_enabled(
+                                ok,
+                                egui::Button::new(RichText::new(tr("Create")).strong()),
+                            )
                             .clicked()
                         {
                             apply = true;
                         }
-                        if ui.button("Cancel").clicked() {
+                        if ui.button(tr("Cancel")).clicked() {
                             cancel = true;
                         }
                     });
@@ -4548,7 +4565,7 @@ impl AtlasDialog {
                         {
                             apply = true;
                         }
-                        if ui.button("Cancel").clicked() {
+                        if ui.button(tr("Cancel")).clicked() {
                             cancel = true;
                         }
                     });
@@ -4643,7 +4660,7 @@ impl TemplatesDialog {
                 }
             });
             ui.add_space(8.0);
-            if ui.button("Close").clicked() {
+            if ui.button(tr("Close")).clicked() {
                 cancel = true;
             }
         });
@@ -4757,12 +4774,15 @@ impl DriveZonesDialog {
                             && self.centres.is_some()
                             && !self.limits().is_empty();
                         if ui
-                            .add_enabled(ready, egui::Button::new(RichText::new("Create").strong()))
+                            .add_enabled(
+                                ready,
+                                egui::Button::new(RichText::new(tr("Create")).strong()),
+                            )
                             .clicked()
                         {
                             apply = true;
                         }
-                        if ui.button("Cancel").clicked() {
+                        if ui.button(tr("Cancel")).clicked() {
                             cancel = true;
                         }
                     });

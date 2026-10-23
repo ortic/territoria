@@ -45,6 +45,27 @@ impl Paths {
     }
 }
 
+/// The interface language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Language {
+    #[default]
+    English,
+    German,
+}
+
+impl Language {
+    pub const ALL: [Language; 2] = [Language::English, Language::German];
+
+    /// The language's own name.
+    pub fn label(self) -> &'static str {
+        match self {
+            Language::English => "English",
+            Language::German => "Deutsch",
+        }
+    }
+}
+
 /// Classes and colours of a map kept under a name, to use again.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ClassSet {
@@ -65,6 +86,8 @@ pub enum ThemeChoice {
 #[serde(default)]
 pub struct Settings {
     pub theme: ThemeChoice,
+    /// The interface language.
+    pub language: Language,
     /// UI zoom factor on top of the OS scale factor.
     pub ui_scale: f32,
     /// Most recent first.
@@ -96,6 +119,7 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             theme: ThemeChoice::System,
+            language: Language::English,
             ui_scale: 1.0,
             recent_projects: Vec::new(),
             last_dir: None,

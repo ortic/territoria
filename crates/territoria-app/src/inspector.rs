@@ -1,5 +1,6 @@
 //! The Properties panel: settings of what is selected.
 
+use crate::i18n::tr;
 use egui::{ComboBox, RichText, Sense, Ui, vec2};
 use territoria_analysis::format::format_value;
 use territoria_analysis::{ColorScale, Method, RAMPS, RampKind, RampSpec, ScaleMode};
@@ -155,7 +156,7 @@ pub fn show(
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("Columns").strong());
                         if ui
-                            .small_button("ƒ Calculated column…")
+                            .small_button(tr("ƒ Calculated column…"))
                             .on_hover_text("A new column computed from the others with a formula")
                             .clicked()
                         {
@@ -236,7 +237,7 @@ fn layer(ui: &mut Ui, project: &Project, id: LayerId, actions: &mut Vec<Action>)
         .num_columns(2)
         .spacing([10.0, 6.0])
         .show(ui, |ui| {
-            ui.label("Key")
+            ui.label(tr("Key"))
                 .on_hover_text("Data is matched to areas by this column");
             let mut key = l.key_column.clone();
             ComboBox::from_id_salt("lkey")
@@ -260,7 +261,7 @@ fn layer(ui: &mut Ui, project: &Project, id: LayerId, actions: &mut Vec<Action>)
                 ));
             }
             ui.end_row();
-            ui.label("Name");
+            ui.label(tr("Name"));
             let mut name = l.name_column.clone();
             ComboBox::from_id_salt("lname")
                 .selected_text(name.clone().unwrap_or("None".into()))
@@ -284,7 +285,7 @@ fn layer(ui: &mut Ui, project: &Project, id: LayerId, actions: &mut Vec<Action>)
             // Long texts are cut (full text on hover): a grid doesn't wrap and
             // would widen the panel.
             let max = (ui.available_width() - 90.0).max(80.0);
-            ui.label("Coordinates");
+            ui.label(tr("Coordinates"));
             ui.add_sized(
                 [max, 16.0],
                 egui::Label::new(RichText::new(&l.source.crs_note).small()).truncate(),
@@ -301,7 +302,7 @@ fn layer(ui: &mut Ui, project: &Project, id: LayerId, actions: &mut Vec<Action>)
                 ui.end_row();
             }
             if let Some(p) = &l.source.path {
-                ui.label("File");
+                ui.label(tr("File"));
                 let path = p.display().to_string();
                 ui.add_sized(
                     [max, 16.0],
@@ -313,7 +314,7 @@ fn layer(ui: &mut Ui, project: &Project, id: LayerId, actions: &mut Vec<Action>)
             if let Some(b) = l.geometry.bbox {
                 let total: f64 = l.geometry.areas.iter().sum();
                 if total > 0.0 {
-                    ui.label("Area");
+                    ui.label(tr("Area"));
                     ui.label(format!("{} km²", format_value(total)));
                     ui.end_row();
                 }
@@ -417,7 +418,7 @@ fn style_ui(
         .spacing([10.0, 6.0])
         .show(ui, |ui| {
             if fill {
-                ui.label("Fill");
+                ui.label(tr("Fill"));
                 if let Some(c) = rgba_button(ui, style.fill) {
                     actions.push(edit_layer(map, id, "Change fill", move |l| {
                         if let Some(s) = l.kind.style_mut() {
@@ -427,7 +428,7 @@ fn style_ui(
                 }
                 ui.end_row();
             }
-            ui.label("Borders");
+            ui.label(tr("Borders"));
             ui.horizontal(|ui| {
                 if let Some(c) = rgba_button(ui, style.stroke) {
                     actions.push(edit_layer(map, id, "Change borders", move |l| {
@@ -455,10 +456,10 @@ fn style_ui(
             });
             ui.end_row();
             if let Some(layer) = layer {
-                ui.label("Labels");
+                ui.label(tr("Labels"));
                 let mut labels = style.labels.clone();
                 let text = match &labels {
-                    LabelMode::None => "None".to_owned(),
+                    LabelMode::None => tr("None").to_owned(),
                     LabelMode::Key => "Key".to_owned(),
                     LabelMode::Name => "Name".to_owned(),
                     LabelMode::Column(c) => c.clone(),
@@ -483,10 +484,10 @@ fn style_ui(
                 ComboBox::from_id_salt("labels")
                     .selected_text(text)
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut labels, LabelMode::None, "None");
-                        ui.selectable_value(&mut labels, LabelMode::Key, "Key");
+                        ui.selectable_value(&mut labels, LabelMode::None, tr("None"));
+                        ui.selectable_value(&mut labels, LabelMode::Key, tr("Key"));
                         if layer.name_column.is_some() {
-                            ui.selectable_value(&mut labels, LabelMode::Name, "Name");
+                            ui.selectable_value(&mut labels, LabelMode::Name, tr("Name"));
                         }
                         for c in &layer.attributes.columns {
                             ui.selectable_value(
@@ -528,7 +529,7 @@ fn style_ui(
             })
             .collect();
         ui.horizontal(|ui| {
-            ui.label("Line width");
+            ui.label(tr("Line width"));
             let current = style.width_by.as_ref().map(|s| s.source.clone());
             let mut chosen = current.clone();
             let text = current.as_ref().map_or("All alike".to_owned(), |s| {
@@ -592,7 +593,7 @@ fn style_ui(
             })
             .collect();
         ui.horizontal(|ui| {
-            ui.label("Label size");
+            ui.label(tr("Label size"));
             let current = style.label_size.as_ref().map(|s| s.source.clone());
             let mut chosen = current.clone();
             let text = current.as_ref().map_or("All alike".to_owned(), |s| {
@@ -658,7 +659,7 @@ fn style_ui(
     ui.add_space(4.0);
     let mut custom = style.tooltip.is_some();
     if ui
-        .checkbox(&mut custom, "Own text in the hover card")
+        .checkbox(&mut custom, tr("Own text in the hover card"))
         .on_hover_text("What the card under the mouse shows for this layer")
         .changed()
     {
@@ -725,7 +726,7 @@ fn ramp_picker(ui: &mut Ui, current: &RampSpec, kinds: &[RampKind]) -> Option<Ra
         }
     });
     let mut rev = reversed;
-    if !name.is_empty() && ui.checkbox(&mut rev, "Reverse colours").changed() {
+    if !name.is_empty() && ui.checkbox(&mut rev, tr("Reverse colours")).changed() {
         picked = Some(RampSpec::Named {
             name,
             reversed: rev,
@@ -752,13 +753,13 @@ fn scale_ui(
     };
     ui.horizontal(|ui| {
         let mut mode = scale.mode;
-        ui.selectable_value(&mut mode, ScaleMode::Classified, "Classes");
-        ui.selectable_value(&mut mode, ScaleMode::Continuous, "Smooth gradient");
+        ui.selectable_value(&mut mode, ScaleMode::Classified, tr("Classes"));
+        ui.selectable_value(&mut mode, ScaleMode::Continuous, tr("Smooth gradient"));
         if mode != scale.mode {
             actions.push(edit("Change colouring", Box::new(move |s| s.mode = mode)));
         }
         // Classes kept by name, for other maps and projects.
-        ui.menu_button("Class sets", |ui| {
+        ui.menu_button(tr("Class sets"), |ui| {
             for set in class_sets {
                 let s = set.scale.clone();
                 if ui
@@ -783,7 +784,7 @@ fn scale_ui(
                         .desired_width(160.0),
                 );
                 if ui
-                    .add_enabled(!name.trim().is_empty(), egui::Button::new("Keep"))
+                    .add_enabled(!name.trim().is_empty(), egui::Button::new(tr("Keep")))
                     .clicked()
                 {
                     // Manual breaks keep the limits as they are now.
@@ -809,7 +810,7 @@ fn scale_ui(
             .num_columns(2)
             .spacing([10.0, 6.0])
             .show(ui, |ui| {
-                ui.label("Method");
+                ui.label(tr("Method"));
                 let mut method = scale.method;
                 ComboBox::from_id_salt("method")
                     .width(190.0)
@@ -838,7 +839,7 @@ fn scale_ui(
                 }
                 ui.end_row();
                 if scale.method == Method::Manual {
-                    ui.label("Limits");
+                    ui.label(tr("Limits"));
                     let mut text = scale
                         .manual
                         .iter()
@@ -859,7 +860,7 @@ fn scale_ui(
                         actions.push(edit("Change class limits", Box::new(move |s| s.manual = limits)));
                     }
                 } else {
-                    ui.label("Classes");
+                    ui.label(tr("Classes"));
                     let mut classes = scale.classes;
                     if ui.add(egui::Slider::new(&mut classes, 2..=9)).changed() {
                         actions.push(edit(
@@ -882,7 +883,7 @@ fn scale_ui(
         ui.label(RichText::new(scale.method.help()).small().weak());
     }
     ui.add_space(4.0);
-    ui.label("Colours");
+    ui.label(tr("Colours"));
     if let Some(r) = ramp_picker(
         ui,
         &scale.ramp,
@@ -893,7 +894,7 @@ fn scale_ui(
     ui.horizontal(|ui| {
         let mut shown = scale.no_data.is_some();
         if ui
-            .checkbox(&mut shown, "Areas without data")
+            .checkbox(&mut shown, tr("Areas without data"))
             .on_hover_text(
                 "Fill areas that have no data in a colour of their own (otherwise they stay empty)",
             )
@@ -1009,7 +1010,7 @@ fn gallery_ui(
     };
     let id = ml.id;
     ui.horizontal(|ui| {
-        ui.label("Show as");
+        ui.label(tr("Show as"));
         for (to, label, tip) in [
             (Shown::Colours, "Colours", "Each area coloured by its class"),
             (Shown::Circles, "Circles", "A circle sized by the value"),
@@ -1058,7 +1059,7 @@ fn zoom_ui(
         (Some(c), Some(f)) => format!("{} to {}", text(c), text(f)),
     };
     ui.horizontal(|ui| {
-        ui.label("Shown");
+        ui.label(tr("Shown"));
         ui.menu_button(summary, |ui| {
             let Some(now) = view else {
                 ui.label(RichText::new("Open the map to set zoom levels.").weak());
@@ -1097,7 +1098,7 @@ fn zoom_ui(
                 }));
                 ui.close();
             }
-            if z.is_limited() && ui.button("At all zoom levels").clicked() {
+            if z.is_limited() && ui.button(tr("At all zoom levels")).clicked() {
                 actions.push(edit_layer(map, id, "Show at all zoom levels", |l| {
                     l.zoom = Default::default();
                 }));
@@ -1138,7 +1139,7 @@ fn map_layer(
     gallery_ui(ui, project, ml, map, actions);
     ui.add_space(4.0);
     ui.horizontal(|ui| {
-        ui.label("Opacity");
+        ui.label(tr("Opacity"));
         let mut o = ml.opacity;
         if ui
             .add(egui::Slider::new(&mut o, 0.0..=1.0).show_value(false))
@@ -1273,7 +1274,7 @@ fn map_layer(
                         ));
                     }
                     ui.end_row();
-                    ui.label("Colour");
+                    ui.label(tr("Colour"));
                     if let Some(c) = rgba_button(ui, style.color) {
                         actions.push(edit_flow(
                             "Change flow colour",
@@ -1381,7 +1382,7 @@ fn map_layer(
                         }));
                     }
                     ui.end_row();
-                    ui.label("Classes");
+                    ui.label(tr("Classes"));
                     ui.horizontal(|ui| {
                         for k in [2usize, 3] {
                             if ui
@@ -1399,7 +1400,7 @@ fn map_layer(
                         }
                     });
                     ui.end_row();
-                    ui.label("Colours");
+                    ui.label(tr("Colours"));
                     ui.horizontal(|ui| {
                         for p in territoria_analysis::BIVARIATE {
                             let preview = territoria_analysis::BivariateScale {
@@ -1544,7 +1545,7 @@ fn map_layer(
                     }
                     ui.end_row();
                 });
-            ui.label("Colours");
+            ui.label(tr("Colours"));
             if let Some(r) = ramp_picker(ui, ramp, &[RampKind::Sequential]) {
                 actions.push(edit_layer(map, id, "Change heat colours", move |l| {
                     if let MapLayerKind::Heatmap { ramp, .. } = &mut l.kind {
@@ -1694,7 +1695,7 @@ fn map_layer(
                         }
                         ui.end_row();
                     }
-                    ui.label("Outline");
+                    ui.label(tr("Outline"));
                     if let Some(o) = rgba_button(ui, chart.outline) {
                         actions.push(edit_chart("Change chart outline", Box::new(move |_, c| {
                             c.outline = o;
@@ -1747,7 +1748,7 @@ fn map_layer(
                     }
                     ui.label("km");
                     ui.end_row();
-                    ui.label("Colour");
+                    ui.label(tr("Colour"));
                     if let Some(nc) = rgba_button(ui, *c) {
                         actions.push(edit_layer(map, id, "Change ring colour", move |l| {
                             if let MapLayerKind::Rings { color, .. } = &mut l.kind {
@@ -1774,7 +1775,7 @@ fn map_layer(
                 .num_columns(2)
                 .spacing([10.0, 6.0])
                 .show(ui, |ui| {
-                    ui.label("Colour");
+                    ui.label(tr("Colour"));
                     ui.horizontal(|ui| {
                         if symbol.color_by.is_none()
                             && let Some(c) = rgba_button(ui, symbol.color)
@@ -1819,7 +1820,7 @@ fn map_layer(
                     });
                     ui.end_row();
                     if let Some((_, scale)) = &symbol.color_by {
-                        ui.label("Colours");
+                        ui.label(tr("Colours"));
                         if let Some(r) = ramp_picker(ui, &scale.ramp, &[RampKind::Qualitative]) {
                             actions.push(edit_layer(map, id, "Change colours", move |l| {
                                 if let MapLayerKind::Symbols { symbol, .. } = &mut l.kind
@@ -1831,7 +1832,7 @@ fn map_layer(
                         }
                         ui.end_row();
                     }
-                    ui.label("Outline");
+                    ui.label(tr("Outline"));
                     if let Some(c) = rgba_button(ui, symbol.outline) {
                         actions.push(edit_layer(map, id, "Change circle outline", move |l| {
                             if let MapLayerKind::Symbols { symbol, .. } = &mut l.kind {
@@ -1840,7 +1841,7 @@ fn map_layer(
                         }));
                     }
                     ui.end_row();
-                    ui.label("Largest")
+                    ui.label(tr("Largest"))
                         .on_hover_text("Radius of the circle for the largest value; circle areas grow with the value");
                     let mut r = symbol.max_radius;
                     if ui
@@ -1854,7 +1855,7 @@ fn map_layer(
                         }));
                     }
                     ui.end_row();
-                    ui.label("Shape");
+                    ui.label(tr("Shape"));
                     ui.horizontal(|ui| {
                         for shape in territoria_model::SymbolShape::ALL {
                             if ui
@@ -1871,7 +1872,7 @@ fn map_layer(
                         }
                     });
                     ui.end_row();
-                    ui.label("Sizes");
+                    ui.label(tr("Sizes"));
                     let mut scaling = symbol.scaling;
                     ComboBox::from_id_salt("symbol-scaling")
                         .width(190.0)
@@ -1911,7 +1912,7 @@ fn map_layer(
             style,
             ..
         } => {
-            ui.label("Colours");
+            ui.label(tr("Colours"));
             if let Some(r) = ramp_picker(ui, &scale.ramp, &[RampKind::Qualitative]) {
                 actions.push(edit_layer(map, id, "Change colours", move |l| {
                     if let MapLayerKind::Categories { scale, .. } = &mut l.kind {
@@ -1953,7 +1954,7 @@ fn map_layer(
                     })
                 };
             ui.horizontal(|ui| {
-                ui.label("Fill");
+                ui.label(tr("Fill"));
                 let mut o = style.fill_opacity;
                 if ui
                     .add(egui::Slider::new(&mut o, 0.0..=1.0).show_value(false))
@@ -2224,7 +2225,7 @@ fn segments_menu(
         && territoria_expr::Formula::compile(text, table)
             .is_ok_and(|f| f.ty() == territoria_expr::Type::Bool);
     let data = rows_data(project, source);
-    ui.menu_button("Segments", |ui| {
+    ui.menu_button(tr("Segments"), |ui| {
         for s in &segments {
             if ui.button(*s).clicked() {
                 actions.push(set_filter(format!("[{s}]")));
@@ -2251,7 +2252,7 @@ fn segments_menu(
                         .desired_width(160.0),
                 );
                 let ok = !name.trim().is_empty() && table.column(name.trim()).is_none();
-                if ui.add_enabled(ok, egui::Button::new("Keep")).clicked() {
+                if ui.add_enabled(ok, egui::Button::new(tr("Keep"))).clicked() {
                     actions.push(Action::SaveSegment {
                         data,
                         name: name.trim().to_owned(),
@@ -2285,7 +2286,7 @@ fn value_ui(
     // at the source without it.
     let (source, filter) = source.split();
     ui.horizontal(|ui| {
-        ui.label("Value");
+        ui.label(tr("Value"));
         let current = options
             .iter()
             .find(|(_, c)| matches!(c, Colorable::Number(s) if same_source(s, source)))
@@ -2336,7 +2337,7 @@ fn value_ui(
     } = source
     {
         ui.horizontal(|ui| {
-            ui.label("Per area");
+            ui.label(tr("Per area"));
             let mut a = *agg;
             ComboBox::from_id_salt("agg")
                 .selected_text(a.label())
@@ -2382,7 +2383,7 @@ fn value_ui(
             })
         };
         ui.horizontal(|ui| {
-            ui.label("Only where").on_hover_text(
+            ui.label(tr("Only where")).on_hover_text(
                 "Count or add up only some rows, e.g. [Segment] = \"Retail\" or [Orders] > 10",
             );
             let changed = ui
@@ -2436,7 +2437,7 @@ fn value_ui(
 
     // Relative to: area, another value, the total.
     ui.horizontal(|ui| {
-            ui.label("Relative to").on_hover_text("Sums grow with the size of areas: per km² or per another value (customers, population) makes areas comparable");
+            ui.label(tr("Relative to")).on_hover_text("Sums grow with the size of areas: per km² or per another value (customers, population) makes areas comparable");
             let base = options
                 .iter()
                 .find(|(_, c)| matches!(c, Colorable::Number(s) if same_source(s, source)))

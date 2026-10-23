@@ -1,5 +1,6 @@
 //! The application: project, undo history, panels, tabs and dialogs.
 
+use crate::i18n::tr;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -4688,11 +4689,11 @@ impl TerritoriaApp {
                     commands.push(c);
                 }
             };
-            ui.menu_button("File", |ui| {
+            ui.menu_button(tr("File"), |ui| {
                 for c in [Command::NewProject, Command::OpenProject] {
                     item(ui, commands, &self.keymap, c);
                 }
-                ui.menu_button("Open Recent", |ui| {
+                ui.menu_button(tr("Open Recent"), |ui| {
                     if self.settings.recent_projects.is_empty() {
                         ui.label(RichText::new("No recent projects").weak());
                     }
@@ -4718,7 +4719,7 @@ impl TerritoriaApp {
                 ] {
                     item(ui, commands, &self.keymap, c);
                 }
-                ui.menu_button("Export", |ui| {
+                ui.menu_button(tr("Export"), |ui| {
                     if self.project.plans.is_empty() && self.project.layers.is_empty() {
                         ui.label(RichText::new("Nothing to export yet").weak());
                     }
@@ -4759,7 +4760,7 @@ impl TerritoriaApp {
                         )
                         .collect();
                     if !data.is_empty() {
-                        ui.label(RichText::new("Data").strong());
+                        ui.label(RichText::new(tr("Data")).strong());
                     }
                     for (d, name) in data {
                         ui.menu_button(name, |ui| {
@@ -4781,7 +4782,7 @@ impl TerritoriaApp {
                 item(ui, commands, &self.keymap, Command::Settings);
                 item(ui, commands, &self.keymap, Command::Quit);
             });
-            ui.menu_button("Edit", |ui| {
+            ui.menu_button(tr("Edit"), |ui| {
                 let undo = self.history.undo_label().map(|l| format!("Undo {l}"));
                 let redo = self.history.redo_label().map(|l| format!("Redo {l}"));
                 if ui
@@ -4805,7 +4806,7 @@ impl TerritoriaApp {
                     commands.push(Command::Redo);
                 }
             });
-            ui.menu_button("Map", |ui| {
+            ui.menu_button(tr("Map"), |ui| {
                 for c in [
                     Command::ColorByValue,
                     Command::LinkData,
@@ -4828,7 +4829,7 @@ impl TerritoriaApp {
                     item(ui, commands, &self.keymap, c);
                 }
             });
-            ui.menu_button("Territories", |ui| {
+            ui.menu_button(tr("Territories"), |ui| {
                 item(ui, commands, &self.keymap, Command::NewPlan);
                 ui.separator();
                 for c in [
@@ -4843,7 +4844,7 @@ impl TerritoriaApp {
                     });
                 }
             });
-            ui.menu_button("View", |ui| {
+            ui.menu_button(tr("View"), |ui| {
                 for c in [
                     Command::ToggleContents,
                     Command::ToggleInspector,
@@ -4864,7 +4865,7 @@ impl TerritoriaApp {
                     item(ui, commands, &self.keymap, c);
                 }
             });
-            ui.menu_button("Help", |ui| {
+            ui.menu_button(tr("Help"), |ui| {
                 item(ui, commands, &self.keymap, Command::Help);
                 item(ui, commands, &self.keymap, Command::About);
             });
@@ -4884,24 +4885,24 @@ impl TerritoriaApp {
                     commands.push(c);
                 }
             };
-            button(ui, "📂 Open", Command::OpenProject, "Open a project");
-            button(ui, "💾 Save", Command::SaveProject, "Save the project");
+            button(ui, tr("📂 Open"), Command::OpenProject, "Open a project");
+            button(ui, tr("💾 Save"), Command::SaveProject, "Save the project");
             ui.separator();
-            button(ui, "🗺 Add boundaries", Command::AddBoundaries, "Postcodes, municipalities, regions… from a Shapefile, GeoJSON, GeoPackage, KML or zip");
-            button(ui, "📊 Add data", Command::AddData, "A table from CSV or Excel (or paste cells with Ctrl+V), linked to areas by a key");
-            button(ui, "🎨 Colour by value", Command::ColorByValue, "Colour areas, or draw circles sized by a number");
+            button(ui, tr("🗺 Add boundaries"), Command::AddBoundaries, "Postcodes, municipalities, regions… from a Shapefile, GeoJSON, GeoPackage, KML or zip");
+            button(ui, tr("📊 Add data"), Command::AddData, "A table from CSV or Excel (or paste cells with Ctrl+V), linked to areas by a key");
+            button(ui, tr("🎨 Colour by value"), Command::ColorByValue, "Colour areas, or draw circles sized by a number");
             ui.separator();
-            button(ui, "⬣ New territories", Command::NewPlan, "Plan sales or service territories");
+            button(ui, tr("⬣ New territories"), Command::NewPlan, "Plan sales or service territories");
             ui.separator();
             let has_plan = self.active_plan.is_some();
-            ui.selectable_value(&mut self.tool, Tool::Navigate, "✋ Navigate")
+            ui.selectable_value(&mut self.tool, Tool::Navigate, tr("✋ Navigate"))
                 .on_hover_text("Drag to move, scroll to zoom, click an area to inspect it (V)");
-            ui.selectable_value(&mut self.tool, Tool::Measure, "📏 Measure")
+            ui.selectable_value(&mut self.tool, Tool::Measure, tr("📏 Measure"))
                 .on_hover_text("Click points to measure the distance along them; right-click takes the last one back, Esc starts over");
-            ui.selectable_value(&mut self.tool, Tool::Select, "⬚ Select")
+            ui.selectable_value(&mut self.tool, Tool::Select, tr("⬚ Select"))
                 .on_hover_text("Click or drag a rectangle over areas, Alt+drag for a lasso, Shift adds. Then assign them in one go (S)");
             ui.add_enabled_ui(has_plan, |ui| {
-                ui.selectable_value(&mut self.tool, Tool::Paint, "✏ Paint")
+                ui.selectable_value(&mut self.tool, Tool::Paint, tr("✏ Paint"))
                     .on_hover_text("Drag over areas to assign them to the active territory. Shift+click picks a territory, Alt+drag erases, right-drag moves the map (B)")
                     .on_disabled_hover_text("Create a territory plan first");
             });
@@ -4931,7 +4932,7 @@ impl TerritoriaApp {
         let r = ui.add(
             egui::TextEdit::singleline(&mut self.search)
                 .id(id)
-                .hint_text("🔍 Find an area or territory")
+                .hint_text(tr("🔍 Find an area or territory"))
                 .desired_width(210.0),
         );
         if std::mem::take(&mut self.search_focus) {
@@ -5031,18 +5032,18 @@ impl TerritoriaApp {
                     ui.label(RichText::new(format!("{lat:.5}°, {lon:.5}°")).weak());
                 }
             } else {
-                ui.label(RichText::new(match self.tool {
+                ui.label(RichText::new(tr(match self.tool {
                     Tool::Navigate => "Drag to move the map, scroll to zoom.",
                     Tool::Paint => "Drag over areas to assign them. Shift+click picks a territory, Alt+drag erases.",
                     Tool::Site => "Click on the map where the territory's site is (Esc cancels).",
                     Tool::Select => "Click or drag a rectangle to select, Alt+drag for a lasso, Shift adds. Right-drag moves the map, Esc clears.",
                     Tool::Measure => "Click points to measure; right-click takes the last one back, Esc starts over.",
-                }).weak());
+                })).weak());
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let mut cancel = None;
                 for job in self.jobs.visible() {
-                    if job.cancellable && ui.small_button("Stop").clicked() {
+                    if job.cancellable && ui.small_button(tr("Stop")).clicked() {
                         cancel = Some(job.id);
                     }
                     match job.progress() {
@@ -5059,7 +5060,7 @@ impl TerritoriaApp {
                     self.jobs.cancel(id);
                 }
                 if self.history.dirty {
-                    ui.label(RichText::new("● unsaved").weak());
+                    ui.label(RichText::new(format!("● {}", tr("unsaved"))).weak());
                 }
             });
         });
@@ -5092,13 +5093,13 @@ impl TerritoriaApp {
             };
             let width = 3.0 * 290.0;
             ui.allocate_ui_with_layout(egui::vec2(width, 120.0), Layout::left_to_right(Align::Min), |ui| {
-                if card(ui, "1  Add boundaries", "Postcodes, municipalities or any areas: Shapefile, GeoJSON, GeoPackage or a zip download.") {
+                if card(ui, tr("1  Add boundaries"), "Postcodes, municipalities or any areas: Shapefile, GeoJSON, GeoPackage or a zip download.") {
                     commands.push(Command::AddBoundaries);
                 }
-                if card(ui, "2  Add your data", "A CSV or Excel table, or cells pasted with Ctrl+V. Keys are matched to areas automatically.") {
+                if card(ui, tr("2  Add your data"), "A CSV or Excel table, or cells pasted with Ctrl+V. Keys are matched to areas automatically.") {
                     commands.push(Command::AddData);
                 }
-                if card(ui, "3  Plan territories", "Paint territories or start from a list, then balance them.") {
+                if card(ui, tr("3  Plan territories"), "Paint territories or start from a list, then balance them.") {
                     commands.push(Command::NewPlan);
                 }
             });
@@ -5115,7 +5116,7 @@ impl TerritoriaApp {
             }
             if !self.settings.recent_projects.is_empty() {
                 ui.add_space(18.0);
-                ui.label(RichText::new("Recent projects").strong());
+                ui.label(RichText::new(tr("Recent projects")).strong());
                 for p in self.settings.recent_projects.iter().take(6) {
                     if ui.link(file_name(p)).on_hover_text(p.display().to_string()).clicked() {
                         actions.push(Action::OpenRecent(p.clone()));
@@ -5369,10 +5370,10 @@ impl TerritoriaApp {
                 ui.label(&c.text);
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
-                    if ui.button(RichText::new("OK").strong()).clicked() {
+                    if ui.button(RichText::new(tr("OK")).strong()).clicked() {
                         answer = Some(true);
                     }
-                    if ui.button("Cancel").clicked()
+                    if ui.button(tr("Cancel")).clicked()
                         || ui.input(|i| i.key_pressed(egui::Key::Escape))
                     {
                         answer = Some(false);
@@ -5475,7 +5476,9 @@ impl TerritoriaApp {
                         .small(),
                 );
                 ui.add_space(8.0);
-                if ui.button("Close").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                if ui.button(tr("Close")).clicked()
+                    || ui.input(|i| i.key_pressed(egui::Key::Escape))
+                {
                     self.about = false;
                 }
             });
@@ -5760,6 +5763,7 @@ impl TabViewer for Viewer<'_> {
 impl eframe::App for TerritoriaApp {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        crate::i18n::set_language(self.settings.language);
         for r in self.jobs.poll() {
             self.handle_job(r);
         }
@@ -5877,12 +5881,12 @@ impl eframe::App for TerritoriaApp {
                         ui.selectable_value(
                             &mut self.right_tab,
                             RightTab::Properties,
-                            "Properties",
+                            tr("Properties"),
                         );
                         ui.selectable_value(
                             &mut self.right_tab,
                             RightTab::Territories,
-                            "Territories",
+                            tr("Territories"),
                         );
                     });
                     ui.separator();

@@ -1,6 +1,7 @@
 //! A table tab: a layer's attributes or a dataset, sortable and searchable,
 //! with each row's territory in the plans it relates to.
 
+use crate::i18n::tr;
 use egui::{RichText, Sense, Ui, vec2};
 use egui_extras::{Column as TableColumn, TableBuilder};
 use territoria_analysis::format::format_value;
@@ -112,7 +113,7 @@ pub fn show(
             .width(130.0)
             .selected_text(state.segment.clone().unwrap_or_else(|| "All rows".into()))
             .show_ui(ui, |ui| {
-                ui.selectable_value(&mut state.segment, None, "All rows");
+                ui.selectable_value(&mut state.segment, None, tr("All rows"));
                 for s in &segments {
                     ui.selectable_value(&mut state.segment, Some(s.to_string()), *s);
                 }
@@ -129,46 +130,46 @@ pub fn show(
             .on_hover_text("Only the rows of a segment: a yes/no column");
         ui.label(RichText::new(format!("{} rows", format_value(state.order.len() as f64))).weak());
         if selection.is_some() {
-            ui.checkbox(&mut state.only_selected, "Only the selection")
+            ui.checkbox(&mut state.only_selected, tr("Only the selection"))
                 .on_hover_text("Rows of the areas selected on the map");
         }
     });
     // What can be done with the table, on a row of its own.
     ui.horizontal_wrapped(|ui| {
             if ui
-                .button("ƒ Calculated column…")
+                .button(tr("ƒ Calculated column…"))
                 .on_hover_text("A new column computed from the others with a formula")
                 .clicked()
             {
                 actions.push(Action::Formula(data, None));
             }
             if ui
-                .button("⊕ Columns from…")
+                .button(tr("⊕ Columns from…"))
                 .on_hover_text("Values from the map (the area a point lies in, points in an area, the nearest point) or another table by key")
                 .clicked()
             {
                 actions.push(Action::Join(data));
             }
             if ui
-                .button("Σ Summarise…")
+                .button(tr("Σ Summarise…"))
                 .on_hover_text("A new table with one row per group, e.g. sales per rep")
                 .clicked()
             {
                 actions.push(Action::Summarise(data));
             }
             if ui
-                .button("⚖ Score…")
+                .button(tr("⚖ Score…"))
                 .on_hover_text("A weighted mix of several figures, as a calculated column")
                 .clicked()
             {
                 actions.push(Action::Score(data));
             }
             if matches!(data, DataRef::Table(_))
-                && ui.button("➕ Row").on_hover_text("An empty row at the end; double-click cells to fill them").clicked()
+                && ui.button(tr("➕ Row")).on_hover_text("An empty row at the end; double-click cells to fill them").clicked()
             {
                 actions.push(Action::AddRow(data));
             }
-            ui.menu_button("Export", |ui| {
+            ui.menu_button(tr("Export"), |ui| {
                 if ui.button("Excel…").clicked() {
                     actions.push(Action::Export(Export::Data(data, true, state.segment.clone())));
                 }

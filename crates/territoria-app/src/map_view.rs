@@ -1,6 +1,7 @@
 //! The map tab: draws a map's layers and handles navigation, hovering and
 //! painting territories.
 
+use crate::i18n::tr;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -926,7 +927,7 @@ fn selection_bar(
                                 });
                             }
                         }
-                        if ui.button("Unassign").clicked() {
+                        if ui.button(tr("Unassign")).clicked() {
                             events.push(MapEvent::AssignSelection {
                                 plan: p.id,
                                 to: None,
@@ -937,19 +938,19 @@ fn selection_bar(
                     if noun == "points"
                         && (2..=100).contains(&units.len())
                         && ui
-                            .button("Round")
+                            .button(tr("Round"))
                             .on_hover_text("The quickest round by road visiting the selected points, from the routing service")
                             .clicked()
                     {
                         events.push(MapEvent::Round);
                     }
                     transfer_menu(ui, map, project, layer, events);
-                    if ui.button("Zoom to").clicked() {
+                    if ui.button(tr("Zoom to")).clicked() {
                         events.push(MapEvent::ZoomToSelection);
                     }
                     let mut focus = cx.focus;
                     if ui
-                        .toggle_value(&mut focus, "Focus")
+                        .toggle_value(&mut focus, tr("Focus"))
                         .on_hover_text(
                             "Fade everything else, e.g. to present one territory or region",
                         )
@@ -1003,7 +1004,7 @@ fn transfer_menu(
     if targets.is_empty() {
         return;
     }
-    ui.menu_button("Select in", |ui| {
+    ui.menu_button(tr("Select in"), |ui| {
         for t in targets {
             let noun = match t.kind() {
                 GeometryKind::Point => "points",

@@ -4167,3 +4167,32 @@ fn drive_time_zones() {
         scaled.legend
     );
 }
+
+/// The interface in German.
+#[test]
+fn german_interface() {
+    use egui_kittest::kittest::Queryable;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    app.settings.language = territoria_config::Language::German;
+    app.add_balanced_plan_now(layer, 4);
+    settle(&mut h);
+    save(&mut h, "german");
+    h.get_by_label("Datei");
+    h.get_by_label("⬣ Neue Gebiete");
+    h.get_by_label("Neu einfärben");
+    // Commands too, e.g. in the palette.
+    assert_eq!(
+        crate::commands::Command::SaveProject.label(),
+        "Datei: Speichern"
+    );
+    assert_eq!(
+        crate::commands::Command::SaveProject.short_label(),
+        "Speichern"
+    );
+    crate::i18n::set_language(territoria_config::Language::English);
+}

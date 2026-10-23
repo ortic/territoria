@@ -312,7 +312,7 @@ territoria/
 - [x] CLI: open a project, refresh linked data, export maps/reports/data, run an optimization (exports of maps (PNG, SVG, PDF, web page), reports and plan workbooks; no refresh or optimization from the command line yet)
 - [x] Project templates (styles, layouts, analyses) and "new from template" (File → Templates: keep the project as a named template, start a new untitled project from one, delete; kept in the data folder)
 - [x] Theme/corporate profile: default colours, fonts, logos (company name and logo (PNG, JPEG, SVG) on exported maps, web pages and reports; territory palettes per plan with a default for new plans; no fonts yet)
-- [ ] German UI translation
+- [ ] German UI translation (Settings → Language: menus and all commands, toolbar, Contents, the Properties basics, the Territories panel, tables, the status bar and common buttons in German; dialogs and help mostly still English)
 - [ ] Packages for Linux (`.deb`, AppImage), Windows (MSI), macOS (`.dmg`)
 - [x] User guide with a tutorial project built from open data (docs/guide.md: a first project from geoBoundaries cantons and a sample customer list geocoded by postcode and town, through colours, territories and exports; the window, data, selecting and settings; F1 help in the app)
 

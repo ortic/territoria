@@ -13,6 +13,7 @@ mod export_map;
 mod flowlines;
 mod heat;
 mod help;
+mod i18n;
 mod inspector;
 mod jobs;
 mod map_view;

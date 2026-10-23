@@ -1,6 +1,7 @@
 //! The Contents panel: what the map shows (with legends), the data in the
 //! project and the territory plans.
 
+use crate::i18n::tr;
 use egui::{Color32, RichText, Sense, Ui, vec2};
 use territoria_analysis::format::format_value;
 use territoria_model::{Cache, MapId, MapLayerKind, PlanId, Project};
@@ -45,7 +46,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
         .show(ui, |ui| {
             // The map.
             if let Some(map) = cx.current_map.and_then(|m| project.map(m)) {
-                section(ui, &format!("MAP · {}", map.name.to_uppercase()));
+                section(ui, &format!("{} · {}", tr("MAP"), map.name.to_uppercase()));
                 background_ui(ui, map, &mut actions);
                 projection_ui(ui, project, map, &mut actions);
                 views_ui(ui, map, &mut actions);
@@ -114,14 +115,14 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                         }
                         r.context_menu(|ui| {
                             if ui
-                                .add_enabled(pos + 1 < count, egui::Button::new("Move up"))
+                                .add_enabled(pos + 1 < count, egui::Button::new(tr("Move up")))
                                 .clicked()
                             {
                                 actions.push(move_layer(map_id, pos, pos + 1));
                                 ui.close();
                             }
                             if ui
-                                .add_enabled(pos > 0, egui::Button::new("Move down"))
+                                .add_enabled(pos > 0, egui::Button::new(tr("Move down")))
                                 .clicked()
                             {
                                 actions.push(move_layer(map_id, pos, pos - 1));
@@ -364,7 +365,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                         actions.push(Action::ShowColumn(d.data, d.column.clone()));
                     }
                 }
-                ui.menu_button("➕ Add to map", |ui| {
+                ui.menu_button(tr("➕ Add to map"), |ui| {
                     for l in &project.layers {
                         if ui.button(format!("▣ {}", l.name)).clicked() {
                             actions.push(Action::AddToMap(l.id));
@@ -386,7 +387,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
             }
 
             // Data.
-            section(ui, "DATA");
+            section(ui, tr("DATA"));
             for l in &project.layers {
                 let selected = cx.selection == Selection::Data(DataRef::Layer(l.id));
                 let kind = l.kind().noun(l.len());
@@ -405,7 +406,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                 }
                 let id = l.id;
                 r.context_menu(|ui| {
-                    if ui.button("Open table").clicked() {
+                    if ui.button(tr("Open table")).clicked() {
                         actions.push(Action::OpenTab(Tab::Table(DataRef::Layer(id))));
                         ui.close();
                     }
@@ -413,7 +414,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                         actions.push(Action::AddToMap(id));
                         ui.close();
                     }
-                    if ui.button("Colour by value…").clicked() {
+                    if ui.button(tr("Colour by value…")).clicked() {
                         actions.push(Action::ColorBy(Some(id)));
                         ui.close();
                     }
@@ -432,7 +433,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                         ui.close();
                     }
                     ui.separator();
-                    if ui.button("Remove…").clicked() {
+                    if ui.button(tr("Remove…")).clicked() {
                         actions.push(Action::RemoveLayer(id));
                         ui.close();
                     }
@@ -454,7 +455,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                 }
                 let id = t.id;
                 r.context_menu(|ui| {
-                    if ui.button("Open table").clicked() {
+                    if ui.button(tr("Open table")).clicked() {
                         actions.push(Action::OpenTab(Tab::Table(DataRef::Table(id))));
                         ui.close();
                     }
@@ -472,7 +473,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                         ui.close();
                     }
                     ui.separator();
-                    if ui.button("Remove…").clicked() {
+                    if ui.button(tr("Remove…")).clicked() {
                         actions.push(Action::RemoveTable(id));
                         ui.close();
                     }
@@ -501,16 +502,16 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                 }
             }
             ui.horizontal(|ui| {
-                if ui.small_button("➕ Boundaries").clicked() {
+                if ui.small_button(tr("➕ Boundaries")).clicked() {
                     actions.push(Action::Command(Command::AddBoundaries));
                 }
-                if ui.small_button("➕ Data").clicked() {
+                if ui.small_button(tr("➕ Data")).clicked() {
                     actions.push(Action::Command(Command::AddData));
                 }
             });
 
             // Plans.
-            section(ui, "TERRITORY PLANS");
+            section(ui, tr("TERRITORY PLANS"));
             for p in &project.plans {
                 let active = cx.active_plan == Some(p.id);
                 let assigned = p.assignment.iter().filter(|a| a.is_some()).count();
@@ -526,7 +527,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                     actions.push(Action::ShowPlan(p.id));
                 }
             }
-            if ui.small_button("➕ New plan").clicked() {
+            if ui.small_button(tr("➕ New plan")).clicked() {
                 actions.push(Action::Command(Command::NewPlan));
             }
         });
@@ -563,19 +564,22 @@ fn background_ui(ui: &mut Ui, map: &territoria_model::Map, actions: &mut Vec<Act
         )
     };
     let current = match &map.background {
-        Background::None => "None".to_owned(),
+        Background::None => tr("None").to_owned(),
         Background::Tiles { url, .. } => crate::tiles::PRESETS
             .iter()
             .find(|p| p.url == url)
             .map_or("Custom".to_owned(), |p| p.name.to_owned()),
     };
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Background").small());
+        ui.label(RichText::new(tr("Background")).small());
         egui::ComboBox::from_id_salt("background")
             .width(150.0)
             .selected_text(&current)
             .show_ui(ui, |ui| {
-                if ui.selectable_label(current == "None", "None").clicked() {
+                if ui
+                    .selectable_label(current == tr("None"), tr("None"))
+                    .clicked()
+                {
                     actions.push(set(Background::None));
                 }
                 for p in crate::tiles::PRESETS {
@@ -760,10 +764,10 @@ fn size_legend(ui: &mut Ui, symbol: &territoria_model::SymbolStyle, max: f64) {
 fn views_ui(ui: &mut Ui, map: &territoria_model::Map, actions: &mut Vec<Action>) {
     let map_id = map.id;
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Views").small());
+        ui.label(RichText::new(tr("Views")).small());
         ui.menu_button(
             if map.views.is_empty() {
-                "None kept".to_owned()
+                tr("None kept").to_owned()
             } else {
                 format!("{} kept", map.views.len())
             },
@@ -861,7 +865,7 @@ fn projection_ui(
         })
         .map(|b| b.center());
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Projection").small());
+        ui.label(RichText::new(tr("Projection")).small());
         egui::ComboBox::from_id_salt("projection")
             .width(118.0)
             .selected_text(&current)

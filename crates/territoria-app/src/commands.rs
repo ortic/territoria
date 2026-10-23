@@ -15,10 +15,11 @@ macro_rules! commands {
         impl Command {
             pub const ALL: &[Command] = &[$(Command::$variant,)*];
 
+            /// The label in the interface language.
             pub fn label(self) -> &'static str {
-                match self {
+                crate::i18n::tr(match self {
                     $(Command::$variant => $label,)*
-                }
+                })
             }
         }
     };
