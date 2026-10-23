@@ -85,6 +85,8 @@ pub enum JobResult {
         /// What the centres are, for names.
         label: String,
         limits: Vec<f64>,
+        /// Also merge each zone's areas into an outline layer.
+        outlines: bool,
         /// Per area: minutes and the nearest centre's name.
         result: Result<Vec<Option<(f64, String)>>, String>,
     },

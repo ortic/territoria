@@ -1339,9 +1339,10 @@ impl TerritoriaApp {
                 layer,
                 label,
                 limits,
+                outlines,
                 result,
             } => match result {
-                Ok(found) => self.add_drive_zones(layer, &label, &limits, found),
+                Ok(found) => self.add_drive_zones(layer, &label, &limits, outlines, found),
                 Err(e) => self.error(format!("Couldn't get the travel times: {e}")),
             },
             JobResult::Round {
@@ -2514,6 +2515,7 @@ impl TerritoriaApp {
         areas: LayerId,
         centres: territoria_model::catchment::Centres,
         limits: Vec<f64>,
+        outlines: bool,
     ) {
         let Some(l) = self.project.layer(areas) else {
             return;
@@ -2557,6 +2559,7 @@ impl TerritoriaApp {
                     layer: areas,
                     label,
                     limits,
+                    outlines,
                     result,
                 }
             });
@@ -2568,6 +2571,7 @@ impl TerritoriaApp {
         layer: LayerId,
         label: &str,
         limits: &[f64],
+        outlines: bool,
         found: Vec<Option<(f64, String)>>,
     ) {
         use territoria_data::{Column, ColumnKind};
@@ -2598,6 +2602,21 @@ impl TerritoriaApp {
             labels.push(format!("{}–{} min", fmt(w[0]), fmt(w[1])));
         }
         labels.push(format!("over {} min", fmt(*limits.last().unwrap_or(&0.0))));
+        // Each area's zone, by name: for the outlines.
+        let mut zone_column = format!("Zone to {label}");
+        if let Some(t) = data_table_mut(&mut self.project, DataRef::Layer(layer)) {
+            zone_column = t.unique_name(&zone_column);
+            let zones = found
+                .iter()
+                .map(|f| {
+                    f.as_ref().map(|(m, _)| {
+                        let k = limits.iter().filter(|l| *m >= **l).count();
+                        labels[k].clone()
+                    })
+                })
+                .collect();
+            let _ = t.push_column(Column::text(zone_column.clone(), ColumnKind::Text, zones));
+        }
         let map = self.ensure_map();
         let id = self.project.new_map_layer_id();
         self.push_map_layer(
@@ -2636,6 +2655,14 @@ impl TerritoriaApp {
         self.history.push("Drive-time zones", before);
         self.selection = Selection::MapLayer(map, id);
         self.right_tab = RightTab::Properties;
+        if outlines {
+            self.merge_areas(
+                layer,
+                &zone_column,
+                None,
+                &format!("Drive-time zones to {label}"),
+            );
+        }
     }
 
     /// A round by road for each territory of `plan` (on points), from its
@@ -5516,7 +5543,7 @@ impl TerritoriaApp {
             let mut open = true;
             if d.show(ctx, &self.project, &mut open) {
                 if let (Some(areas), Some(centres)) = (d.areas, d.centres) {
-                    self.drive_zones_for(areas, centres, d.limits());
+                    self.drive_zones_for(areas, centres, d.limits(), d.outlines);
                 }
             } else if open {
                 self.drive_zones = Some(d);

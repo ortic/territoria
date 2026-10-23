@@ -303,7 +303,7 @@ territoria/
 
 - [ ] Provider settings (URL, key, rate limit) for geocoding, routing, tiles; keys in the OS keychain (geocoding and routing: server, profile and pause in Settings; tiles from presets; no keys or keychain yet)
 - [x] Drive-time/distance matrices (OSRM `table`, Valhalla, GraphHopper), cached in the project (OSRM: minutes and km by road to the nearest point of another layer as columns of areas or points, asked in blocks with a pause; no Valhalla/GraphHopper, no full matrix for balancing yet)
-- [ ] Isochrones around sites (several rings), as analysis and optimizer input (area-level drive-time zones: each area's minutes by road to the nearest site or point, coloured in bands like under 15 / 15–30 / 30–45 / over 45 min; and as optimizer input through balancing by road; no polygon isochrones yet)
+- [x] Isochrones around sites (several rings), as analysis and optimizer input (area-level drive-time zones: each area's minutes by road to the nearest site or point, coloured in bands like under 15 / 15–30 / 30–45 / over 45 min; and as optimizer input through balancing by road; zone outlines as a layer of merged areas)
 - [x] Routes between points; visit order (TSP) for a rep's customers ("Round" on the selection bar for 2–100 selected points: OSRM's trip gives the order, the road as a line layer with km and time, and a visit order column; starts at the first selected; for all territories of a plan on points from the plan menu, from each site)
 - [x] Workload: visit frequency × duration + travel time per territory as a KPI (rounds for all territories: travel minutes of each territory's round by road plus visit minutes (the same per stop or from a column such as visits × duration) as workload hours per territory)
 

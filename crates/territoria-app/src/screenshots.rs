@@ -4219,6 +4219,7 @@ fn drive_time_zones() {
         layer,
         territoria_model::catchment::Centres::Points(points),
         vec![2.0, 4.0, 6.0],
+        true,
     );
     settle(&mut h);
     save(&mut h, "drive-zones");
@@ -4245,6 +4246,14 @@ fn drive_time_zones() {
         "{:?}",
         scaled.legend
     );
+    // The zones' outlines: one shape per zone.
+    let outlines = app
+        .project
+        .layers
+        .iter()
+        .find(|l| l.name == "Drive-time zones to Branches")
+        .expect("the outlines");
+    assert_eq!(outlines.len(), 4);
 }
 
 /// The interface in German.

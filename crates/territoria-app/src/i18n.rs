@@ -302,6 +302,14 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
         ("Rows of", "Zeilen von"),
         // Panels: properties, territories, contents, tables.
         ("of", "von"),
+        (
+            "Also the zones' outlines as a layer",
+            "Auch die Umrisse der Zonen als Ebene",
+        ),
+        (
+            "The areas of each zone merged into one: drive-time zones as shapes, for printing or other analyses",
+            "Die Gebiete jeder Zone zu einem zusammengelegt: Fahrzeitzonen als Formen, für den Druck oder weitere Analysen",
+        ),
         ("Share with", "Teilen mit"),
         ("Stop sharing", "Nicht mehr teilen"),
         ("Shared with", "Geteilt mit"),

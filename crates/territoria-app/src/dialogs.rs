@@ -4713,6 +4713,8 @@ pub struct DriveZonesDialog {
     pub areas: Option<LayerId>,
     /// Limits of the zones in minutes, e.g. "15, 30, 45".
     pub bands: String,
+    /// Also the zones' outlines: their areas merged into one per zone.
+    pub outlines: bool,
 }
 
 impl DriveZonesDialog {
@@ -4727,6 +4729,7 @@ impl DriveZonesDialog {
             centres,
             areas,
             bands: "15, 30, 45".into(),
+            outlines: true,
         }
     }
 
@@ -4800,6 +4803,10 @@ impl DriveZonesDialog {
                         ui.add(egui::TextEdit::singleline(&mut self.bands).desired_width(120.0));
                         ui.label(tr("minutes"));
                     });
+                    ui.end_row();
+                    ui.label("");
+                    ui.checkbox(&mut self.outlines, tr("Also the zones' outlines as a layer"))
+                        .on_hover_text(tr("The areas of each zone merged into one: drive-time zones as shapes, for printing or other analyses"));
                     ui.end_row();
                     ui.label("");
                     ui.horizontal(|ui| {
