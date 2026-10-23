@@ -88,7 +88,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                             MapLayerKind::Rings { .. } => "◎",
                             MapLayerKind::Heatmap { .. } => "◍",
                             MapLayerKind::Charts { chart, .. } => {
-                                if chart.shape == territoria_model::ChartShape::Bars {
+                                if chart.shape.is_bars() {
                                     "▮"
                                 } else {
                                     "◔"
@@ -282,7 +282,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                                         });
                                     }
                                     // Pies sized by their total: what sizes mean.
-                                    if chart.sized && chart.shape != territoria_model::ChartShape::Bars {
+                                    if chart.sized && !chart.shape.is_bars() {
                                         let n = project.layer(*layer).map_or(0, |l| l.len());
                                         let mut totals = vec![0.0f64; n];
                                         for p in parts {

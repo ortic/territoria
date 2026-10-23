@@ -548,7 +548,30 @@ fn charts(
             .collect()
     };
     let mut out = Vec::new();
-    if chart.shape == territoria_model::ChartShape::Bars {
+    if chart.shape == territoria_model::ChartShape::Stacked {
+        // One scale for the totals: the tallest stack gets the full height.
+        let totals: Vec<f64> = (0..n).map(|f| at(f).iter().sum()).collect();
+        let max = totals.iter().copied().fold(0.0f64, f64::max);
+        if max <= 0.0 {
+            return out;
+        }
+        for (f, total) in totals.iter().enumerate() {
+            if *total <= 0.0 {
+                continue;
+            }
+            out.push(Chart {
+                feature: f,
+                shape: chart.shape,
+                size: chart.max_size,
+                parts: at(f)
+                    .iter()
+                    .zip(&colors)
+                    .map(|(x, c)| ((x / max) as f32, *c))
+                    .collect(),
+                outline,
+            });
+        }
+    } else if chart.shape == territoria_model::ChartShape::Bars {
         let max = (0..n).flat_map(&at).fold(0.0f64, f64::max);
         if max <= 0.0 {
             return out;

@@ -1351,7 +1351,7 @@ fn map_layer(
                         }
                     });
                     ui.end_row();
-                    let bars = chart.shape == territoria_model::ChartShape::Bars;
+                    let bars = chart.shape.is_bars();
                     ui.label(if bars { "Tallest" } else { "Largest" }).on_hover_text(if bars {
                         "Height of the bar for the largest value"
                     } else {

@@ -198,16 +198,29 @@ pub enum ChartShape {
     Pie,
     Donut,
     Bars,
+    /// One bar per feature, its values stacked.
+    Stacked,
 }
 
 impl ChartShape {
-    pub const ALL: [ChartShape; 3] = [ChartShape::Pie, ChartShape::Donut, ChartShape::Bars];
+    pub const ALL: [ChartShape; 4] = [
+        ChartShape::Pie,
+        ChartShape::Donut,
+        ChartShape::Bars,
+        ChartShape::Stacked,
+    ];
+
+    /// Bars of either kind (heights on a scale, not pie slices).
+    pub fn is_bars(self) -> bool {
+        matches!(self, ChartShape::Bars | ChartShape::Stacked)
+    }
 
     pub fn label(self) -> &'static str {
         match self {
             ChartShape::Pie => "Pie",
             ChartShape::Donut => "Donut",
             ChartShape::Bars => "Bars",
+            ChartShape::Stacked => "Stacked",
         }
     }
 }
@@ -374,10 +387,13 @@ impl MapLayerKind {
             MapLayerKind::Rings { .. } => "Catchment rings",
             MapLayerKind::Heatmap { .. } => "Heat map (density)",
             MapLayerKind::Flows { .. } => "Flows (lines between places)",
-            MapLayerKind::Charts { chart, .. } => match chart.shape {
-                ChartShape::Bars => "Bar charts",
-                _ => "Pie charts",
-            },
+            MapLayerKind::Charts { chart, .. } => {
+                if chart.shape.is_bars() {
+                    "Bar charts"
+                } else {
+                    "Pie charts"
+                }
+            }
         }
     }
 

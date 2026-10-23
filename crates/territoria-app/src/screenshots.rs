@@ -2684,6 +2684,17 @@ fn charts_per_area() {
     }
     settle(&mut h);
     save(&mut h, "charts-bars");
+    let app = h.state_mut();
+    if let Some(MapLayerKind::Charts { chart, .. }) = app
+        .project
+        .map_mut(map)
+        .and_then(|m| m.layer_mut(id))
+        .map(|l| &mut l.kind)
+    {
+        chart.shape = ChartShape::Stacked;
+    }
+    settle(&mut h);
+    save(&mut h, "charts-stacked");
 
     let dir = std::env::temp_dir().join(format!("territoria-charts-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

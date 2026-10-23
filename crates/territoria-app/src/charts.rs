@@ -66,10 +66,36 @@ pub fn bars(c: Pos2, size: f32, parts: &[(f32, Color32)]) -> Vec<(Rect, Color32)
         .collect()
 }
 
+/// One bar with the parts stacked from the bottom; parts are heights as
+/// fractions of `size`.
+pub fn stacked(c: Pos2, size: f32, parts: &[(f32, Color32)]) -> Vec<(Rect, Color32)> {
+    let w = (size * 0.45).clamp(5.0, 12.0);
+    let mut bottom = c.y + size / 2.0;
+    parts
+        .iter()
+        .filter(|(h, _)| *h > 0.0)
+        .map(|&(h, color)| {
+            let top = bottom - size * h;
+            let r = Rect::from_min_max(pos2(c.x - w / 2.0, top), pos2(c.x + w / 2.0, bottom));
+            bottom = top;
+            (r, color)
+        })
+        .collect()
+}
+
+/// The rectangles of a bar chart of either kind.
+fn rects(chart: &Chart, c: Pos2) -> Vec<(Rect, Color32)> {
+    if chart.shape == ChartShape::Stacked {
+        stacked(c, chart.size, &chart.parts)
+    } else {
+        bars(c, chart.size, &chart.parts)
+    }
+}
+
 /// The space a chart takes on screen.
 pub fn bounds(chart: &Chart, c: Pos2) -> Rect {
     match chart.shape {
-        ChartShape::Bars => bars(c, chart.size, &chart.parts)
+        ChartShape::Bars | ChartShape::Stacked => rects(chart, c)
             .iter()
             .fold(Rect::from_center_size(c, vec2(1.0, chart.size)), |r, b| {
                 r.union(b.0)
@@ -105,8 +131,8 @@ fn fill(mesh: &mut egui::Mesh, outline: &[Pos2], color: Color32, donut: bool) {
 /// The chart as egui shapes at `c`.
 pub fn shapes(out: &mut Vec<Shape>, chart: &Chart, c: Pos2) {
     match chart.shape {
-        ChartShape::Bars => {
-            let rects = bars(c, chart.size, &chart.parts);
+        ChartShape::Bars | ChartShape::Stacked => {
+            let rects = rects(chart, c);
             for (r, color) in &rects {
                 out.push(Shape::rect_filled(*r, 0.0, *color));
                 out.push(Shape::rect_stroke(
@@ -167,8 +193,8 @@ pub fn svg(s: &mut String, chart: &Chart, c: Pos2, tip: &str) {
     let w = chart.outline.width;
     let _ = write!(s, "<g{tip}>");
     match chart.shape {
-        ChartShape::Bars => {
-            let rects = bars(c, chart.size, &chart.parts);
+        ChartShape::Bars | ChartShape::Stacked => {
+            let rects = rects(chart, c);
             for (r, color) in &rects {
                 let (fc, fa) = hex(*color);
                 let _ = write!(
@@ -250,5 +276,11 @@ mod tests {
         assert_eq!(b[0].0.top(), 40.0);
         assert_eq!(b[1].0.top(), 50.0);
         assert!(b[0].0.right() < b[1].0.left());
+        // Stacked: the second part sits on the first.
+        let s = stacked(c, 20.0, &[(0.5, red), (0.25, blue)]);
+        assert_eq!(s[0].0.bottom(), 60.0);
+        assert_eq!(s[0].0.top(), 50.0);
+        assert_eq!(s[1].0.bottom(), 50.0);
+        assert_eq!(s[1].0.top(), 45.0);
     }
 }

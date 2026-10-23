@@ -1474,6 +1474,11 @@ impl ColorByDialog {
                                     "Bar charts",
                                     "Bars on each area, one per value, on one scale",
                                 ),
+                                (
+                                    territoria_model::ChartShape::Stacked,
+                                    "Stacked bars",
+                                    "One bar on each area, as tall as the total, its values stacked",
+                                ),
                             ] {
                                 if ui
                                     .radio(self.chart == Some(shape), label)
