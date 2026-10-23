@@ -2821,3 +2821,78 @@ fn zoom_dependent_layer() {
     assert!(near.contains("<text") || key.is_empty());
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Selected regions carried to the areas and customers inside them.
+#[test]
+fn select_in_another_layer() {
+    use crate::app::Action;
+    use crate::dialogs::Placement;
+    use crate::map_view::MapEvent;
+    use territoria_model::transfer::Relation;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let customers = customers(h.state(), layer, 400);
+    let app = h.state_mut();
+    app.add_table(
+        "Customers".into(),
+        customers,
+        PathBuf::from("customers.csv"),
+        Placement::Points {
+            x: "Longitude".into(),
+            y: "Latitude".into(),
+        },
+        None,
+    );
+    let points = app.project.layers.last().unwrap().id;
+    let key = app
+        .project
+        .layer(layer)
+        .unwrap()
+        .key_column
+        .clone()
+        .unwrap();
+    app.merge_areas_for_test(layer, &key, Some(2), "Regions");
+    let regions = app.project.layers.last().unwrap().id;
+    settle(&mut h);
+    let app = h.state_mut();
+    // The two regions with the most areas.
+    let r = app.project.layer(regions).unwrap();
+    let areas = r.attributes.column("Areas").unwrap();
+    let mut order: Vec<u32> = (0..r.len() as u32).collect();
+    order.sort_by(|a, b| {
+        areas
+            .f64(*b as usize)
+            .unwrap_or(0.0)
+            .total_cmp(&areas.f64(*a as usize).unwrap_or(0.0))
+    });
+    let chosen = order[..2].to_vec();
+    let expected: f64 = chosen.iter().filter_map(|u| areas.f64(*u as usize)).sum();
+    let transfer = |h: &mut Harness<'_, TerritoriaApp>, to, relation| -> usize {
+        h.state_mut()
+            .apply_action_for_test(Action::SelectUnits(regions, chosen.clone()));
+        h.state_mut()
+            .map_events_for_test(vec![MapEvent::TransferSelection { to, relation }]);
+        let (l, units) = h.state().selected.clone().expect("a selection");
+        assert_eq!(l, to);
+        units.len()
+    };
+    let contained = transfer(&mut h, layer, Relation::Contained);
+    let centre = transfer(&mut h, layer, Relation::CentreInside);
+    let touching = transfer(&mut h, layer, Relation::Touching);
+    assert!(
+        (contained as f64 - expected).abs() <= expected * 0.02,
+        "{contained} areas wholly inside, {expected} merged"
+    );
+    assert!(
+        (centre as f64 - expected).abs() <= expected * 0.02,
+        "{centre}"
+    );
+    assert!(touching > centre, "neighbours touch too: {touching}");
+    let inside = transfer(&mut h, points, Relation::CentreInside);
+    assert!(inside > 0 && inside < 400, "{inside} customers");
+    settle(&mut h);
+    save(&mut h, "select-in");
+}

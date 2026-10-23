@@ -3504,6 +3504,24 @@ impl TerritoriaApp {
                     self.selected = None;
                     self.focus = false;
                 }
+                MapEvent::TransferSelection { to, relation } => {
+                    if let Some((from, units)) = self.selected.clone()
+                        && let (Some(a), Some(b)) =
+                            (self.project.layer(from), self.project.layer(to))
+                    {
+                        let found = territoria_model::transfer::transfer(a, &units, b, relation);
+                        if found.is_empty() {
+                            self.toast(format!("Nothing in {} is {}.", b.name, relation.label()));
+                        } else {
+                            self.toast(format!(
+                                "{} of {} selected",
+                                territoria_analysis::format::format_value(found.len() as f64),
+                                b.name
+                            ));
+                            self.selected = Some((to, found));
+                        }
+                    }
+                }
                 MapEvent::Focus(on) => {
                     self.focus = on;
                     if on

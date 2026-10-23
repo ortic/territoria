@@ -108,6 +108,11 @@ pub enum MapEvent {
     },
     ZoomToSelection,
     ClearSelection,
+    /// Select the features of another layer related to the selection.
+    TransferSelection {
+        to: LayerId,
+        relation: territoria_model::transfer::Relation,
+    },
     /// Fade everything but the selection (or stop).
     Focus(bool),
 }
@@ -921,6 +926,7 @@ fn selection_bar(
                         }
                     }
                     ui.separator();
+                    transfer_menu(ui, map, project, layer, events);
                     if ui.button("Zoom to").clicked() {
                         events.push(MapEvent::ZoomToSelection);
                     }
@@ -944,6 +950,88 @@ fn selection_bar(
                 });
             });
         });
+}
+
+/// "Select in": the features of the map's other layers that relate to
+/// the selection.
+fn transfer_menu(
+    ui: &mut Ui,
+    map: &Map,
+    project: &Project,
+    layer: LayerId,
+    events: &mut Vec<MapEvent>,
+) {
+    use territoria_model::transfer::Relation;
+    let Some(from) = project.layer(layer) else {
+        return;
+    };
+    let mut targets: Vec<LayerId> = Vec::new();
+    for ml in &map.layers {
+        let id = match &ml.kind {
+            MapLayerKind::Territories { plan, .. } => project.plan(*plan).map(|p| p.layer),
+            k => k.layer(),
+        };
+        if let Some(id) = id
+            && id != layer
+            && !targets.contains(&id)
+        {
+            targets.push(id);
+        }
+    }
+    let targets: Vec<&territoria_model::Layer> = targets
+        .iter()
+        .filter_map(|id| project.layer(*id))
+        .filter(|t| from.kind() == GeometryKind::Area || t.kind() == GeometryKind::Area)
+        .collect();
+    if targets.is_empty() {
+        return;
+    }
+    ui.menu_button("Select in", |ui| {
+        for t in targets {
+            let noun = match t.kind() {
+                GeometryKind::Point => "points",
+                GeometryKind::Line => "lines",
+                GeometryKind::Area => "areas",
+            };
+            if from.kind() != GeometryKind::Area {
+                if ui
+                    .button(format!("{}: areas they lie in", t.name))
+                    .clicked()
+                {
+                    events.push(MapEvent::TransferSelection {
+                        to: t.id,
+                        relation: Relation::CentreInside,
+                    });
+                    ui.close();
+                }
+            } else if t.kind() == GeometryKind::Point {
+                if ui.button(format!("{}: points inside", t.name)).clicked() {
+                    events.push(MapEvent::TransferSelection {
+                        to: t.id,
+                        relation: Relation::CentreInside,
+                    });
+                    ui.close();
+                }
+            } else {
+                ui.menu_button(&t.name, |ui| {
+                    for relation in Relation::ALL {
+                        if ui
+                            .button(format!("{noun} {}", relation.label()))
+                            .clicked()
+                        {
+                            events.push(MapEvent::TransferSelection {
+                                to: t.id,
+                                relation,
+                            });
+                            ui.close();
+                        }
+                    }
+                });
+            }
+        }
+    })
+    .response
+    .on_hover_text("Select what lies in the selection on another layer, e.g. the postcodes of selected districts");
 }
 
 /// Title and (label, value) rows for the hover card: the area, then what

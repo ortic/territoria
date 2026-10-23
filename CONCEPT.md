@@ -168,7 +168,7 @@ territoria/
 - [x] Level-of-detail rendering: simplified arcs per zoom level, GPU meshes, viewport culling
 - [x] Hover highlight with a tooltip card (name, key, data values)
 - [x] Selection: click, Ctrl+click, rectangle, lasso, radius; by list (ranges like `01-09, 15`) (Select tool: click, Shift/Ctrl+click toggles, drag a rectangle, Alt+drag a lasso; list dialog with ranges and wildcards; no radius yet)
-- [ ] Transfer a selection to another layer (contained / touching / centre inside)
+- [x] Transfer a selection to another layer (contained / touching / centre inside) ("Select in" on the selection bar: areas wholly inside, with their centre inside or touching; points inside; from points the areas they lie in)
 - [x] Labels with collision avoidance, placed at a pole of inaccessibility
 - [x] Layer list with visibility, order (drag), opacity, zoom range (order by context menu; no zoom range)
 - [x] Background maps: XYZ raster tiles (OSM-style, configurable URL and attribution), cached
