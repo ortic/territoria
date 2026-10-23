@@ -25,8 +25,8 @@ pub use layer::{
 };
 pub use map::{BoundaryStyle, LabelMode, Map, MapLayer, MapLayerKind, SymbolStyle};
 pub use plan::{
-    Comparison, Diagnostic, Measure, Move, Plan, PlanStats, RowUnits, Territory, TerritoryChange,
-    TerritoryStats,
+    Comparison, Diagnostic, Measure, Move, Plan, PlanStats, Region, RegionStats, RowUnits,
+    Territory, TerritoryChange, TerritoryStats,
 };
 pub use values::{Cache, Normalize, TextSource, ValueSource};
 
@@ -44,7 +44,8 @@ ids!(
     PlanId,
     MapId,
     MapLayerId,
-    TerritoryId
+    TerritoryId,
+    RegionId
 );
 
 /// A table of data the user brought in.

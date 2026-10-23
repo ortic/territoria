@@ -1785,3 +1785,62 @@ fn catchment_rings() {
             .any(|l| matches!(l.kind, territoria_model::MapLayerKind::Rings { .. }))
     );
 }
+
+/// Territories grouped into contiguous, balanced regions with wider
+/// borders between them.
+#[test]
+fn regions_above_territories() {
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    let plan = app.add_balanced_plan_now(layer, 8);
+    let mut values = territoria_model::Cache::default();
+    let stats = app
+        .project
+        .plan(plan)
+        .unwrap()
+        .stats(&app.project, &mut values);
+    let groups = crate::territories::group_regions(&app.project, &stats, plan, 3).expect("regions");
+    {
+        let p = app.project.plan_mut(plan).unwrap();
+        let ids: Vec<_> = (0..3).map(|_| p.add_region(None)).collect();
+        for (t, g) in p.territories.iter_mut().zip(&groups) {
+            t.region = g.map(|g| ids[g]);
+        }
+        p.rev += 1;
+    }
+    app.project.bump();
+    let p = app.project.plan(plan).unwrap();
+    assert!(
+        p.territories.iter().all(|t| t.region.is_some()),
+        "every territory in a region"
+    );
+    // Each region is one piece of neighbouring territories.
+    let g = &app.project.layer(layer).unwrap().geometry;
+    let unit_regions = p.unit_regions();
+    for r in &p.regions {
+        let units: Vec<u32> = (0..unit_regions.len() as u32)
+            .filter(|&u| unit_regions[u as usize] == Some(r.id))
+            .collect();
+        assert!(!units.is_empty());
+        assert_eq!(g.components(&units), 1, "{} in one piece", r.name);
+    }
+    let rs = p.region_stats(&stats);
+    let total: usize = rs.iter().map(|r| r.units).sum();
+    assert_eq!(
+        total,
+        stats.territories.iter().map(|t| t.units).sum::<usize>()
+    );
+    // Exports name the region.
+    assert!(
+        p.territory_table(&app.project, &stats)
+            .column("Region")
+            .is_some()
+    );
+    app.active_plan = Some(plan);
+    settle(&mut h);
+    save(&mut h, "regions");
+}

@@ -251,7 +251,7 @@ territoria/
 - [x] Assignment lists with ranges, enumerations, prefixes and wildcards (`10-19; 2*; 3301`)
 - [x] Match report for assignment tables like 5.6
 - [x] Territories: stable internal id, code, name, colour, weight/capacity, manager/site, notes (details of the active territory in the panel: name, code, size, lock, site, notes)
-- [ ] Hierarchy: any number of levels (e.g. territory → region → area); levels built from the level below or from other boundaries ("borders like layer X")
+- [ ] Hierarchy: any number of levels (e.g. territory → region → area); levels built from the level below or from other boundaries ("borders like layer X") (one level of regions above territories: grouped automatically (balanced, contiguous) or by hand, with wider borders, figures and exports; no deeper levels yet)
 - [x] Paint tool: click or drag over units to assign them to the active territory; Shift to pick a territory from the map; Alt to unassign
 - [x] Assign by rectangle, lasso, radius, list, table selection (a bar over the map assigns or unassigns the selection, shows its measure total, zooms to it; no radius or table selection yet)
 - [ ] Move a whole territory into another parent; drag in the territory tree

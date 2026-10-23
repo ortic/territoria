@@ -267,6 +267,13 @@ pub struct TerritoryStyle {
     pub border_width: f32,
     pub labels: bool,
     pub show_sites: bool,
+    /// Borders between regions, in points (0: drawn like territory borders).
+    #[serde(default = "default_region_border")]
+    pub region_border_width: f32,
+}
+
+fn default_region_border() -> f32 {
+    4.5
 }
 
 impl Default for TerritoryStyle {
@@ -277,6 +284,7 @@ impl Default for TerritoryStyle {
             border_width: 1.6,
             labels: true,
             show_sites: true,
+            region_border_width: default_region_border(),
         }
     }
 }

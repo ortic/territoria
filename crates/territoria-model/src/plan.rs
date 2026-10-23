@@ -9,7 +9,7 @@ use territoria_analysis::Rgba;
 use territoria_data::{KeyIndex, MatchMode, MatchStats, Table, keys};
 
 use crate::values::{Cache, ValueSource, column_keys, layer_keys};
-use crate::{LayerGeometry, LayerId, PlanId, Project, TableId, TerritoryId};
+use crate::{LayerGeometry, LayerId, PlanId, Project, RegionId, TableId, TerritoryId};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Plan {
@@ -28,6 +28,32 @@ pub struct Plan {
     pub measures: Vec<Measure>,
     next_territory: u32,
     pub rev: u64,
+    /// Groups of territories (sales regions), one level above them.
+    #[serde(default)]
+    pub regions: Vec<Region>,
+    #[serde(default)]
+    next_region: u32,
+}
+
+/// A group of territories.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Region {
+    pub id: RegionId,
+    pub code: String,
+    pub name: String,
+    pub color: Rgba,
+}
+
+/// A region's figures: its territories' summed.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RegionStats {
+    pub id: RegionId,
+    pub territories: usize,
+    pub units: usize,
+    pub area: f64,
+    pub values: Vec<f64>,
+    pub targets: Vec<f64>,
+    pub deviations: Vec<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -44,6 +70,9 @@ pub struct Territory {
     /// The territory's site (rep home, branch) as longitude/latitude.
     pub site: Option<[f64; 2]>,
     pub notes: String,
+    /// The region it belongs to.
+    #[serde(default)]
+    pub region: Option<RegionId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -87,7 +116,95 @@ impl Plan {
             }],
             next_territory: 0,
             rev: 0,
+            regions: Vec::new(),
+            next_region: 0,
         }
+    }
+
+    pub fn region(&self, id: RegionId) -> Option<&Region> {
+        self.regions.iter().find(|r| r.id == id)
+    }
+
+    /// Adds a region with the next code and a colour.
+    pub fn add_region(&mut self, name: Option<String>) -> RegionId {
+        self.next_region += 1;
+        let id = RegionId(self.next_region);
+        let n = self.regions.len();
+        let code = format!("R{}", self.next_region);
+        // Darker colours than territories: regions are drawn as borders.
+        const REGION_COLORS: [Rgba; 6] = [
+            Rgba([0x1f, 0x4e, 0x79, 255]),
+            Rgba([0x7a, 0x1f, 0x4e, 0xff]),
+            Rgba([0x2e, 0x6b, 0x30, 0xff]),
+            Rgba([0x8a, 0x55, 0x10, 0xff]),
+            Rgba([0x4b, 0x2c, 0x7a, 0xff]),
+            Rgba([0x16, 0x6a, 0x6a, 0xff]),
+        ];
+        self.regions.push(Region {
+            id,
+            name: name.unwrap_or_else(|| format!("Region {}", n + 1)),
+            code,
+            color: REGION_COLORS[n % REGION_COLORS.len()],
+        });
+        id
+    }
+
+    /// Removes a region; its territories belong to none.
+    pub fn remove_region(&mut self, id: RegionId) {
+        self.regions.retain(|r| r.id != id);
+        for t in &mut self.territories {
+            if t.region == Some(id) {
+                t.region = None;
+            }
+        }
+    }
+
+    /// Per unit its region, through its territory.
+    pub fn unit_regions(&self) -> Vec<Option<RegionId>> {
+        let of: HashMap<TerritoryId, Option<RegionId>> =
+            self.territories.iter().map(|t| (t.id, t.region)).collect();
+        self.assignment
+            .iter()
+            .map(|t| t.and_then(|t| of.get(&t).copied().flatten()))
+            .collect()
+    }
+
+    /// Each region's figures from its territories'.
+    pub fn region_stats(&self, stats: &PlanStats) -> Vec<RegionStats> {
+        self.regions
+            .iter()
+            .map(|r| {
+                let mut s = RegionStats {
+                    id: r.id,
+                    ..Default::default()
+                };
+                for (t, ts) in self.territories.iter().zip(&stats.territories) {
+                    if t.region != Some(r.id) {
+                        continue;
+                    }
+                    s.territories += 1;
+                    s.units += ts.units;
+                    s.area += ts.area;
+                    if s.values.is_empty() {
+                        s.values = vec![0.0; ts.values.len()];
+                        s.targets = vec![0.0; ts.targets.len()];
+                    }
+                    for (a, b) in s.values.iter_mut().zip(&ts.values) {
+                        *a += b;
+                    }
+                    for (a, b) in s.targets.iter_mut().zip(&ts.targets) {
+                        *a += b;
+                    }
+                }
+                s.deviations = s
+                    .values
+                    .iter()
+                    .zip(&s.targets)
+                    .map(|(v, t)| if *t != 0.0 { v / t - 1.0 } else { 0.0 })
+                    .collect();
+                s
+            })
+            .collect()
     }
 
     pub fn territory(&self, id: TerritoryId) -> Option<&Territory> {
@@ -117,6 +234,7 @@ impl Plan {
             locked: false,
             site: None,
             notes: String::new(),
+            region: None,
         });
         id
     }
@@ -655,6 +773,20 @@ impl Plan {
                 .map(|u| territory(u).map(|t| t.code.clone()))
                 .collect(),
         ));
+        if !self.regions.is_empty() {
+            columns.push(Column::text(
+                "Region",
+                ColumnKind::Text,
+                (0..n)
+                    .map(|u| {
+                        territory(u)
+                            .and_then(|t| t.region)
+                            .and_then(|r| self.region(r))
+                            .map(|r| r.name.clone())
+                    })
+                    .collect(),
+            ));
+        }
         columns.push(Column::text(
             "Territory",
             ColumnKind::Text,
@@ -689,6 +821,17 @@ impl Plan {
                 "Territory",
                 ColumnKind::Text,
                 t.iter().map(|t| Some(t.name.clone())).collect(),
+            ),
+            Column::text(
+                "Region",
+                ColumnKind::Text,
+                t.iter()
+                    .map(|t| {
+                        t.region
+                            .and_then(|r| self.region(r))
+                            .map(|r| r.name.clone())
+                    })
+                    .collect(),
             ),
             {
                 let mut c = Column::number(
@@ -757,6 +900,9 @@ impl Plan {
             data: territoria_data::ColumnData::Bool(t.iter().map(|t| Some(t.locked)).collect()),
             formula: None,
         });
+        if self.regions.is_empty() {
+            columns.retain(|c| c.name != "Region");
+        }
         Table::new(columns).unwrap_or_default()
     }
 
@@ -1037,6 +1183,8 @@ impl Project {
         target.pinned = source.pinned;
         target.measures = source.measures;
         target.next_territory = target.next_territory.max(source.next_territory);
+        target.regions = source.regions;
+        target.next_region = target.next_region.max(source.next_region);
         target.rev = rev;
         true
     }

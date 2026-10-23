@@ -909,6 +909,26 @@ fn map_layer(
                     ));
                 }
             });
+            if project.plan(*plan).is_some_and(|p| !p.regions.is_empty()) {
+                ui.horizontal(|ui| {
+                    ui.label("Region borders");
+                    let mut w = style.region_border_width;
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut w)
+                                .range(0.0..=10.0)
+                                .speed(0.05)
+                                .suffix(" pt"),
+                        )
+                        .changed()
+                    {
+                        actions.push(edit(
+                            "Change region borders",
+                            Box::new(move |s| s.region_border_width = w),
+                        ));
+                    }
+                });
+            }
             let mut ub = style.unit_borders;
             if ui
                 .checkbox(&mut ub, "Show area borders inside territories")

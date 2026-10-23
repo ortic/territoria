@@ -455,6 +455,9 @@ fn territory_page(d: &ReportData, t: usize, page: usize, pages: usize) -> String
         text(s, right, y, 9.5, fill, "end", false, &value);
         y += 16.0;
     };
+    if let Some(r) = territory.region.and_then(|r| p.region(r)) {
+        row(&mut s, "Region", fit(&r.name, 9.5, 140.0), INK);
+    }
     row(&mut s, "Areas", format_value(ts.units as f64), INK);
     row(
         &mut s,
