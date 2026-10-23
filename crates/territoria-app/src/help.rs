@@ -128,6 +128,7 @@ Everything can be undone (Ctrl+Z). The command palette (Ctrl+Shift+P) finds ever
 - Map → Export Atlas: the map as a PDF with a page per region, rep or area, each zoomed to it with the rest veiled; also per two columns together (region and segment), as a PDF per page to hand out, and with an Excel workbook of each page's areas.
 - Plan exports: the assignment as CSV or Excel, changes between scenarios, territory figures.
 - Settings → Company puts your company's name and logo on exported maps, web pages and reports.
+- Services that need an API key take it in Settings under their address; it is kept in the system keychain, not the settings file, and sent where the address says {key}.
 - Command line: territoria project.territoria --export-map map.png (see --help).",
     },
 ];
@@ -251,6 +252,7 @@ Alles lässt sich rückgängig machen (Ctrl+Z). Die Befehlspalette (Ctrl+Shift+P
 - Karte → Atlas exportieren: die Karte als PDF mit einer Seite pro Region, Vertreter oder Gebiet, jede darauf gezoomt und der Rest abgeblendet; auch pro zwei Spalten zusammen (Region und Segment), als ein PDF pro Seite zum Weitergeben und mit einer Excel-Mappe der Flächen jeder Seite.
 - Exporte der Planung: die Zuteilung als CSV oder Excel, Änderungen zwischen Szenarien, Kennzahlen der Gebiete.
 - Einstellungen → Firma setzt Firmenname und Logo auf exportierte Karten, Webseiten und Berichte.
+- Dienste, die einen API-Schlüssel brauchen, erhalten ihn in den Einstellungen unter ihrer Adresse; er bleibt im Schlüsselbund des Systems, nicht in der Einstellungsdatei, und wird dort gesendet, wo die Adresse {key} enthält.
 - Befehlszeile: territoria projekt.territoria --export-map karte.png (siehe --help).",
     ),
     (

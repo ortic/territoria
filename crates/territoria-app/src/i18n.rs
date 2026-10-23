@@ -918,6 +918,35 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
         ("Like the system", "Wie das System"),
         ("Light", "Hell"),
         ("Dark", "Dunkel"),
+        (
+            "Couldn't read an API key from the system keychain ({problem}).",
+            "Ein API-Schlüssel konnte nicht aus dem Schlüsselbund des Systems gelesen werden ({problem}).",
+        ),
+        (
+            "Couldn't keep an API key in the system keychain ({problem}); it works until Territoria closes.",
+            "Ein API-Schlüssel konnte nicht im Schlüsselbund des Systems behalten werden ({problem}); er gilt, bis Territoria geschlossen wird.",
+        ),
+        ("Forget", "Vergessen"),
+        ("Service address", "Adresse des Dienstes"),
+        (
+            "Your e-mail (public services ask for it)",
+            "Ihre E-Mail (öffentliche Dienste verlangen sie)",
+        ),
+        ("OSRM server address", "Adresse des OSRM-Servers"),
+        ("{mb} MB stored", "{mb} MB gespeichert"),
+        ("Clear", "Leeren"),
+        (
+            "For tile servers that need one (MapTiler, Thunderforest, …): put {key} in the tile address where the key goes",
+            "Für Kachelserver, die einen brauchen (MapTiler, Thunderforest, …): {key} in der Kacheladresse dort einsetzen, wo der Schlüssel hingehört",
+        ),
+        (
+            "API key, if the service needs one",
+            "API-Schlüssel, falls der Dienst einen braucht",
+        ),
+        (
+            "Kept in the system keychain, not in the settings file. Sent in place of {key} in the address, else as the key parameter",
+            "Im Schlüsselbund des Systems behalten, nicht in der Einstellungsdatei. Wird anstelle von {key} in der Adresse gesendet, sonst als Parameter key",
+        ),
         ("and per", "und pro"),
         (
             "Within each, a page per value of a second column, e.g. per region and customer segment",

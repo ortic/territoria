@@ -60,6 +60,9 @@ rayon = "1"
 insta = "1"
 # Blocking HTTP (geocoding, boundary downloads, map tiles); rustls, no async runtime.
 ureq = { version = "3", default-features = false, features = ["rustls"] }
+# API keys of online services in the system keychain (macOS Keychain, Windows
+# Credential Manager, Secret Service on Linux through pure-Rust D-Bus).
+keyring = "4.2"
 
 # Keep dev builds small and fast: full debug info only for our own crates.
 [profile.dev]

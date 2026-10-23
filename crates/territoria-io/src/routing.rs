@@ -20,6 +20,10 @@ pub struct RoutingSettings {
     pub batch: usize,
     /// Pause between requests in milliseconds.
     pub interval_ms: u64,
+    /// For services that need one: in place of `{key}` in the address,
+    /// else sent as the `key` parameter.
+    #[serde(skip)]
+    pub key: crate::ApiKey,
 }
 
 impl Default for RoutingSettings {
@@ -29,6 +33,7 @@ impl Default for RoutingSettings {
             profile: "driving".into(),
             batch: 100,
             interval_ms: 1000,
+            key: Default::default(),
         }
     }
 }
@@ -123,7 +128,7 @@ fn for_blocks(
                 targets.join(";")
             );
             let text = agent
-                .get(&url)
+                .get(settings.key.apply(&url, true))
                 .call()
                 .map_err(|e| ImportError::Format(format!("routing: {e}")))?
                 .body_mut()
@@ -256,7 +261,7 @@ pub fn trip(settings: &RoutingSettings, stops: &[Coord<f64>]) -> Result<Trip, Im
         .new_agent();
     let net = |e: ureq::Error| ImportError::Format(format!("routing: {e}"));
     let text = agent
-        .get(&url)
+        .get(settings.key.apply(&url, true))
         .call()
         .map_err(net)?
         .body_mut()

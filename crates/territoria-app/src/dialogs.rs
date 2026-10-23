@@ -2914,7 +2914,7 @@ impl SettingsDialog {
                     ui.horizontal(|ui| {
                         ui.label(format!("{}", settings.recent_projects.len()));
                         if ui
-                            .add_enabled(!settings.recent_projects.is_empty(), egui::Button::new("Forget"))
+                            .add_enabled(!settings.recent_projects.is_empty(), egui::Button::new(tr("Forget")))
                             .clicked()
                         {
                             settings.recent_projects.clear();
@@ -2932,9 +2932,10 @@ impl SettingsDialog {
                                 }
                             }
                         });
-                        ui.add(egui::TextEdit::singleline(&mut g.url).hint_text("Service address").desired_width(260.0))
+                        ui.add(egui::TextEdit::singleline(&mut g.url).hint_text(tr("Service address")).desired_width(260.0))
                             .on_hover_text(tr("The public service or your own installation"));
-                        ui.add(egui::TextEdit::singleline(&mut g.email).hint_text("Your e-mail (public services ask for it)").desired_width(260.0));
+                        ui.add(egui::TextEdit::singleline(&mut g.email).hint_text(tr("Your e-mail (public services ask for it)")).desired_width(260.0));
+                        api_key_field(ui, &mut g.key);
                         ui.horizontal(|ui| {
                             ui.label(tr("Pause"));
                             ui.add(egui::DragValue::new(&mut g.interval_ms).range(0..=5000).suffix(" ms"));
@@ -2982,7 +2983,7 @@ impl SettingsDialog {
                     ui.label(tr("Routing"));
                     ui.vertical(|ui| {
                         let r = &mut settings.routing;
-                        ui.add(egui::TextEdit::singleline(&mut r.url).hint_text("OSRM server address").desired_width(260.0))
+                        ui.add(egui::TextEdit::singleline(&mut r.url).hint_text(tr("OSRM server address")).desired_width(260.0))
                             .on_hover_text(tr("An OSRM server for travel times by road: the public demo is for trying only; your own server has no limits"));
                         ui.horizontal(|ui| {
                             ComboBox::from_id_salt("routing-profile")
@@ -3001,18 +3002,23 @@ impl SettingsDialog {
                             ui.label(tr("Pause"));
                             ui.add(egui::DragValue::new(&mut r.interval_ms).range(0..=5000).suffix(" ms"));
                         });
+                        api_key_field(ui, &mut r.key);
                     });
                     ui.end_row();
                     ui.label(tr("Map tiles"));
-                    ui.horizontal(|ui| {
-                        ui.label(format!("{:.1} MB stored", self.tile_bytes as f64 / 1_048_576.0));
-                        if ui
-                            .add_enabled(self.tile_bytes > 0, egui::Button::new("Clear"))
-                            .on_hover_text(tr("Background map tiles are kept on disk: maps load fast and also show offline"))
-                            .clicked()
-                        {
-                            outcome = Some(SettingsOutcome::ClearTiles);
-                        }
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(trf("{mb} MB stored", &[("mb", &format!("{:.1}", self.tile_bytes as f64 / 1_048_576.0))]));
+                            if ui
+                                .add_enabled(self.tile_bytes > 0, egui::Button::new(tr("Clear")))
+                                .on_hover_text(tr("Background map tiles are kept on disk: maps load fast and also show offline"))
+                                .clicked()
+                            {
+                                outcome = Some(SettingsOutcome::ClearTiles);
+                            }
+                        });
+                        api_key_field(ui, &mut settings.tile_key)
+                            .on_hover_text(tr("For tile servers that need one (MapTiler, Thunderforest, …): put {key} in the tile address where the key goes"));
                     });
                     ui.end_row();
                 });
@@ -4493,6 +4499,17 @@ impl FlowDialog {
         }
         apply
     }
+}
+
+/// A masked field for a service's API key, kept in the system keychain.
+fn api_key_field(ui: &mut Ui, key: &mut territoria_io::ApiKey) -> egui::Response {
+    ui.add(
+        egui::TextEdit::singleline(&mut key.0)
+            .password(true)
+            .hint_text(tr("API key, if the service needs one"))
+            .desired_width(260.0),
+    )
+    .on_hover_text(tr("Kept in the system keychain, not in the settings file. Sent in place of {key} in the address, else as the key parameter"))
 }
 
 // ---------------------------------------------------------------------------

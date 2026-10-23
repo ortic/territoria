@@ -126,6 +126,15 @@ maps, the geocoding and routing services, the company name and logo for
 exports, territory colours for new plans, class sets kept for reuse, and
 the keyboard shortcuts (click one, press the new keys).
 
+Services that need an **API key** (a commercial geocoder or routing
+service, MapTiler or Thunderforest tiles) take it in the field under their
+address. Keys are kept in the system keychain (macOS Keychain, Windows
+Credential Manager, GNOME Keyring or KWallet), never in the settings file.
+A key goes where the address says `{key}`, e.g.
+`https://api.maptiler.com/maps/streets/{z}/{x}/{y}.png?key={key}`;
+geocoding and routing addresses without `{key}` get it as the `key`
+parameter.
+
 ## Open data credits
 
 - Boundaries in the download dialog: geoBoundaries, CC BY 4.0.

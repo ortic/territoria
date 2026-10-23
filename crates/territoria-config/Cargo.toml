@@ -7,6 +7,7 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 directories.workspace = true
+keyring.workspace = true
 serde.workspace = true
 territoria-analysis.workspace = true
 territoria-io.workspace = true

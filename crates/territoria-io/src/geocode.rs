@@ -45,6 +45,10 @@ pub struct GeocoderSettings {
     /// Pause between requests in milliseconds (the public Nominatim allows
     /// one per second).
     pub interval_ms: u64,
+    /// For services that need one: in place of `{key}` in the address,
+    /// else sent as the `key` parameter.
+    #[serde(skip)]
+    pub key: crate::ApiKey,
 }
 
 impl Default for GeocoderSettings {
@@ -54,6 +58,7 @@ impl Default for GeocoderSettings {
             url: GeocoderKind::Nominatim.default_url().into(),
             email: String::new(),
             interval_ms: 1100,
+            key: Default::default(),
         }
     }
 }
@@ -264,7 +269,13 @@ fn ask(
     settings: &GeocoderSettings,
     a: &Address,
 ) -> Result<Option<Hit>, ImportError> {
-    let base = settings.url.trim_end_matches('/');
+    let url = settings.key.apply(&settings.url, false);
+    let base = url.trim_end_matches('/');
+    // Without `{key}` in the address, the key goes along as a parameter.
+    let key = settings
+        .key
+        .get()
+        .filter(|_| !settings.url.contains("{key}"));
     let net = |e: ureq::Error| ImportError::Format(format!("geocoder: {e}"));
     match settings.kind {
         GeocoderKind::Nominatim => {
@@ -290,6 +301,9 @@ fn ask(
             if !settings.email.trim().is_empty() {
                 req = req.query("email", settings.email.trim());
             }
+            if let Some(k) = key {
+                req = req.query("key", k);
+            }
             let text = req
                 .call()
                 .map_err(net)?
@@ -299,10 +313,14 @@ fn ask(
             parse_nominatim(&text)
         }
         GeocoderKind::Photon => {
-            let text = agent
+            let mut req = agent
                 .get(format!("{base}/api"))
                 .query("q", a.line())
-                .query("limit", "1")
+                .query("limit", "1");
+            if let Some(k) = key {
+                req = req.query("key", k);
+            }
+            let text = req
                 .call()
                 .map_err(net)?
                 .body_mut()

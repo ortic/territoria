@@ -315,6 +315,8 @@ pub struct TerritoriaApp {
     /// Fade everything but the selection.
     focus: bool,
     settings_dialog: Option<crate::dialogs::SettingsDialog>,
+    /// The API keys as the keychain holds them.
+    stored_keys: territoria_config::Keys,
     download: Option<DownloadDialog>,
     export_map: Option<crate::dialogs::ExportMapDialog>,
     /// Settings of the map export waiting for its file name.
@@ -349,6 +351,16 @@ impl TerritoriaApp {
         let workspace: Option<Workspace> =
             cc.storage.and_then(|s| eframe::get_value(s, WORKSPACE_KEY));
         let mut app = Self::with_settings(settings, paths);
+        if app.paths.is_some() {
+            for p in app.settings.load_keys(&territoria_config::SystemKeychain) {
+                app.error(trf(
+                    "Couldn't read an API key from the system keychain ({problem}).",
+                    &[("problem", &p)],
+                ));
+            }
+            app.stored_keys = app.settings.keys();
+            app.tiles.set_key(&app.settings.tile_key);
+        }
         app.jobs.set_context(cc.egui_ctx.clone());
         app.apply_theme(&cc.egui_ctx);
         if let Some(w) = workspace {
@@ -455,6 +467,7 @@ impl TerritoriaApp {
             presenting: false,
             focus: false,
             settings_dialog: None,
+            stored_keys: Default::default(),
             download: None,
             export_map: None,
             map_export: None,
@@ -479,6 +492,24 @@ impl TerritoriaApp {
             ThemeChoice::Light => egui::ThemePreference::Light,
         });
         ctx.set_zoom_factor(self.settings.ui_scale);
+    }
+
+    /// Keeps changed API keys in the system keychain (never in the
+    /// settings file); keys it can't keep work until Territoria closes.
+    fn store_keys(&mut self) {
+        if self.paths.is_none() || self.settings.keys() == self.stored_keys {
+            return;
+        }
+        let problems = self
+            .settings
+            .store_keys(&self.stored_keys, &territoria_config::SystemKeychain);
+        self.stored_keys = self.settings.keys();
+        for p in problems {
+            self.error(trf(
+                "Couldn't keep an API key in the system keychain ({problem}); it works until Territoria closes.",
+                &[("problem", &p)],
+            ));
+        }
     }
 
     fn save_settings(&self) {
@@ -5891,6 +5922,7 @@ impl TerritoriaApp {
                 if self.settings.shortcuts != before.shortcuts {
                     self.keymap = Keymap::with_changes(&self.settings.shortcuts);
                 }
+                self.tiles.set_key(&self.settings.tile_key);
             }
             match outcome {
                 Some(crate::dialogs::SettingsOutcome::ChooseLogo) => {
@@ -5907,6 +5939,7 @@ impl TerritoriaApp {
             if open {
                 self.settings_dialog = Some(d);
             } else {
+                self.store_keys();
                 self.save_settings();
             }
         }

@@ -63,6 +63,8 @@ enum Slot {
 
 struct Shared {
     queue: Mutex<VecDeque<(Key, PathBuf)>>,
+    /// For servers that need one, in place of `{key}` in the address.
+    api_key: Mutex<territoria_io::ApiKey>,
 }
 
 /// Tiles in memory (as textures) and on disk.
@@ -87,12 +89,23 @@ impl Tiles {
             slots: HashMap::new(),
             shared: Arc::new(Shared {
                 queue: Mutex::new(VecDeque::new()),
+                api_key: Mutex::new(Default::default()),
             }),
             rx,
             tx,
             started: false,
             cache_dir,
             frame: 0,
+        }
+    }
+
+    /// The key for tile addresses with `{key}`; tiles that failed for want
+    /// of one are tried again.
+    pub fn set_key(&mut self, key: &territoria_io::ApiKey) {
+        let mut current = self.shared.api_key.lock().unwrap();
+        if *current != *key {
+            *current = key.clone();
+            self.slots.retain(|_, (s, _)| !matches!(s, Slot::Failed));
         }
     }
 
@@ -120,7 +133,8 @@ impl Tiles {
                             std::thread::sleep(std::time::Duration::from_millis(30));
                             continue;
                         };
-                        let image = load(&agent, &key, &file);
+                        let api_key = shared.api_key.lock().unwrap().clone();
+                        let image = load(&agent, &key, &file, &api_key);
                         if tx.send((key, image)).is_err() {
                             return;
                         }
@@ -267,12 +281,18 @@ fn hash(s: &str) -> u64 {
 }
 
 /// From the disk cache, else from the server (and cached).
-fn load(agent: &ureq::Agent, key: &Key, file: &std::path::Path) -> Option<ColorImage> {
+fn load(
+    agent: &ureq::Agent,
+    key: &Key,
+    file: &std::path::Path,
+    api_key: &territoria_io::ApiKey,
+) -> Option<ColorImage> {
     let bytes = match std::fs::read(file) {
         Ok(b) => b,
         Err(_) => {
             let (url, z, x, y) = key;
-            let url = url
+            let url = api_key
+                .apply(url, false)
                 .replace("{z}", &z.to_string())
                 .replace("{x}", &x.to_string())
                 .replace("{y}", &y.to_string());
