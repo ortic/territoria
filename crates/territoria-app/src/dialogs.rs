@@ -363,6 +363,8 @@ pub enum Placement {
     ByKey,
     /// Rows are points at their coordinates.
     Points { x: String, y: String },
+    /// Rows are points at coordinates written in one column ("lat, lon").
+    LatLon(String),
     /// Rows have addresses: find their coordinates first.
     Address(AddressColumns),
     /// Just add the table.
@@ -495,7 +497,19 @@ impl ImportTable {
                 },
                 if degrees { String::new() } else { "?".into() },
             ),
-            None => (Placement::ByKey, String::new()),
+            None => {
+                // Coordinates written in one column, as maps copy them.
+                let one = table.columns.iter().find(|c| {
+                    !c.kind.is_numeric()
+                        && territoria_data::coords::looks_like_lat_lon(
+                            &(0..c.len()).map(|r| c.get(r).to_text()).collect::<Vec<_>>(),
+                        )
+                });
+                match one {
+                    Some(c) => (Placement::LatLon(c.name.clone()), String::new()),
+                    None => (Placement::ByKey, String::new()),
+                }
+            }
         };
         ImportTable {
             path,
@@ -602,7 +616,10 @@ impl ImportTable {
                 Placement::ByKey,
                 "Rows belong to areas by a key (postcode, municipality number, …)",
             );
-            let as_points = matches!(self.placement, Placement::Points { .. });
+            let as_points = matches!(
+                self.placement,
+                Placement::Points { .. } | Placement::LatLon(_)
+            );
             if ui
                 .radio(
                     as_points,
@@ -630,6 +647,69 @@ impl ImportTable {
                         }
                     }
                 };
+            }
+            if as_points {
+                // Two columns, or one with "lat, lon".
+                let texts: Vec<String> = self
+                    .table
+                    .columns
+                    .iter()
+                    .filter(|c| !c.kind.is_numeric())
+                    .map(|c| c.name.clone())
+                    .collect();
+                let mut one = matches!(self.placement, Placement::LatLon(_));
+                if !texts.is_empty()
+                    && ui
+                        .indent("coords-one", |ui| {
+                            ui.checkbox(
+                                &mut one,
+                                "Both in one column (\"47.37, 8.54\" or 47°22'N 8°32'E)",
+                            )
+                        })
+                        .inner
+                        .changed()
+                {
+                    self.placement = if one {
+                        Placement::LatLon(texts[0].clone())
+                    } else {
+                        Placement::Points {
+                            x: String::new(),
+                            y: String::new(),
+                        }
+                    };
+                }
+            }
+            if let Placement::LatLon(column) = &mut self.placement {
+                ui.indent("latlon", |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Column");
+                        let mut c = Some(column.clone());
+                        column_combo(
+                            ui,
+                            "latlon-col",
+                            &self.table,
+                            &mut c,
+                            |k| !k.is_numeric(),
+                            None,
+                        );
+                        *column = c.unwrap_or_default();
+                    });
+                    if let Some(c) = self.table.column(column) {
+                        let n = (0..c.len())
+                            .filter(|&r| {
+                                territoria_data::coords::parse_lat_lon(&c.display(r)).is_some()
+                            })
+                            .count();
+                        ui.label(
+                            RichText::new(format!(
+                                "{} of {} rows have coordinates",
+                                format_value(n as f64),
+                                format_value(c.len() as f64)
+                            ))
+                            .weak(),
+                        );
+                    }
+                });
             }
             if let Placement::Points { x, y } = &mut self.placement {
                 ui.indent("coords", |ui| {

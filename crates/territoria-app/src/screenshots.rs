@@ -2421,3 +2421,34 @@ fn edit_table_cells() {
     app.run_command_for_test(crate::commands::Command::Undo);
     assert_eq!(app.project.tables[0].table.rows(), 3);
 }
+
+/// Coordinates in one column ("lat, lon") become points.
+#[test]
+fn lat_lon_in_one_column() {
+    let (mut h, _lock) = harness(false);
+    h.state_mut().paste_table(
+        "Branch\tLocation\nBern\t46.9480, 7.4474\nZurich\t47°22'36.8\"N 8°32'30.1\"E\n",
+    );
+    settle(&mut h);
+    let (table, _) = h
+        .state()
+        .import_table_for_test()
+        .expect("the import dialog");
+    let table = table.clone();
+    let app = h.state_mut();
+    // The dialog suggested the column; add it that way.
+    app.add_table(
+        "Branches".into(),
+        table,
+        PathBuf::from("branches.txt"),
+        crate::dialogs::Placement::LatLon("Location".into()),
+        None,
+    );
+    let l = app.project.layers.last().expect("a points layer");
+    assert_eq!(l.kind(), territoria_io::GeometryKind::Point);
+    let p = l.geometry.points[1].0[0];
+    assert!(
+        (p.x() - 8.5417).abs() < 1e-3 && (p.y() - 47.3769).abs() < 1e-3,
+        "{p:?}"
+    );
+}

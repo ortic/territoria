@@ -2132,6 +2132,39 @@ impl TerritoriaApp {
         crs: Option<territoria_geo::Crs>,
     ) {
         use crate::dialogs::Placement;
+        if let Placement::LatLon(column) = &placement {
+            // Into two number columns, then as points.
+            let mut table = table;
+            let parsed: Vec<Option<(f64, f64)>> = match table.column(column) {
+                Some(c) => (0..c.len())
+                    .map(|r| territoria_data::coords::parse_lat_lon(&c.display(r)))
+                    .collect(),
+                None => {
+                    self.error("Choose the column with the coordinates.");
+                    return;
+                }
+            };
+            let (lat, lon) = (
+                table.unique_name("Latitude"),
+                table.unique_name("Longitude"),
+            );
+            let _ = table.push_column(territoria_data::Column::number(
+                lat.clone(),
+                parsed.iter().map(|p| p.map(|p| p.0)).collect(),
+            ));
+            let _ = table.push_column(territoria_data::Column::number(
+                lon.clone(),
+                parsed.iter().map(|p| p.map(|p| p.1)).collect(),
+            ));
+            self.add_table(
+                name,
+                table,
+                path,
+                Placement::Points { x: lon, y: lat },
+                None,
+            );
+            return;
+        }
         if let Placement::Address(columns) = &placement {
             let addresses = columns.addresses(&table);
             let settings = self.settings.geocoder.clone();

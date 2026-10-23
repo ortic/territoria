@@ -2,6 +2,7 @@
 //! aggregation.
 
 pub mod aggregate;
+pub mod coords;
 pub mod date;
 pub mod infer;
 pub mod keys;

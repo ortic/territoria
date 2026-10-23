@@ -198,7 +198,7 @@ territoria/
 - [ ] Saved filters (segments) usable by analyses, reports and exports; one clear meaning
 - [x] Table ↔ map coupling: hover/select rows highlights areas and the other way round (clicking rows selects their areas, Shift toggles; rows of the map's selection are highlighted and can be filtered; not on hover)
 - [x] Data export: CSV, XLSX (one sheet per table or files), filtered or all (plans, tables and layer attributes with each row's territories; not filtered yet)
-- [ ] Coordinates in degrees-minutes-seconds and "lat, lon" in one column parsed on import
+- [x] Coordinates in degrees-minutes-seconds and "lat, lon" in one column parsed on import (decimal pairs, DMS with N/S/E/W before or after, GPS degrees and minutes; suggested when a column looks like that)
 
 ### 5.5 Expression language (M2)
 
