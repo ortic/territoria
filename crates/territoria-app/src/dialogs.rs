@@ -161,7 +161,7 @@ fn layer_combo(
                         "{}  ·  {} {}",
                         l.name,
                         format_value(l.len() as f64),
-                        l.kind().label()
+                        l.kind().noun(l.len())
                     ),
                 );
             }
@@ -250,7 +250,7 @@ impl ImportLayers {
                                 RichText::new(format!(
                                     "{} {}",
                                     format_value(imported.geometries.len() as f64),
-                                    imported.geometries.kind().label()
+                                    imported.geometries.kind().noun(imported.geometries.len())
                                 ))
                                 .weak(),
                             );

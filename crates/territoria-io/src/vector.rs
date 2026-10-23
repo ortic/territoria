@@ -31,6 +31,16 @@ impl GeometryKind {
             GeometryKind::Point => "points",
         }
     }
+
+    /// The word for `n` of them: "1 area", "806 areas".
+    pub fn noun(self, n: usize) -> &'static str {
+        match (self, n) {
+            (GeometryKind::Area, 1) => "area",
+            (GeometryKind::Line, 1) => "line",
+            (GeometryKind::Point, 1) => "point",
+            _ => self.label(),
+        }
+    }
 }
 
 /// One feature per row of [`ImportedLayer::attributes`]; features without

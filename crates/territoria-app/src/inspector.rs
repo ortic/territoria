@@ -216,7 +216,7 @@ fn layer(ui: &mut Ui, project: &Project, id: LayerId, actions: &mut Vec<Action>)
         RichText::new(format!(
             "{} {}",
             format_value(l.len() as f64),
-            l.kind().label()
+            l.kind().noun(l.len())
         ))
         .weak(),
     );

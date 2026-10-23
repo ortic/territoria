@@ -3,7 +3,6 @@
 
 use egui::{Color32, RichText, Sense, Ui, vec2};
 use territoria_analysis::format::format_value;
-use territoria_io::GeometryKind;
 use territoria_model::{Cache, MapId, MapLayerKind, PlanId, Project};
 
 use crate::app::{Action, DataRef, Selection, Tab};
@@ -376,11 +375,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
             section(ui, "DATA");
             for l in &project.layers {
                 let selected = cx.selection == Selection::Data(DataRef::Layer(l.id));
-                let kind = match l.kind() {
-                    GeometryKind::Area => "areas",
-                    GeometryKind::Line => "lines",
-                    GeometryKind::Point => "points",
-                };
+                let kind = l.kind().noun(l.len());
                 let r = ui
                     .selectable_label(selected, format!("🗺 {}  ", l.name))
                     .on_hover_text(format!(
