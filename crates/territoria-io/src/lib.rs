@@ -4,6 +4,7 @@
 pub mod export;
 pub mod geocode;
 pub mod gpkg;
+pub mod kml;
 pub mod online;
 pub mod table;
 pub mod vector;

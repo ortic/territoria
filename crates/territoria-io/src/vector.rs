@@ -1,5 +1,5 @@
-//! Reading boundary and point files: ESRI Shapefile (also zipped) and
-//! GeoJSON. Geometry comes back in WGS84 when the coordinate system is
+//! Reading boundary and point files: ESRI Shapefile (also zipped),
+//! GeoJSON, GeoPackage and KML. Geometry comes back in WGS84 when the coordinate system is
 //! known.
 
 use std::io::{Cursor, Read};
@@ -128,7 +128,7 @@ pub struct VectorOptions {
 }
 
 /// File extensions [`read_vector`] understands.
-pub const VECTOR_EXTENSIONS: &[&str] = &["shp", "zip", "geojson", "json", "gpkg"];
+pub const VECTOR_EXTENSIONS: &[&str] = &["shp", "zip", "geojson", "json", "gpkg", "kml", "kmz"];
 
 pub fn read_vector(
     path: &Path,
@@ -160,6 +160,8 @@ pub fn read_vector(
         "zip" => read_zip(path, options),
         "gpkg" => crate::gpkg::read_geopackage(path, options),
         "geojson" | "json" => read_geojson(&stem, &std::fs::read(path)?, options),
+        "kml" => crate::kml::read_kml(&stem, &std::fs::read(path)?, options),
+        "kmz" => crate::kml::read_kmz(&stem, path, options),
         _ => Err(ImportError::Unsupported(ext)),
     }
 }
@@ -190,7 +192,7 @@ fn read_zip(path: &Path, options: &VectorOptions) -> Result<Vec<ImportedLayer>, 
             .into_owned();
         let lower = name.to_lowercase();
         if [
-            ".shp", ".shx", ".dbf", ".prj", ".cpg", ".geojson", ".json", ".gpkg",
+            ".shp", ".shx", ".dbf", ".prj", ".cpg", ".geojson", ".json", ".gpkg", ".kml",
         ]
         .iter()
         .any(|e| lower.ends_with(e))
@@ -228,6 +230,8 @@ fn read_zip(path: &Path, options: &VectorOptions) -> Result<Vec<ImportedLayer>, 
             layers.push(read_shapefile(&stem, parts, options)?);
         } else if lower.ends_with(".geojson") || lower.ends_with(".json") {
             layers.extend(read_geojson(&stem, bytes, options)?);
+        } else if lower.ends_with(".kml") {
+            layers.extend(crate::kml::read_kml(&stem, bytes, options)?);
         } else if lower.ends_with(".gpkg") {
             // SQLite reads files: unpack it next to the other temporary files.
             let tmp =
@@ -240,7 +244,7 @@ fn read_zip(path: &Path, options: &VectorOptions) -> Result<Vec<ImportedLayer>, 
     }
     if layers.is_empty() {
         return Err(ImportError::Format(
-            "the zip file contains no shapefile, GeoJSON or GeoPackage".into(),
+            "the zip file contains no shapefile, GeoJSON, GeoPackage or KML".into(),
         ));
     }
     Ok(layers)
@@ -603,36 +607,59 @@ fn read_geojson(
         }],
     };
 
-    // Split by geometry kind: one layer each.
+    let geoms: Vec<Option<Geometry<f64>>> = features
+        .iter()
+        .map(|f| {
+            f.geometry
+                .as_ref()
+                .and_then(|g| Geometry::<f64>::try_from(&g.value).ok())
+        })
+        .collect();
+    let props: Vec<Vec<(String, Option<String>)>> = features
+        .iter()
+        .map(|f| {
+            f.properties
+                .iter()
+                .flatten()
+                .map(|(k, v)| (k.clone(), json_text(v)))
+                .collect()
+        })
+        .collect();
+    let mut options = options.clone();
+    if options.crs.is_none() {
+        options.crs = named_crs;
+    }
+    let layers = layers_by_kind(name, geoms, &props, &options)?;
+    if layers.is_empty() {
+        return Err(ImportError::Format("the GeoJSON has no features".into()));
+    }
+    Ok(layers)
+}
+
+/// Features as layers, one per kind of geometry (areas, lines, points),
+/// each with the properties its features have.
+pub(crate) fn layers_by_kind(
+    name: &str,
+    geoms: Vec<Option<Geometry<f64>>>,
+    props: &[Vec<(String, Option<String>)>],
+    options: &VectorOptions,
+) -> Result<Vec<ImportedLayer>, ImportError> {
     let mut groups: Vec<(GeometryKind, Vec<usize>)> = Vec::new();
-    let mut geoms: Vec<Option<Geometry<f64>>> = Vec::with_capacity(features.len());
-    for (i, f) in features.iter().enumerate() {
-        let g = f
-            .geometry
-            .as_ref()
-            .and_then(|g| Geometry::<f64>::try_from(&g.value).ok());
-        let kind = g.as_ref().and_then(kind_of);
-        let kind = kind.unwrap_or(GeometryKind::Area);
+    for (i, g) in geoms.iter().enumerate() {
+        let kind = g.as_ref().and_then(kind_of).unwrap_or(GeometryKind::Area);
         match groups.iter_mut().find(|(k, _)| *k == kind) {
             Some((_, rows)) => rows.push(i),
             None => groups.push((kind, vec![i])),
         }
-        geoms.push(g);
-    }
-    let mut options = options.clone();
-    if options.crs.is_none() {
-        options.crs = named_crs;
     }
     let multi = groups.len() > 1;
     let mut layers = Vec::new();
     for (kind, rows) in groups {
         let mut names: Vec<String> = Vec::new();
         for &r in &rows {
-            if let Some(props) = &features[r].properties {
-                for k in props.keys() {
-                    if !names.contains(k) {
-                        names.push(k.clone());
-                    }
+            for (k, _) in &props[r] {
+                if !names.contains(k) {
+                    names.push(k.clone());
                 }
             }
         }
@@ -641,11 +668,10 @@ fn read_geojson(
             .map(|n| {
                 rows.iter()
                     .map(|&r| {
-                        features[r]
-                            .properties
-                            .as_ref()
-                            .and_then(|p| p.get(n))
-                            .and_then(json_text)
+                        props[r]
+                            .iter()
+                            .find(|(k, _)| k == n)
+                            .and_then(|(_, v)| v.clone())
                     })
                     .collect()
             })
@@ -690,12 +716,9 @@ fn read_geojson(
             geometries,
             table,
             None,
-            &options,
+            options,
             Vec::new(),
         )?);
-    }
-    if layers.is_empty() {
-        return Err(ImportError::Format("the GeoJSON has no features".into()));
     }
     Ok(layers)
 }

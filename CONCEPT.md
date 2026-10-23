@@ -144,7 +144,7 @@ territoria/
 - [x] Import ESRI Shapefile (`.shp/.shx/.dbf`, `.prj`, `.cpg`), polygons, lines, points (also inside zip files)
 - [x] Import GeoJSON (Feature, FeatureCollection, Geometry; mixed types split into layers)
 - [x] Import GeoPackage (every feature table a layer, also inside zips; CRS from gpkg_spatial_ref_sys; 2D of Z/M geometries; no curves)
-- [ ] Import FlatGeobuf, KML (optional)
+- [x] Import FlatGeobuf, KML (optional) (KML and KMZ: placemarks with name, description, folder and extended data, split into points, lines and areas; also inside zips; no FlatGeobuf yet)
 - [x] Attribute encoding: `.cpg`, UTF-8 detection, legacy code pages (Windows-1252, 850, …)
 - [x] CRS from `.prj` WKT: EPSG authority, name lookup against the EPSG table, WKT parameters
 - [x] CRS from EPSG code or proj string; user override when unknown or wrong

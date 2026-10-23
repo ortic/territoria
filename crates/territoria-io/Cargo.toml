@@ -22,4 +22,5 @@ territoria-data.workspace = true
 territoria-geo.workspace = true
 thiserror.workspace = true
 ureq.workspace = true
+roxmltree = "0.20"
 zip.workspace = true

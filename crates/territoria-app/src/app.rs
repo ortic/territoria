@@ -467,7 +467,7 @@ impl TerritoriaApp {
                 )),
             FileAction::AddBoundaries | FileAction::ReplaceLayer(_) => dialog
                 .add_filter(
-                    "Boundaries (Shapefile, GeoJSON, GeoPackage, zip)",
+                    "Boundaries (Shapefile, GeoJSON, GeoPackage, KML, zip)",
                     territoria_io::VECTOR_EXTENSIONS,
                 )
                 .add_filter("All files", &["*"]),
@@ -3814,7 +3814,7 @@ impl TerritoriaApp {
             button(ui, "📂 Open", Command::OpenProject, "Open a project");
             button(ui, "💾 Save", Command::SaveProject, "Save the project");
             ui.separator();
-            button(ui, "🗺 Add boundaries", Command::AddBoundaries, "Postcodes, municipalities, regions… from a Shapefile, GeoJSON, GeoPackage or zip");
+            button(ui, "🗺 Add boundaries", Command::AddBoundaries, "Postcodes, municipalities, regions… from a Shapefile, GeoJSON, GeoPackage, KML or zip");
             button(ui, "📊 Add data", Command::AddData, "A table from CSV or Excel (or paste cells with Ctrl+V), linked to areas by a key");
             button(ui, "🎨 Colour by value", Command::ColorByValue, "Colour areas, or draw circles sized by a number");
             ui.separator();
