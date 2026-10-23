@@ -433,7 +433,10 @@ fn download_boundaries_online() {
     h.state_mut()
         .run_command_for_test(crate::commands::Command::DownloadBoundaries);
     settle(&mut h);
-    h.get_by_role(egui::accesskit::Role::TextInput)
+    // The dialog's search, not the toolbar's.
+    h.get_all_by_role(egui::accesskit::Role::TextInput)
+        .last()
+        .expect("the dialog's search")
         .type_text("Liechtenstein");
     h.run_steps(3);
     h.get_by_label_contains("Liechtenstein").click();
