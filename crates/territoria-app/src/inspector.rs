@@ -1195,6 +1195,9 @@ fn value_ui(
     actions: &mut Vec<Action>,
 ) {
     let options = colorables(project, layer);
+    // The filter is kept apart: values, aggregation and relative-to look
+    // at the source without it.
+    let (source, filter) = source.split();
     ui.horizontal(|ui| {
         ui.label("Value");
         let current = options
@@ -1217,6 +1220,14 @@ fn value_ui(
                         ) = (&mut s, source)
                         {
                             *agg = *old;
+                        }
+                        // And the filter, when the rows are the same.
+                        if let Some(f) = filter
+                            && let (Some(a), Some(b)) =
+                                (s.rows_table(project), source.rows_table(project))
+                            && std::ptr::eq(a, b)
+                        {
+                            s = ValueSource::filtered(s, f);
                         }
                         let label = format!("{label}{}", normalize.suffix(project));
                         actions.push(edit_layer(map, id, "Change value", move |l| {
@@ -1250,14 +1261,9 @@ fn value_ui(
                 });
             if a != *agg {
                 actions.push(edit_layer(map, id, "Change aggregation", move |l| {
-                    if let MapLayerKind::Choropleth {
-                        source: ValueSource::Linked { agg, .. } | ValueSource::Points { agg, .. },
-                        ..
-                    }
-                    | MapLayerKind::Symbols {
-                        source: ValueSource::Linked { agg, .. } | ValueSource::Points { agg, .. },
-                        ..
-                    } = &mut l.kind
+                    if let MapLayerKind::Choropleth { source, .. }
+                    | MapLayerKind::Symbols { source, .. } = &mut l.kind
+                        && let Some(agg) = source.agg_mut()
                     {
                         *agg = a;
                     }
@@ -1265,6 +1271,79 @@ fn value_ui(
             }
         });
     }
+    // A segment: only the rows a formula holds for.
+    if let Some(table) = source.rows_table(project) {
+        let mut text = filter.unwrap_or_default().to_owned();
+        ui.horizontal(|ui| {
+            ui.label("Only where").on_hover_text(
+                "Count or add up only some rows, e.g. [Segment] = \"Retail\" or [Orders] > 10",
+            );
+            let changed = ui
+                .add(
+                    egui::TextEdit::singleline(&mut text)
+                        .hint_text("all rows")
+                        .font(egui::TextStyle::Monospace)
+                        .desired_width(200.0),
+                )
+                .changed();
+            if changed {
+                let inner = source.clone();
+                let base = options
+                    .iter()
+                    .find(|(_, c)| matches!(c, Colorable::Number(s) if same_source(s, &inner)))
+                    .map_or_else(|| inner.label(project), |(l, _)| l.clone());
+                let t = text.clone();
+                let label = if t.trim().is_empty() {
+                    format!("{base}{}", normalize.suffix(project))
+                } else {
+                    format!("{base} where {}{}", t.trim(), normalize.suffix(project))
+                };
+                actions.push(edit_layer(map, id, "Change filter", move |l| {
+                    if let MapLayerKind::Choropleth { source, .. }
+                    | MapLayerKind::Symbols { source, .. } = &mut l.kind
+                    {
+                        *source = ValueSource::filtered(inner, &t);
+                    }
+                    l.name = label;
+                }));
+            }
+        });
+        if !text.trim().is_empty() {
+            match territoria_expr::Formula::compile(&text, table) {
+                Ok(f) if f.ty() == territoria_expr::Type::Bool => {
+                    let n = f
+                        .evaluate(table)
+                        .iter()
+                        .filter(|v| matches!(v, territoria_expr::Val::Bool(true)))
+                        .count();
+                    ui.label(
+                        RichText::new(format!(
+                            "{} of {} rows",
+                            format_value(n as f64),
+                            format_value(table.rows() as f64)
+                        ))
+                        .weak()
+                        .small(),
+                    );
+                }
+                Ok(_) => {
+                    ui.label(
+                        RichText::new("⚠ A filter is a yes/no question, e.g. [Sales] > 1000")
+                            .color(crate::theme::WARN)
+                            .small(),
+                    );
+                }
+                Err(e) => {
+                    ui.label(
+                        RichText::new(format!("⚠ {}", e.message))
+                            .color(crate::theme::WARN)
+                            .small(),
+                    );
+                }
+            }
+        }
+    }
+
     // Relative to: area, another value, the total.
     ui.horizontal(|ui| {
             ui.label("Relative to").on_hover_text("Sums grow with the size of areas: per km² or per another value (customers, population) makes areas comparable");

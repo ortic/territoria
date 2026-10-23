@@ -1873,6 +1873,73 @@ mod tests {
     }
 
     #[test]
+    fn filtered_values() {
+        use crate::layer::LayerGeometry;
+        use geo_types::{MultiPolygon, polygon};
+        use territoria_data::{Aggregate, Column, ColumnKind};
+        let square = |x: f64| {
+            MultiPolygon(vec![
+                polygon![(x: x, y: 0.0), (x: x + 1.0, y: 0.0), (x: x + 1.0, y: 1.0), (x: x, y: 1.0), (x: x, y: 0.0)],
+            ])
+        };
+        let mut p = Project::new();
+        let attrs = Table::new(vec![Column::text(
+            "Code",
+            ColumnKind::Key,
+            vec![Some("A".into()), Some("B".into())],
+        )])
+        .unwrap();
+        let g = LayerGeometry::from_imported(
+            territoria_io::Geometries::Areas(vec![square(0.0), square(1.0)]),
+            true,
+        );
+        let layer = p.add_layer("Areas", g, attrs, Default::default());
+        p.layer_mut(layer).unwrap().key_column = Some("Code".into());
+        // Customers: two retail in A, one wholesale in A, one retail in B.
+        let sales = Table::new(vec![
+            Column::text(
+                "Area",
+                ColumnKind::Key,
+                ["A", "A", "A", "B"].map(|s| Some(s.to_owned())).to_vec(),
+            ),
+            Column::text(
+                "Segment",
+                ColumnKind::Text,
+                ["Retail", "Retail", "Wholesale", "Retail"]
+                    .map(|s| Some(s.to_owned()))
+                    .to_vec(),
+            ),
+            Column::number("Sales", vec![Some(1.0), Some(2.0), Some(100.0), Some(4.0)]),
+        ])
+        .unwrap();
+        let t = p.add_table("Customers", sales, Default::default());
+        let link = p.add_link(t, "Area", layer, territoria_data::MatchMode::Exact);
+        let mut cache = Cache::default();
+        let retail = |s: ValueSource| ValueSource::filtered(s, "[Segment] = \"Retail\"");
+        let sum = ValueSource::Linked {
+            link,
+            column: "Sales".into(),
+            agg: Aggregate::Sum,
+        };
+        assert_eq!(cache.values(&p, layer, &sum), vec![Some(103.0), Some(4.0)]);
+        assert_eq!(
+            cache.values(&p, layer, &retail(sum.clone())),
+            vec![Some(3.0), Some(4.0)]
+        );
+        assert_eq!(
+            cache.values(&p, layer, &retail(ValueSource::RowCount { link })),
+            vec![Some(2.0), Some(1.0)]
+        );
+        // Clearing the filter gives the plain source back.
+        assert_eq!(ValueSource::filtered(retail(sum.clone()), " "), sum);
+        assert!(
+            retail(sum)
+                .label(&p)
+                .ends_with("where [Segment] = \"Retail\"")
+        );
+    }
+
+    #[test]
     fn names_and_numbers() {
         use crate::layer::LayerGeometry;
         use geo_types::{MultiPolygon, polygon};

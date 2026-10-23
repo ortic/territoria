@@ -2109,3 +2109,67 @@ fn reload_table_from_file() {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A segment: customers with big sales only, counted per area.
+#[test]
+fn filtered_analysis() {
+    use crate::dialogs::Placement;
+    use territoria_model::{MapLayer, MapLayerKind, ValueSource};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let customers = customers(h.state(), layer, 800);
+    let app = h.state_mut();
+    app.add_table(
+        "Customers".into(),
+        customers,
+        PathBuf::from("customers.csv"),
+        Placement::Points {
+            x: "Longitude".into(),
+            y: "Latitude".into(),
+        },
+        None,
+    );
+    let points = app.project.layers.last().unwrap().id;
+    let all = ValueSource::Points {
+        layer: points,
+        column: None,
+        agg: territoria_data::Aggregate::Count,
+    };
+    let big = ValueSource::filtered(all.clone(), "[Sales] > 8000");
+    let mut values = territoria_model::Cache::default();
+    let n_all: f64 = values
+        .values(&app.project, layer, &all)
+        .iter()
+        .flatten()
+        .sum();
+    let n_big: f64 = values
+        .values(&app.project, layer, &big)
+        .iter()
+        .flatten()
+        .sum();
+    assert!(n_big > 0.0 && n_big < n_all * 0.4, "{n_big} of {n_all}");
+    let map = app.project.maps[0].id;
+    let id = territoria_model::MapLayerId(3001);
+    app.project.map_mut(map).unwrap().layers.insert(
+        0,
+        MapLayer {
+            id,
+            name: "Customers where [Sales] > 8000".into(),
+            visible: true,
+            opacity: 1.0,
+            kind: MapLayerKind::Choropleth {
+                layer,
+                source: big,
+                normalize: Default::default(),
+                scale: Default::default(),
+                style: Default::default(),
+            },
+        },
+    );
+    app.selection = crate::app::Selection::MapLayer(map, id);
+    settle(&mut h);
+    save(&mut h, "filtered");
+}

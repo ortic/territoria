@@ -37,11 +37,64 @@ pub enum ValueSource {
     Units,
     /// km from each unit to its territory's site in a plan.
     SiteDistance { plan: crate::PlanId },
+    /// Another source over only the rows a formula holds for (a segment:
+    /// `[Type] = "Retail"`). Applies to linked tables and points.
+    Filtered {
+        source: Box<ValueSource>,
+        filter: String,
+    },
 }
 
 impl ValueSource {
+    /// The source without its filter, and the filter.
+    pub fn split(&self) -> (&ValueSource, Option<&str>) {
+        match self {
+            ValueSource::Filtered { source, filter } => (source, Some(filter)),
+            s => (s, None),
+        }
+    }
+
+    /// `source` with `filter` (none when empty).
+    pub fn filtered(source: ValueSource, filter: &str) -> ValueSource {
+        let source = match source {
+            ValueSource::Filtered { source, .. } => *source,
+            s => s,
+        };
+        if filter.trim().is_empty() {
+            source
+        } else {
+            ValueSource::Filtered {
+                source: Box::new(source),
+                filter: filter.trim().to_owned(),
+            }
+        }
+    }
+
+    /// The aggregation of rows per area, if the source has one.
+    pub fn agg_mut(&mut self) -> Option<&mut Aggregate> {
+        match self {
+            ValueSource::Linked { agg, .. } | ValueSource::Points { agg, .. } => Some(agg),
+            ValueSource::Filtered { source, .. } => source.agg_mut(),
+            _ => None,
+        }
+    }
+
+    /// The table whose rows the source adds up (for filters).
+    pub fn rows_table<'a>(&self, project: &'a Project) -> Option<&'a territoria_data::Table> {
+        match self {
+            ValueSource::Linked { link, .. } | ValueSource::RowCount { link } => project
+                .link(*link)
+                .and_then(|l| project.table(l.table))
+                .map(|t| &*t.table),
+            ValueSource::Points { layer, .. } => project.layer(*layer).map(|l| &*l.attributes),
+            ValueSource::Filtered { source, .. } => source.rows_table(project),
+            _ => None,
+        }
+    }
+
     pub fn uses_links(&self, links: &[LinkId]) -> bool {
         match self {
+            ValueSource::Filtered { source, .. } => source.uses_links(links),
             ValueSource::Linked { link, .. } | ValueSource::RowCount { link } => {
                 links.contains(link)
             }
@@ -82,6 +135,9 @@ impl ValueSource {
             ValueSource::SiteDistance { plan } => {
                 let name = project.plan(*plan).map_or("?".into(), |p| p.name.clone());
                 format!("km to the site ({name})")
+            }
+            ValueSource::Filtered { source, filter } => {
+                format!("{} where {filter}", source.label(project))
             }
         }
     }
@@ -371,11 +427,40 @@ impl Cache {
         layer: LayerId,
         source: &ValueSource,
     ) -> Vec<Option<f64>> {
+        self.values_of(project, layer, source, None)
+    }
+
+    /// Values from only the source rows `mask` keeps (all without one).
+    fn values_of(
+        &mut self,
+        project: &Project,
+        layer: LayerId,
+        source: &ValueSource,
+        mask: Option<&[bool]>,
+    ) -> Vec<Option<f64>> {
         let Some(l) = project.layer(layer) else {
             return Vec::new();
         };
         let n = l.len();
+        let keep = |r: usize| mask.is_none_or(|m| m.get(r).copied().unwrap_or(false));
         match source {
+            ValueSource::Filtered {
+                source: inner,
+                filter,
+            } => {
+                let Some(table) = inner.rows_table(project) else {
+                    return self.values_of(project, layer, inner, None);
+                };
+                let Ok(f) = territoria_expr::Formula::compile(filter, table) else {
+                    return vec![None; n];
+                };
+                let m: Vec<bool> = f
+                    .evaluate(table)
+                    .iter()
+                    .map(|v| matches!(v, territoria_expr::Val::Bool(true)))
+                    .collect();
+                self.values_of(project, layer, inner, Some(&m))
+            }
             ValueSource::Attribute { column } => match l.attributes.column(column) {
                 Some(c) => (0..n).map(|r| c.f64(r)).collect(),
                 None => vec![None; n],
@@ -392,6 +477,11 @@ impl Cache {
                 let Some(pl) = project.layer(*points) else {
                     return vec![None; n];
                 };
+                let hits: Vec<Option<u32>> = hits
+                    .iter()
+                    .enumerate()
+                    .map(|(r, h)| h.filter(|_| keep(r)))
+                    .collect();
                 match column.as_deref().and_then(|c| pl.attributes.column(c)) {
                     Some(col) => territoria_data::aggregate::group(
                         (0..pl.len()).map(|r| col.f64(r)),
@@ -443,7 +533,10 @@ impl Cache {
                 };
                 territoria_data::aggregate::group(
                     (0..table.table.rows()).map(|r| col.f64(r)),
-                    m.row_target.iter().copied(),
+                    m.row_target
+                        .iter()
+                        .enumerate()
+                        .map(|(r, t)| t.filter(|_| keep(r))),
                     n,
                     *agg,
                 )
@@ -453,8 +546,10 @@ impl Cache {
                     return vec![None; n];
                 };
                 let mut counts = vec![None; n];
-                for t in m.row_target.iter().flatten() {
-                    *counts[*t as usize].get_or_insert(0.0) += 1.0;
+                for (r, t) in m.row_target.iter().enumerate() {
+                    if let Some(t) = t.filter(|_| keep(r)) {
+                        *counts[t as usize].get_or_insert(0.0) += 1.0;
+                    }
                 }
                 counts
             }

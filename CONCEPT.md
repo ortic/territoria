@@ -240,7 +240,7 @@ territoria/
 - [ ] Data-driven labels (text templates, font size/colour by data) (templates done, several lines also in exports; size/colour not yet)
 - [x] Tooltips: rich cards from a template; several analyses at one spot listed together (no templates)
 - [x] Legends generated from the analysis; a few templates (list, bar, histogram, size); edited labels stay in sync (list and gradient in Contents, histogram in Properties)
-- [ ] Analysis-wide filter (segment) and "ignore filter"
+- [x] Analysis-wide filter (segment) and "ignore filter" (per analysis: "Only where" with a formula over the linked table's or points' rows; no shared named segments yet)
 - [ ] Zoom-dependent visibility and symbol scaling
 - [ ] Save/load class sets and ramps for reuse across projects
 
