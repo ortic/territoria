@@ -18,13 +18,22 @@ struct TableState {
     key: Option<OrderKey>,
     /// Show only the rows of the map's selection.
     only_selected: bool,
+    /// Show only the rows of a segment (a yes/no column).
+    segment: Option<String>,
     /// The cell being edited: row, column, text.
     editing: Option<(usize, usize, String)>,
 }
 
 /// What the row order depends on: revision, sort, filter, plan revisions,
-/// selection.
-type OrderKey = (u64, Option<(usize, bool)>, String, Vec<u64>, Option<u64>);
+/// selection, segment.
+type OrderKey = (
+    u64,
+    Option<(usize, bool)>,
+    String,
+    Vec<u64>,
+    Option<u64>,
+    Option<String>,
+);
 
 pub fn show(
     ui: &mut Ui,
@@ -89,40 +98,49 @@ pub fn show(
                 .hint_text("Find in all columns")
                 .desired_width(220.0),
         );
+        // Segments: the table's yes/no columns, e.g. a calculated [Key account].
+        let segments: Vec<&str> = table
+            .columns
+            .iter()
+            .filter(|c| c.kind == territoria_data::ColumnKind::Bool)
+            .map(|c| c.name.as_str())
+            .collect();
+        if state.segment.as_deref().is_some_and(|s| !segments.contains(&s)) {
+            state.segment = None;
+        }
+        egui::ComboBox::from_id_salt(("table-segment", data))
+            .width(130.0)
+            .selected_text(state.segment.clone().unwrap_or_else(|| "All rows".into()))
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut state.segment, None, "All rows");
+                for s in &segments {
+                    ui.selectable_value(&mut state.segment, Some(s.to_string()), *s);
+                }
+                ui.separator();
+                if ui
+                    .button("New segment…")
+                    .on_hover_text("A yes/no calculated column, e.g. [Sales] > 10000: it filters tables and analyses")
+                    .clicked()
+                {
+                    actions.push(Action::Formula(data, None));
+                }
+            })
+            .response
+            .on_hover_text("Only the rows of a segment: a yes/no column");
         ui.label(RichText::new(format!("{} rows", format_value(state.order.len() as f64))).weak());
         if selection.is_some() {
             ui.checkbox(&mut state.only_selected, "Only the selection")
                 .on_hover_text("Rows of the areas selected on the map");
         }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.menu_button("Export", |ui| {
-                if ui.button("Excel…").clicked() {
-                    actions.push(Action::Export(Export::Data(data, true)));
-                }
-                if ui.button("CSV…").clicked() {
-                    actions.push(Action::Export(Export::Data(data, false)));
-                }
-            })
-            .response
-            .on_hover_text("This table with each row's territories");
-            if matches!(data, DataRef::Table(_))
-                && ui.button("➕ Row").on_hover_text("An empty row at the end; double-click cells to fill them").clicked()
-            {
-                actions.push(Action::AddRow(data));
-            }
+    });
+    // What can be done with the table, on a row of its own.
+    ui.horizontal_wrapped(|ui| {
             if ui
-                .button("⚖ Score…")
-                .on_hover_text("A weighted mix of several figures, as a calculated column")
+                .button("ƒ Calculated column…")
+                .on_hover_text("A new column computed from the others with a formula")
                 .clicked()
             {
-                actions.push(Action::Score(data));
-            }
-            if ui
-                .button("Σ Summarise…")
-                .on_hover_text("A new table with one row per group, e.g. sales per rep")
-                .clicked()
-            {
-                actions.push(Action::Summarise(data));
+                actions.push(Action::Formula(data, None));
             }
             if ui
                 .button("⊕ Columns from…")
@@ -132,13 +150,34 @@ pub fn show(
                 actions.push(Action::Join(data));
             }
             if ui
-                .button("ƒ Calculated column…")
-                .on_hover_text("A new column computed from the others with a formula")
+                .button("Σ Summarise…")
+                .on_hover_text("A new table with one row per group, e.g. sales per rep")
                 .clicked()
             {
-                actions.push(Action::Formula(data, None));
+                actions.push(Action::Summarise(data));
             }
-        });
+            if ui
+                .button("⚖ Score…")
+                .on_hover_text("A weighted mix of several figures, as a calculated column")
+                .clicked()
+            {
+                actions.push(Action::Score(data));
+            }
+            if matches!(data, DataRef::Table(_))
+                && ui.button("➕ Row").on_hover_text("An empty row at the end; double-click cells to fill them").clicked()
+            {
+                actions.push(Action::AddRow(data));
+            }
+            ui.menu_button("Export", |ui| {
+                if ui.button("Excel…").clicked() {
+                    actions.push(Action::Export(Export::Data(data, true, state.segment.clone())));
+                }
+                if ui.button("CSV…").clicked() {
+                    actions.push(Action::Export(Export::Data(data, false, state.segment.clone())));
+                }
+            })
+            .response
+            .on_hover_text("This table with each row's territories (only the segment's rows when one is chosen)");
     });
 
     let plan_revs = plans.iter().map(|(p, _)| p.rev).collect();
@@ -149,11 +188,17 @@ pub fn show(
         state.filter.clone(),
         plan_revs,
         selection_key.filter(|_| only),
+        state.segment.clone(),
     ));
     if state.key != key {
         let needle = state.filter.to_lowercase();
+        let segment = state.segment.as_deref().and_then(|s| table.column(s));
         let mut order: Vec<usize> = (0..table.rows())
             .filter(|&r| !only || in_selection(r))
+            .filter(|&r| {
+                segment
+                    .is_none_or(|c| matches!(c.get(r), territoria_data::table::Value::Bool(true)))
+            })
             .filter(|&r| {
                 needle.is_empty()
                     || table

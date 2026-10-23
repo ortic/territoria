@@ -195,7 +195,7 @@ territoria/
 - [x] Score column: weighted combination of columns (absolute or as share of total) (⚖ Score: weights made to add up to 1, each as share, rank or as is; written as a formula to adjust)
 - [x] Queries: join, union, group by with aggregations (sum, mean, min, max, median, mode, first, last, list, count rows, count values), filter before and after grouping (Summarise: group by one or more columns, sum/mean/median/min/max/count/first, filter before; joins via Columns from…; no union or filter after grouping)
 - [x] Spatial join: points get attributes of the area they lie in (areas get counts and sums of the points inside)
-- [ ] Saved filters (segments) usable by analyses, reports and exports; one clear meaning
+- [x] Saved filters (segments) usable by analyses, reports and exports; one clear meaning (a segment is a yes/no column, usually calculated: "Only where" picks one or keeps the typed filter as one; tables show and export a segment's rows; not yet in reports)
 - [x] Table ↔ map coupling: hover/select rows highlights areas and the other way round (clicking rows selects their areas, Shift toggles; rows of the map's selection are highlighted and can be filtered; not on hover)
 - [x] Data export: CSV, XLSX (one sheet per table or files), filtered or all (plans, tables and layer attributes with each row's territories; not filtered yet)
 - [x] Coordinates in degrees-minutes-seconds and "lat, lon" in one column parsed on import (decimal pairs, DMS with N/S/E/W before or after, GPS degrees and minutes; suggested when a column looks like that)

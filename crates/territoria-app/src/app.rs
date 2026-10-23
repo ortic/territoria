@@ -107,6 +107,12 @@ pub enum Action {
     SelectRows(DataRef, Vec<usize>, bool),
     /// Open the formula editor for a new (`None`) or calculated column.
     Formula(DataRef, Option<String>),
+    /// A filter kept as a yes/no calculated column of `data`.
+    SaveSegment {
+        data: DataRef,
+        name: String,
+        formula: String,
+    },
     DeleteColumn(DataRef, String),
     /// Copy a plan as a scenario and compare the copy with it.
     DuplicatePlan(PlanId),
@@ -114,7 +120,7 @@ pub enum Action {
     Export(Export),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum FileAction {
     OpenProject,
     SaveProjectAs,
@@ -126,7 +132,7 @@ enum FileAction {
 }
 
 /// What File → Export writes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Export {
     /// Territories and assignment as an Excel workbook.
     PlanExcel(PlanId),
@@ -143,8 +149,8 @@ pub enum Export {
     /// What changes from the first plan to the second, as an Excel workbook.
     Changes(PlanId, PlanId),
     /// A table or a layer's attributes with each row's territories, as
-    /// Excel (`true`) or CSV.
-    Data(DataRef, bool),
+    /// Excel (`true`) or CSV; only a segment's rows when one is named.
+    Data(DataRef, bool, Option<String>),
     /// A PDF with an overview and a page per territory.
     Report(PlanId),
 }
@@ -456,7 +462,7 @@ impl TerritoriaApp {
         if let Some(dir) = &self.settings.last_dir {
             dialog = dialog.set_directory(dir);
         }
-        let dialog = match action {
+        let dialog = match &action {
             FileAction::OpenProject => {
                 dialog.add_filter("Territoria project", &[territoria_model::file::EXTENSION])
             }
@@ -477,7 +483,7 @@ impl TerritoriaApp {
                 .add_filter("Tables (CSV, Excel)", territoria_io::TABLE_EXTENSIONS)
                 .add_filter("All files", &["*"]),
             FileAction::Export(e) => {
-                let (filter, ext, name) = match e {
+                let (filter, ext, name) = match e.clone() {
                     Export::PlanExcel(p) => (
                         "Excel workbook",
                         "xlsx",
@@ -524,10 +530,13 @@ impl TerritoriaApp {
                         "pdf",
                         self.project.plan(p).map(|p| format!("Report {}", p.name)),
                     ),
-                    Export::Data(d, excel) => (
+                    Export::Data(d, excel, segment) => (
                         if excel { "Excel workbook" } else { "CSV" },
                         if excel { "xlsx" } else { "csv" },
-                        data_name(&self.project, d),
+                        data_name(&self.project, d).map(|n| match segment {
+                            Some(s) => format!("{n} – {s}"),
+                            None => n,
+                        }),
                     ),
                 };
                 dialog
@@ -535,8 +544,9 @@ impl TerritoriaApp {
                     .set_file_name(format!("{}.{ext}", name.unwrap_or_else(|| "export".into())))
             }
         };
+        let save = matches!(action, FileAction::SaveProjectAs | FileAction::Export(_));
         std::thread::spawn(move || {
-            let path = if matches!(action, FileAction::SaveProjectAs | FileAction::Export(_)) {
+            let path = if save {
                 dialog.save_file()
             } else {
                 dialog.pick_file()
@@ -551,7 +561,7 @@ impl TerritoriaApp {
             return;
         };
         let Ok(path) = rx.try_recv() else { return };
-        let action = *action;
+        let action = action.clone();
         self.file_dialog = None;
         let Some(path) = path else { return };
         if let Some(dir) = path.parent() {
@@ -653,9 +663,29 @@ impl TerritoriaApp {
                 .plan(p)
                 .map(|plan| plan_data_sheets(&self.project, &mut self.values, plan))
                 .unwrap_or_default(),
-            Export::Data(d, _) => with_territories(&self.project, &mut self.values, d, None)
-                .into_iter()
-                .collect(),
+            Export::Data(d, _, ref segment) => {
+                with_territories(&self.project, &mut self.values, d, None)
+                    .map(|(name, table)| {
+                        // A segment: its rows only, with the values as shown.
+                        let table = match segment.as_deref().and_then(|s| table.column(s)) {
+                            Some(c) => {
+                                let keep: Vec<usize> = (0..table.rows())
+                                    .filter(|&r| {
+                                        matches!(
+                                            c.get(r),
+                                            territoria_data::table::Value::Bool(true)
+                                        )
+                                    })
+                                    .collect();
+                                table.take_rows(&keep)
+                            }
+                            None => table,
+                        };
+                        (name, table)
+                    })
+                    .into_iter()
+                    .collect()
+            }
             _ => Vec::new(),
         };
         let project = self.project.clone();
@@ -721,7 +751,7 @@ impl TerritoriaApp {
                         territoria_io::export::write_geojson(&path, &geometries, &layer.attributes)
                             .map_err(err)
                     }
-                    Export::Data(_, excel) => {
+                    Export::Data(_, excel, _) => {
                         let (name, table) = data_sheets.first().ok_or("the data was removed")?;
                         if excel {
                             territoria_io::export::write_xlsx(&path, &[(name.as_str(), table)])
@@ -3477,6 +3507,11 @@ impl TerritoriaApp {
                     None => self.toast("Link this table to areas to see its rows on the map."),
                 }
             }
+            Action::SaveSegment {
+                data,
+                name,
+                formula,
+            } => self.apply_formula(data, None, &name, &formula),
             Action::Formula(data, column) => {
                 self.formula = Some(crate::dialogs::FormulaDialog::new(
                     &self.project,
@@ -3737,10 +3772,10 @@ impl TerritoriaApp {
                     for (d, name) in data {
                         ui.menu_button(name, |ui| {
                             if ui.button("Excel…").clicked() {
-                                exports.push(Export::Data(d, true));
+                                exports.push(Export::Data(d, true, None));
                             }
                             if ui.button("CSV…").clicked() {
-                                exports.push(Export::Data(d, false));
+                                exports.push(Export::Data(d, false, None));
                             }
                             if let DataRef::Layer(l) = d
                                 && ui.button("GeoJSON (with shapes)…").clicked()

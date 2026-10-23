@@ -890,8 +890,10 @@ fn customers_know_their_territory() {
     std::fs::create_dir_all(&dir).unwrap();
     let csv = dir.join("customers.csv");
     let xlsx = dir.join("plan.xlsx");
-    h.state_mut()
-        .export(Export::Data(DataRef::Layer(points), false), csv.clone());
+    h.state_mut().export(
+        Export::Data(DataRef::Layer(points), false, None),
+        csv.clone(),
+    );
     h.state_mut().export(Export::PlanExcel(plan), xlsx.clone());
     settle(&mut h);
     let (rows, _) = territoria_io::read_table(&csv, &Default::default()).unwrap();
@@ -3169,4 +3171,60 @@ fn change_a_shortcut() {
         app.keymap_for_test().command_of(&k),
         Some(crate::commands::Command::Find)
     );
+}
+
+/// A filter kept as a segment: a yes/no column used by an analysis and
+/// by the table export.
+#[test]
+fn segments() {
+    use crate::app::{Action, DataRef, Export};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    h.state_mut()
+        .add_linked_table_now("Sales 2026", table, "Area", layer, None);
+    let app = h.state_mut();
+    let t = app.project.tables[0].id;
+    app.apply_action_for_test(Action::SaveSegment {
+        data: DataRef::Table(t),
+        name: "Big".into(),
+        formula: "[Revenue] > 20000".into(),
+    });
+    let table = &app.project.table(t).unwrap().table;
+    let big = table.column("Big").expect("the segment column");
+    assert_eq!(big.kind, territoria_data::ColumnKind::Bool);
+    let n = (0..table.rows())
+        .filter(|&r| matches!(big.get(r), territoria_data::table::Value::Bool(true)))
+        .count();
+    assert!(n > 0 && n < table.rows(), "{n}");
+    // An analysis of the segment's rows only.
+    let link = app.project.links[0].id;
+    let source = territoria_model::ValueSource::filtered(
+        territoria_model::ValueSource::RowCount { link },
+        "[Big]",
+    );
+    let mut values = territoria_model::Cache::default();
+    let counted: f64 = values
+        .values(&app.project, layer, &source)
+        .iter()
+        .flatten()
+        .sum();
+    assert_eq!(counted as usize, n);
+    // The table export of the segment.
+    let dir = std::env::temp_dir().join(format!("territoria-segment-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let csv = dir.join("big.csv");
+    app.export(
+        Export::Data(DataRef::Table(t), false, Some("Big".into())),
+        csv.clone(),
+    );
+    app.open_table_for_test(DataRef::Table(t));
+    settle(&mut h);
+    let text = std::fs::read_to_string(&csv).unwrap();
+    assert_eq!(text.lines().count(), n + 1, "header and the segment's rows");
+    save(&mut h, "segments");
+    let _ = std::fs::remove_dir_all(dir);
 }

@@ -1839,6 +1839,86 @@ fn histogram(
 }
 
 /// The value of an analysis: which number, how per area, relative to what.
+/// The data a value source adds up rows of.
+fn rows_data(project: &Project, source: &ValueSource) -> Option<DataRef> {
+    match source {
+        ValueSource::Linked { link, .. } | ValueSource::RowCount { link } => {
+            project.link(*link).map(|l| DataRef::Table(l.table))
+        }
+        ValueSource::Points { layer, .. } => Some(DataRef::Layer(*layer)),
+        ValueSource::Filtered { source, .. } => rows_data(project, source),
+        _ => None,
+    }
+}
+
+/// Segments of the rows (their yes/no columns) to filter by, and saving
+/// the typed filter as one.
+fn segments_menu(
+    ui: &mut Ui,
+    project: &Project,
+    source: &ValueSource,
+    table: &territoria_data::Table,
+    text: &str,
+    set_filter: &dyn Fn(String) -> Action,
+    actions: &mut Vec<Action>,
+) {
+    let segments: Vec<&str> = table
+        .columns
+        .iter()
+        .filter(|c| c.kind == ColumnKind::Bool)
+        .map(|c| c.name.as_str())
+        .collect();
+    // A filter worth keeping: a valid yes/no formula, not just a segment.
+    let savable = !text.trim().is_empty()
+        && !segments.iter().any(|s| text.trim() == format!("[{s}]"))
+        && territoria_expr::Formula::compile(text, table)
+            .is_ok_and(|f| f.ty() == territoria_expr::Type::Bool);
+    let data = rows_data(project, source);
+    ui.menu_button("Segments", |ui| {
+        for s in &segments {
+            if ui.button(*s).clicked() {
+                actions.push(set_filter(format!("[{s}]")));
+                ui.close();
+            }
+        }
+        if segments.is_empty() {
+            ui.label(
+                RichText::new(
+                    "Segments are yes/no columns of the data; type a filter and keep it as one.",
+                )
+                .weak(),
+            );
+        }
+        if savable && let Some(data) = data {
+            ui.separator();
+            let name_id = ui.id().with("segment-name");
+            let mut name: String = ui.data_mut(|d| d.get_temp(name_id).unwrap_or_default());
+            ui.label("Keep this filter as a segment");
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::TextEdit::singleline(&mut name)
+                        .hint_text("Name, e.g. Key accounts")
+                        .desired_width(160.0),
+                );
+                let ok = !name.trim().is_empty() && table.column(name.trim()).is_none();
+                if ui.add_enabled(ok, egui::Button::new("Keep")).clicked() {
+                    actions.push(Action::SaveSegment {
+                        data,
+                        name: name.trim().to_owned(),
+                        formula: text.trim().to_owned(),
+                    });
+                    actions.push(set_filter(format!("[{}]", name.trim())));
+                    name.clear();
+                    ui.close();
+                }
+            });
+            ui.data_mut(|d| d.insert_temp(name_id, name));
+        }
+    })
+    .response
+    .on_hover_text("Named filters (yes/no columns) to reuse in tables, analyses and exports");
+}
+
 #[allow(clippy::too_many_arguments)]
 fn value_ui(
     ui: &mut Ui,
@@ -1930,6 +2010,27 @@ fn value_ui(
     // A segment: only the rows a formula holds for.
     if let Some(table) = source.rows_table(project) {
         let mut text = filter.unwrap_or_default().to_owned();
+        // The filter as an undoable change that also renames the layer.
+        let set_filter = |t: String| {
+            let inner = source.clone();
+            let base = options
+                .iter()
+                .find(|(_, c)| matches!(c, Colorable::Number(s) if same_source(s, &inner)))
+                .map_or_else(|| inner.label(project), |(l, _)| l.clone());
+            let label = if t.trim().is_empty() {
+                format!("{base}{}", normalize.suffix(project))
+            } else {
+                format!("{base} where {}{}", t.trim(), normalize.suffix(project))
+            };
+            edit_layer(map, id, "Change filter", move |l| {
+                if let MapLayerKind::Choropleth { source, .. }
+                | MapLayerKind::Symbols { source, .. } = &mut l.kind
+                {
+                    *source = ValueSource::filtered(inner, &t);
+                }
+                l.name = label;
+            })
+        };
         ui.horizontal(|ui| {
             ui.label("Only where").on_hover_text(
                 "Count or add up only some rows, e.g. [Segment] = \"Retail\" or [Orders] > 10",
@@ -1943,26 +2044,9 @@ fn value_ui(
                 )
                 .changed();
             if changed {
-                let inner = source.clone();
-                let base = options
-                    .iter()
-                    .find(|(_, c)| matches!(c, Colorable::Number(s) if same_source(s, &inner)))
-                    .map_or_else(|| inner.label(project), |(l, _)| l.clone());
-                let t = text.clone();
-                let label = if t.trim().is_empty() {
-                    format!("{base}{}", normalize.suffix(project))
-                } else {
-                    format!("{base} where {}{}", t.trim(), normalize.suffix(project))
-                };
-                actions.push(edit_layer(map, id, "Change filter", move |l| {
-                    if let MapLayerKind::Choropleth { source, .. }
-                    | MapLayerKind::Symbols { source, .. } = &mut l.kind
-                    {
-                        *source = ValueSource::filtered(inner, &t);
-                    }
-                    l.name = label;
-                }));
+                actions.push(set_filter(text.clone()));
             }
+            segments_menu(ui, project, source, table, &text, &set_filter, actions);
         });
         if !text.trim().is_empty() {
             match territoria_expr::Formula::compile(&text, table) {
