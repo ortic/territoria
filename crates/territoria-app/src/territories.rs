@@ -5,10 +5,12 @@ use std::collections::HashMap;
 
 use egui::{Color32, RichText, Sense, Ui, vec2};
 use territoria_analysis::format::{format_percent, format_value};
-use territoria_model::{Cache, Measure, PlanId, PlanStats, Project, TerritoryId, ValueSource};
+use territoria_model::{
+    Cache, Comparison, LayerId, Measure, PlanId, PlanStats, Project, TerritoryId, ValueSource,
+};
 use territoria_optimize::{Mode, Options, Problem, Quality};
 
-use crate::app::Action;
+use crate::app::{Action, Export};
 use crate::dialogs::{Colorable, colorables};
 use crate::map_view::{Tool, color};
 use crate::theme;
@@ -26,21 +28,8 @@ impl StatsCache {
         values: &mut Cache,
         plan: PlanId,
     ) -> Option<std::sync::Arc<PlanStats>> {
-        use std::hash::{DefaultHasher, Hash, Hasher};
         let p = project.plan(plan)?;
-        let mut h = DefaultHasher::new();
-        p.rev.hash(&mut h);
-        format!("{:?}{:?}", p.measures, p.territories).hash(&mut h);
-        for l in &project.layers {
-            l.rev.hash(&mut h);
-        }
-        for link in project.links_to(p.layer) {
-            if let Some(t) = project.table(link.table) {
-                t.rev.hash(&mut h);
-            }
-            format!("{link:?}").hash(&mut h);
-        }
-        let key = h.finish();
+        let key = plan_key(project, plan)?;
         if let Some((k, s)) = self.entries.get(&plan)
             && *k == key
         {
@@ -50,6 +39,37 @@ impl StatsCache {
         self.entries.insert(plan, (key, s.clone()));
         Some(s)
     }
+}
+
+/// Changes when the plan's figures may change: its assignment, measures,
+/// territories, or the data behind them.
+fn plan_key(project: &Project, plan: PlanId) -> Option<u64> {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    let p = project.plan(plan)?;
+    let mut h = DefaultHasher::new();
+    p.rev.hash(&mut h);
+    format!("{:?}{:?}", p.measures, p.territories).hash(&mut h);
+    for l in &project.layers {
+        l.rev.hash(&mut h);
+    }
+    for link in project.links_to(p.layer) {
+        if let Some(t) = project.table(link.table) {
+            t.rev.hash(&mut h);
+        }
+        format!("{link:?}").hash(&mut h);
+    }
+    Some(h.finish())
+}
+
+/// The active plan compared with another one.
+struct Compared {
+    key: (u64, u64),
+    layer: LayerId,
+    base: PlanId,
+    plan: PlanId,
+    result: Comparison,
+    /// The units that change territory.
+    units: Vec<u32>,
 }
 
 /// A balancing result waiting for the user's decision.
@@ -81,6 +101,13 @@ pub struct TerritoriesPanel {
     pub proposal: Option<(PlanId, Proposal)>,
     pub settings: BalanceSettings,
     editing: Option<(TerritoryId, String)>,
+    /// The new name while renaming the plan.
+    renaming: Option<String>,
+    /// The plan the active one is compared with.
+    pub compare: Option<PlanId>,
+    /// Mark the areas that change territory on the map.
+    pub mark_changes: bool,
+    compared: Option<Compared>,
 }
 
 pub struct PanelContext<'a> {
@@ -240,6 +267,46 @@ fn deviation_bar(ui: &mut Ui, deviation: f64, tolerance: f64) {
 }
 
 impl TerritoriesPanel {
+    /// The units to mark on the map while comparing `plan` with another.
+    pub fn highlight(&self, plan: Option<PlanId>) -> Option<(LayerId, &[u32])> {
+        let c = self.compared.as_ref()?;
+        (self.mark_changes && Some(c.plan) == plan && self.compare == Some(c.base))
+            .then_some((c.layer, c.units.as_slice()))
+    }
+
+    /// Compares the active plan with another and marks the changes.
+    pub fn compare_with(&mut self, base: PlanId) {
+        self.compare = Some(base);
+        self.mark_changes = true;
+    }
+
+    fn comparison(
+        &mut self,
+        project: &Project,
+        values: &mut Cache,
+        base: PlanId,
+        plan: PlanId,
+    ) -> Option<&Compared> {
+        let key = (plan_key(project, base)?, plan_key(project, plan)?);
+        let fresh = self
+            .compared
+            .as_ref()
+            .is_some_and(|c| c.key == key && c.base == base && c.plan == plan);
+        if !fresh {
+            let result = project.compare_plans(base, plan, values)?;
+            let units = result.moves.iter().map(|m| m.unit).collect();
+            self.compared = Some(Compared {
+                key,
+                layer: project.plan(plan)?.layer,
+                base,
+                plan,
+                result,
+                units,
+            });
+        }
+        self.compared.as_ref()
+    }
+
     pub fn show(&mut self, ui: &mut Ui, cx: PanelContext) -> Vec<Action> {
         let mut actions = Vec::new();
         let project = cx.project;
@@ -264,8 +331,38 @@ impl TerritoriesPanel {
         if cx.active_plan != Some(plan_id) {
             actions.push(Action::ShowPlan(plan_id));
         }
-        // Plan picker.
+        // Plan picker, or the plan's name while renaming it.
         ui.horizontal(|ui| {
+            if let Some(mut name) = self.renaming.take() {
+                let r = ui.add(egui::TextEdit::singleline(&mut name).desired_width(200.0));
+                r.request_focus();
+                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    // Cancelled.
+                } else if r.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    let name = name.trim().to_owned();
+                    if !name.is_empty() && name != plan.name {
+                        let old = plan.name.clone();
+                        actions.push(Action::Edit(
+                            "Rename plan".into(),
+                            Box::new(move |p| {
+                                for map in &mut p.maps {
+                                    for ml in &mut map.layers {
+                                        if ml.kind.plan() == Some(plan_id) && ml.name == old {
+                                            ml.name = name.clone();
+                                        }
+                                    }
+                                }
+                                if let Some(pl) = p.plan_mut(plan_id) {
+                                    pl.name = name;
+                                }
+                            }),
+                        ));
+                    }
+                } else {
+                    self.renaming = Some(name);
+                }
+                return;
+            }
             egui::ComboBox::from_id_salt("plan")
                 .width(200.0)
                 .selected_text(&plan.name)
@@ -283,6 +380,43 @@ impl TerritoriesPanel {
             {
                 actions.push(Action::Command(crate::commands::Command::NewPlan));
             }
+            ui.menu_button("⋯", |ui| {
+                if ui
+                    .button("⧉ Duplicate as scenario")
+                    .on_hover_text("A copy to try changes on. The copy is compared with this plan.")
+                    .clicked()
+                {
+                    actions.push(Action::DuplicatePlan(plan_id));
+                }
+                let others: Vec<_> = project
+                    .plans
+                    .iter()
+                    .filter(|p| p.id != plan_id && p.layer == plan.layer)
+                    .collect();
+                ui.add_enabled_ui(!others.is_empty(), |ui| {
+                    ui.menu_button("⇄ Compare with", |ui| {
+                        for p in others {
+                            if ui.button(&p.name).clicked() {
+                                self.compare_with(p.id);
+                            }
+                        }
+                    })
+                    .response
+                    .on_disabled_hover_text(
+                        "No other plan on the same areas. Duplicate this one to try changes.",
+                    );
+                });
+                if ui.button("✏ Rename").clicked() {
+                    self.renaming = Some(plan.name.clone());
+                }
+                if ui.button("Export (Excel)…").clicked() {
+                    actions.push(Action::Export(Export::PlanExcel(plan_id)));
+                }
+                ui.separator();
+                if ui.button("🗑 Delete plan…").clicked() {
+                    actions.push(Action::RemovePlan(plan_id));
+                }
+            });
         });
 
         // Measure.
@@ -618,6 +752,11 @@ impl TerritoriesPanel {
             }
         });
 
+        // Comparison with another plan (a scenario with its original).
+        if let Some(base) = self.compare.filter(|b| *b != plan_id) {
+            self.compare_ui(ui, project, cx.values, base, plan_id, &mut actions);
+        }
+
         // Balancing.
         ui.add_space(4.0);
         egui::CollapsingHeader::new(RichText::new("Balance automatically").strong())
@@ -713,5 +852,145 @@ impl TerritoriesPanel {
                 }
             });
         actions
+    }
+
+    fn compare_ui(
+        &mut self,
+        ui: &mut Ui,
+        project: &Project,
+        values: &mut Cache,
+        base: PlanId,
+        plan: PlanId,
+        actions: &mut Vec<Action>,
+    ) {
+        let Some(base_plan) = project.plan(base) else {
+            self.compare = None;
+            return;
+        };
+        let mut close = false;
+        let mut mark = self.mark_changes;
+        ui.add_space(4.0);
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Compared with").strong());
+                ui.label(&base_plan.name);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .small_button("✖")
+                        .on_hover_text("End the comparison")
+                        .clicked()
+                    {
+                        close = true;
+                    }
+                });
+            });
+            let Some(c) = self.comparison(project, values, base, plan) else {
+                ui.label(
+                    RichText::new("The plans are on different areas and can't be compared.").weak(),
+                );
+                return;
+            };
+            let r = &c.result;
+            if r.moves.is_empty() {
+                ui.label(
+                    RichText::new("No changes yet. Paint or balance this plan to try changes.")
+                        .weak(),
+                );
+                return;
+            }
+            ui.horizontal_wrapped(|ui| {
+                ui.label(format!(
+                    "{} areas change territory",
+                    format_value(r.moves.len() as f64)
+                ));
+                for (layer, n) in &r.points {
+                    if let Some(l) = project.layer(*layer) {
+                        ui.label("·");
+                        ui.label(format!("{} {}", format_value(*n as f64), l.name))
+                            .on_hover_text("Points in the areas that change territory");
+                    }
+                }
+            });
+            ui.checkbox(&mut mark, "Mark them on the map");
+            let changed: Vec<_> = r
+                .territories
+                .iter()
+                .filter(|t| t.gained + t.lost > 0)
+                .collect();
+            egui::Grid::new("compare-grid")
+                .num_columns(4)
+                .spacing([10.0, 3.0])
+                .striped(true)
+                .show(ui, |ui| {
+                    ui.label(RichText::new("Territory").weak());
+                    ui.label(RichText::new("Areas").weak());
+                    ui.label(RichText::new(&r.measure).weak());
+                    ui.label("");
+                    ui.end_row();
+                    for t in &changed {
+                        ui.horizontal(|ui| {
+                            ui.set_min_width(110.0);
+                            ui.set_max_width(170.0);
+                            let (rect, _) =
+                                ui.allocate_exact_size(vec2(10.0, 10.0), Sense::hover());
+                            ui.painter().rect_filled(rect, 2.0, color(t.color));
+                            ui.add(egui::Label::new(&t.name).truncate());
+                        });
+                        let mut areas = Vec::new();
+                        if t.gained > 0 {
+                            areas.push(format!("+{}", t.gained));
+                        }
+                        if t.lost > 0 {
+                            areas.push(format!("−{}", t.lost));
+                        }
+                        ui.label(areas.join(" "));
+                        ui.label(format!(
+                            "{} → {}",
+                            format_value(t.values[0]),
+                            format_value(t.values[1])
+                        ));
+                        let change = if t.values[0] != 0.0 {
+                            t.values[1] / t.values[0] - 1.0
+                        } else {
+                            0.0
+                        };
+                        ui.label(
+                            RichText::new(format!(
+                                "{}{}",
+                                if change > 0.0 { "+" } else { "" },
+                                format_percent(change)
+                            ))
+                            .weak(),
+                        );
+                        ui.end_row();
+                    }
+                });
+            let same = r.territories.len() - changed.len();
+            if same > 0 {
+                ui.label(RichText::new(format!("{same} territories unchanged")).weak());
+            }
+            ui.horizontal_wrapped(|ui| {
+                if ui
+                    .button(format!("Adopt in “{}”", base_plan.name))
+                    .on_hover_text("The original plan takes over this scenario's territories")
+                    .clicked()
+                {
+                    actions.push(Action::Edit(
+                        "Adopt scenario".into(),
+                        Box::new(move |p| {
+                            p.adopt_plan(plan, base);
+                        }),
+                    ));
+                }
+                if ui.button("Export changes (Excel)…").clicked() {
+                    actions.push(Action::Export(Export::Changes(base, plan)));
+                }
+            });
+        });
+        self.mark_changes = mark;
+        if close {
+            self.compare = None;
+        }
     }
 }

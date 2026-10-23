@@ -21,7 +21,9 @@ pub use layer::{
     Layer, LayerGeometry, SourceInfo, duplicate_keys, merge_by_column, points_from_table,
 };
 pub use map::{BoundaryStyle, LabelMode, Map, MapLayer, MapLayerKind};
-pub use plan::{Measure, Plan, PlanStats, Territory, TerritoryStats};
+pub use plan::{
+    Comparison, Measure, Move, Plan, PlanStats, Territory, TerritoryChange, TerritoryStats,
+};
 pub use values::{Cache, TextSource, ValueSource};
 
 macro_rules! ids {
@@ -256,6 +258,14 @@ impl Project {
         }
         self.layers.retain(|l| l.id != id);
         gone
+    }
+
+    /// Removes a plan and the map layers showing it.
+    pub fn remove_plan(&mut self, id: PlanId) {
+        self.plans.retain(|p| p.id != id);
+        for map in &mut self.maps {
+            map.layers.retain(|ml| ml.kind.plan() != Some(id));
+        }
     }
 
     pub fn remove_table(&mut self, id: TableId) {

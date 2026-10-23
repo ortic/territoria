@@ -781,6 +781,231 @@ impl Project {
         self.plans.push(plan);
         id
     }
+
+    /// A copy of a plan to try changes on (a scenario). Territories keep
+    /// their ids, so the copies can be compared.
+    pub fn duplicate_plan(&mut self, id: PlanId, name: &str) -> Option<PlanId> {
+        let mut plan = self.plan(id)?.clone();
+        plan.id = PlanId(self.next_id());
+        plan.name = name.to_owned();
+        plan.rev = self.bump();
+        let new = plan.id;
+        self.plans.push(plan);
+        Some(new)
+    }
+
+    /// Takes over a scenario: `into` gets the territories and assignment of
+    /// `from` and keeps its own name.
+    pub fn adopt_plan(&mut self, from: PlanId, into: PlanId) -> bool {
+        let Some(source) = self.plan(from).cloned() else {
+            return false;
+        };
+        let rev = self.bump();
+        let Some(target) = self.plan_mut(into).filter(|t| t.layer == source.layer) else {
+            return false;
+        };
+        target.territories = source.territories;
+        target.assignment = source.assignment;
+        target.pinned = source.pinned;
+        target.measures = source.measures;
+        target.next_territory = target.next_territory.max(source.next_territory);
+        target.rev = rev;
+        true
+    }
+
+    /// What differs between two plans on the same layer.
+    pub fn compare_plans(&self, a: PlanId, b: PlanId, cache: &mut Cache) -> Option<Comparison> {
+        let (pa, pb) = (self.plan(a)?, self.plan(b)?);
+        if pa.layer != pb.layer {
+            return None;
+        }
+        let moves: Vec<Move> = pa
+            .assignment
+            .iter()
+            .zip(pb.assignment.iter())
+            .enumerate()
+            .filter(|(_, (x, y))| x != y)
+            .map(|(u, (x, y))| Move {
+                unit: u as u32,
+                from: *x,
+                to: *y,
+            })
+            .collect();
+        // Points (customers) in the areas that moved, per point layer.
+        let mut points = Vec::new();
+        if self
+            .layer(pa.layer)
+            .is_some_and(|l| l.kind() == territoria_io::GeometryKind::Area)
+        {
+            let moved: HashSet<u32> = moves.iter().map(|m| m.unit).collect();
+            for l in self
+                .layers
+                .iter()
+                .filter(|l| l.kind() == territoria_io::GeometryKind::Point)
+            {
+                if let Some(hits) = cache.point_areas(self, l.id, pa.layer) {
+                    let n = hits.iter().flatten().filter(|u| moved.contains(u)).count();
+                    points.push((l.id, n));
+                }
+            }
+        }
+        // Per territory (matched by id) its figures in both plans, by the
+        // measure of the second plan.
+        let source = pb
+            .measures
+            .first()
+            .or(pa.measures.first())
+            .map_or(ValueSource::Units, |m| m.source.clone());
+        let values = cache.values(self, pa.layer, &source);
+        let sum = |p: &Plan, t: TerritoryId| -> (usize, f64) {
+            p.assignment
+                .iter()
+                .enumerate()
+                .filter(|(_, x)| **x == Some(t))
+                .fold((0, 0.0), |(n, s), (u, _)| {
+                    (n + 1, s + values.get(u).copied().flatten().unwrap_or(0.0))
+                })
+        };
+        let mut territories: Vec<TerritoryChange> = Vec::new();
+        for t in pb.territories.iter().chain(&pa.territories) {
+            if territories.iter().any(|c| c.id == t.id) {
+                continue;
+            }
+            let (ua, va) = if pa.territory(t.id).is_some() {
+                sum(pa, t.id)
+            } else {
+                (0, 0.0)
+            };
+            let (ub, vb) = if pb.territory(t.id).is_some() {
+                sum(pb, t.id)
+            } else {
+                (0, 0.0)
+            };
+            territories.push(TerritoryChange {
+                id: t.id,
+                name: t.name.clone(),
+                color: t.color,
+                units: [ua, ub],
+                values: [va, vb],
+                gained: moves.iter().filter(|m| m.to == Some(t.id)).count(),
+                lost: moves.iter().filter(|m| m.from == Some(t.id)).count(),
+            });
+        }
+        Some(Comparison {
+            a,
+            b,
+            moves,
+            points,
+            measure: source.label(self),
+            territories,
+        })
+    }
+}
+
+/// A territory's figures in two plans.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TerritoryChange {
+    pub id: TerritoryId,
+    pub name: String,
+    pub color: Rgba,
+    pub units: [usize; 2],
+    pub values: [f64; 2],
+    /// Units it gains and loses from the first plan to the second.
+    pub gained: usize,
+    pub lost: usize,
+}
+
+/// One unit that belongs to another territory in the second plan.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Move {
+    pub unit: u32,
+    pub from: Option<TerritoryId>,
+    pub to: Option<TerritoryId>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Comparison {
+    pub a: PlanId,
+    pub b: PlanId,
+    pub moves: Vec<Move>,
+    /// Per point layer, how many of its points lie in moved units.
+    pub points: Vec<(LayerId, usize)>,
+    /// What `territories` compares.
+    pub measure: String,
+    pub territories: Vec<TerritoryChange>,
+}
+
+impl Comparison {
+    /// One row per moved unit: key, name, territory before and after.
+    pub fn table(&self, project: &Project) -> Table {
+        use territoria_data::{Column, ColumnKind};
+        let (Some(pa), Some(pb)) = (project.plan(self.a), project.plan(self.b)) else {
+            return Table::default();
+        };
+        let Some(layer) = project.layer(pa.layer) else {
+            return Table::default();
+        };
+        let name = |p: &Plan, t: Option<TerritoryId>| {
+            t.and_then(|t| p.territory(t)).map(|t| t.name.clone())
+        };
+        let mut columns = vec![Column::text(
+            layer.key_column.clone().unwrap_or_else(|| "Area".into()),
+            ColumnKind::Key,
+            self.moves
+                .iter()
+                .map(|m| Some(layer.key(m.unit as usize)))
+                .collect(),
+        )];
+        if let Some(c) = layer
+            .name_column
+            .as_deref()
+            .and_then(|c| layer.attributes.column(c))
+        {
+            columns.push(Column::text(
+                c.name.clone(),
+                ColumnKind::Text,
+                self.moves
+                    .iter()
+                    .map(|m| c.get(m.unit as usize).to_text())
+                    .collect(),
+            ));
+        }
+        columns.push(Column::text(
+            format!("Before ({})", pa.name),
+            ColumnKind::Text,
+            self.moves.iter().map(|m| name(pa, m.from)).collect(),
+        ));
+        columns.push(Column::text(
+            format!("After ({})", pb.name),
+            ColumnKind::Text,
+            self.moves.iter().map(|m| name(pb, m.to)).collect(),
+        ));
+        Table::new(columns).unwrap_or_default()
+    }
+
+    /// One row per territory with its figures before and after.
+    pub fn territory_table(&self) -> Table {
+        use territoria_data::{Column, ColumnKind};
+        let t = &self.territories;
+        let number = |name: String, f: &dyn Fn(&TerritoryChange) -> f64| {
+            Column::number(name, t.iter().map(|c| Some(f(c))).collect())
+        };
+        let columns = vec![
+            Column::text(
+                "Territory",
+                ColumnKind::Text,
+                t.iter().map(|c| Some(c.name.clone())).collect(),
+            ),
+            number("Areas before".into(), &|c| c.units[0] as f64),
+            number("Areas after".into(), &|c| c.units[1] as f64),
+            number("Gained".into(), &|c| c.gained as f64),
+            number("Lost".into(), &|c| c.lost as f64),
+            number(format!("{} before", self.measure), &|c| c.values[0]),
+            number(format!("{} after", self.measure), &|c| c.values[1]),
+            number("Change".into(), &|c| c.values[1] - c.values[0]),
+        ];
+        Table::new(columns).unwrap_or_default()
+    }
 }
 
 #[cfg(test)]
@@ -803,6 +1028,54 @@ mod tests {
         assert_eq!(expand_unit_list("80*", &units, &index), vec![0, 1, 2]);
         assert_eq!(expand_unit_list("a?2, 9000", &units, &index), vec![4, 5]);
         assert!(expand_unit_list("7000", &units, &index).is_empty());
+    }
+
+    #[test]
+    fn scenarios_compare() {
+        use crate::layer::LayerGeometry;
+        use geo_types::{MultiPolygon, polygon};
+        let areas: Vec<MultiPolygon<f64>> = (0..4)
+            .map(|i| {
+                let x = i as f64;
+                MultiPolygon(vec![polygon![(x: x, y: 0.0), (x: x + 1.0, y: 0.0), (x: x + 1.0, y: 1.0), (x: x, y: 1.0), (x: x, y: 0.0)]])
+            })
+            .collect();
+        let mut p = Project::new();
+        let g = LayerGeometry::from_imported(territoria_io::Geometries::Areas(areas), true);
+        let layer = p.add_layer("A", g, Table::with_rows(4), Default::default());
+        let a = p.add_plan("Now", layer, 2);
+        let (t1, t2) = {
+            let pl = p.plan(a).unwrap();
+            (pl.territories[0].id, pl.territories[1].id)
+        };
+        p.plan_mut(a).unwrap().assign(&[0, 1], Some(t1));
+        p.plan_mut(a).unwrap().assign(&[2, 3], Some(t2));
+        let b = p.duplicate_plan(a, "Next year").unwrap();
+        p.plan_mut(b).unwrap().assign(&[1], Some(t2));
+        let mut cache = Cache::default();
+        let c = p.compare_plans(a, b, &mut cache).unwrap();
+        assert_eq!(
+            c.moves,
+            vec![Move {
+                unit: 1,
+                from: Some(t1),
+                to: Some(t2)
+            }]
+        );
+        let t = c.table(&p);
+        assert_eq!(t.rows(), 1);
+        assert_eq!(t.columns[0].display(0), "2");
+        assert_eq!(
+            t.column("After (Next year)").unwrap().display(0),
+            "Territory 02"
+        );
+        assert_eq!(c.territories[0].units, [2, 1]);
+        assert_eq!(c.territories[1].units, [2, 3]);
+        assert_eq!((c.territories[1].gained, c.territories[1].lost), (1, 0));
+        assert_eq!(c.territory_table().rows(), 2);
+        assert!(p.adopt_plan(b, a));
+        assert!(p.compare_plans(a, b, &mut cache).unwrap().moves.is_empty());
+        assert_eq!(p.plan(a).unwrap().name, "Now");
     }
 
     #[test]

@@ -733,3 +733,71 @@ fn plan_on_customer_points() {
     settle(&mut h);
     save(&mut h, "customer-territories");
 }
+
+/// A scenario: a copy of a plan with some areas moved, compared with the
+/// original; the changes are marked on the map and export to Excel.
+#[test]
+fn scenario_compares_with_original() {
+    use crate::app::Export;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    h.state_mut()
+        .add_linked_table_now("Sales 2026", table, "Area", layer, Some("Revenue"));
+    let app = h.state_mut();
+    let plan = app.add_balanced_plan_now(layer, 5);
+    let copy = app.duplicate_plan_for_test(plan).expect("a copy");
+    assert_eq!(app.project.plans.len(), 2);
+    assert_eq!(
+        app.project.plan(copy).unwrap().name,
+        "Sales territories – scenario"
+    );
+    // Only the copy is on the map.
+    let map = app.project.maps.first().unwrap();
+    let visible: Vec<_> = map
+        .layers
+        .iter()
+        .filter(|l| l.visible)
+        .filter_map(|l| l.kind.plan())
+        .collect();
+    assert_eq!(visible, vec![copy]);
+    // Move areas along the border of the first two territories.
+    let g = app.project.layer(layer).unwrap().geometry.clone();
+    let p = app.project.plan_mut(copy).unwrap();
+    let (t0, t1) = (p.territories[0].id, p.territories[1].id);
+    let border: Vec<u32> = (0..g.len() as u32)
+        .filter(|&u| p.assignment[u as usize] == Some(t0))
+        .filter(|&u| {
+            g.neighbors[u as usize]
+                .iter()
+                .any(|(n, _)| p.assignment[*n as usize] == Some(t1))
+        })
+        .take(6)
+        .collect();
+    assert!(!border.is_empty());
+    p.assign(&border, Some(t1));
+    let rev = app.project.bump();
+    app.project.plan_mut(copy).unwrap().rev = rev;
+    settle(&mut h);
+    let mut marked = h.state().marked_for_test().expect("changes marked");
+    marked.sort_unstable();
+    assert_eq!(marked, border);
+    save(&mut h, "scenario");
+
+    let dir = std::env::temp_dir().join(format!("territoria-app-scenario-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let xlsx = dir.join("changes.xlsx");
+    h.state_mut()
+        .export(Export::Changes(plan, copy), xlsx.clone());
+    settle(&mut h);
+    let (changes, info) = territoria_io::read_table(&xlsx, &Default::default()).unwrap();
+    assert_eq!(
+        info.sheets,
+        vec!["Changes".to_owned(), "Territories".to_owned()]
+    );
+    assert_eq!(changes.rows(), border.len());
+    let _ = std::fs::remove_dir_all(dir);
+}

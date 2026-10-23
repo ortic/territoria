@@ -266,8 +266,9 @@ territoria/
 - [x] Territory borders drawn from the topology (outer and inner borders, per level)
 - [x] Unassigned units: highlight, auto-assign to nearest/adjacent territory
 - [ ] Rename territories after their biggest place or site; renumber by position
-- [ ] Scenarios: copy a plan, compare two plans (moved units, KPI deltas), adopt changes
-- [ ] Change log: what moved since a snapshot ("143 customers change rep")
+- [x] Scenarios: copy a plan, compare two plans (moved units, KPI deltas), adopt changes (⋯ menu → Duplicate as scenario; the panel compares, marks moved areas on the map, adopts into the original)
+- [x] Change log: what moved since a snapshot ("143 customers change rep") (a scenario copy is the snapshot: moved areas, points in them per point layer, Excel export of the moves and per-territory figures; no automatic snapshots)
+- [x] Rename, delete and export a plan from the Territories panel; one plan shown on the map at a time
 - [ ] Analyses on plans: distance zones (unit to own site), catchment (potential within distance), key units (top units per territory), coverage (sites grab units until capacity)
 - [ ] Point-in-territory column for any table ("which rep owns this customer")
 

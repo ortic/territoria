@@ -79,6 +79,10 @@ pub enum Action {
     Balance(PlanId),
     AcceptProposal(PlanId),
     DiscardProposal,
+    /// Copy a plan as a scenario and compare the copy with it.
+    DuplicatePlan(PlanId),
+    RemovePlan(PlanId),
+    Export(Export),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,6 +107,8 @@ pub enum Export {
     LayerGeoJson(LayerId),
     /// The current map as an image or document.
     Map(crate::export_map::Format),
+    /// What changes from the first plan to the second, as an Excel workbook.
+    Changes(PlanId, PlanId),
 }
 
 struct Confirm {
@@ -114,6 +120,7 @@ struct Confirm {
 enum ConfirmAction {
     RemoveLayer(LayerId),
     RemoveTable(TableId),
+    RemovePlan(PlanId),
     Discard(Box<Command>),
     DiscardThen(PathBuf),
 }
@@ -371,6 +378,11 @@ impl TerritoriaApp {
                         "geojson",
                         self.project.layer(l).map(|l| l.name.clone()),
                     ),
+                    Export::Changes(_, b) => (
+                        "Excel workbook",
+                        "xlsx",
+                        self.project.plan(b).map(|p| format!("Changes {}", p.name)),
+                    ),
                 };
                 dialog
                     .add_filter(filter, &[ext])
@@ -440,6 +452,10 @@ impl TerritoriaApp {
             return;
         }
         let project = self.project.clone();
+        let comparison = match what {
+            Export::Changes(a, b) => project.compare_plans(a, b, &mut self.values),
+            _ => None,
+        };
         let stats = match what {
             Export::PlanExcel(p) | Export::PlanGeoJson(p) => project
                 .plan(p)
@@ -498,6 +514,17 @@ impl TerritoriaApp {
                             .collect();
                         territoria_io::export::write_geojson(&path, &geometries, &layer.attributes)
                             .map_err(err)
+                    }
+                    Export::Changes(..) => {
+                        let c = comparison.ok_or("the plans can't be compared")?;
+                        territoria_io::export::write_xlsx(
+                            &path,
+                            &[
+                                ("Changes", &c.table(&project)),
+                                ("Territories", &c.territory_table()),
+                            ],
+                        )
+                        .map_err(err)
                     }
                     // Written on the UI thread's request above.
                     Export::Map(_) => Ok(()),
@@ -801,6 +828,19 @@ impl TerritoriaApp {
         self.link = None;
         self.color_by = None;
         self.new_plan = None;
+    }
+
+    #[cfg(test)]
+    pub fn duplicate_plan_for_test(&mut self, plan: PlanId) -> Option<PlanId> {
+        self.duplicate_plan(plan);
+        self.active_plan.filter(|p| *p != plan)
+    }
+
+    #[cfg(test)]
+    pub fn marked_for_test(&self) -> Option<Vec<u32>> {
+        self.territories_panel
+            .highlight(self.active_plan)
+            .map(|(_, u)| u.to_vec())
     }
 
     /// Creates a plan of `count` territories, balanced from scratch.
@@ -1336,6 +1376,35 @@ impl TerritoriaApp {
     }
 
     /// Puts a plan on the current map (once) and makes it the active one.
+    /// Copies a plan as a scenario, shows the copy and compares it with
+    /// the original.
+    fn duplicate_plan(&mut self, plan: PlanId) {
+        let Some(name) = self.project.plan(plan).map(|p| p.name.clone()) else {
+            return;
+        };
+        let before = self.project.clone();
+        let names: Vec<String> = self.project.plans.iter().map(|p| p.name.clone()).collect();
+        let name = (1..)
+            .map(|i| {
+                if i == 1 {
+                    format!("{name} – scenario")
+                } else {
+                    format!("{name} – scenario {i}")
+                }
+            })
+            .find(|n| !names.contains(n))
+            .unwrap_or_default();
+        let Some(copy) = self.project.duplicate_plan(plan, &name) else {
+            return;
+        };
+        self.show_plan(copy);
+        self.history.push("Duplicate plan", before);
+        self.territories_panel.compare_with(plan);
+        self.toast(format!(
+            "“{name}” is a copy to try changes on. The Territories panel compares it with the original."
+        ));
+    }
+
     fn show_plan(&mut self, plan: PlanId) {
         let map = self.ensure_map();
         let on_map = self
@@ -1362,6 +1431,15 @@ impl TerritoriaApp {
                     },
                 },
             );
+        }
+        // One plan at a time: territories of several plans on top of each
+        // other can't be read.
+        if let Some(m) = self.project.map_mut(map) {
+            for ml in &mut m.layers {
+                if let Some(p) = ml.kind.plan() {
+                    ml.visible = p == plan;
+                }
+            }
         }
         self.active_plan = Some(plan);
         self.active_territory = self
@@ -1664,6 +1742,20 @@ impl TerritoriaApp {
                 }
             }
             Action::DiscardProposal => self.territories_panel.proposal = None,
+            Action::DuplicatePlan(plan) => self.duplicate_plan(plan),
+            Action::RemovePlan(id) => {
+                let name = self
+                    .project
+                    .plan(id)
+                    .map(|p| p.name.clone())
+                    .unwrap_or_default();
+                self.confirm = Some(Confirm {
+                    title: format!("Delete {name}?"),
+                    text: "The plan and its territories are removed from the project. You can undo this.".into(),
+                    action: ConfirmAction::RemovePlan(id),
+                });
+            }
+            Action::Export(e) => self.ask_file(FileAction::Export(e)),
         }
     }
 
@@ -2184,6 +2276,17 @@ impl TerritoriaApp {
                             self.tool = Tool::Navigate;
                         }
                     }
+                    ConfirmAction::RemovePlan(id) => {
+                        self.edit("Delete plan", |p| p.remove_plan(id));
+                        if self.active_plan == Some(id) {
+                            self.active_plan = self.project.plans.first().map(|p| p.id);
+                            self.active_territory = None;
+                            self.tool = Tool::Navigate;
+                        }
+                        if self.territories_panel.compare == Some(id) {
+                            self.territories_panel.compare = None;
+                        }
+                    }
                     ConfirmAction::RemoveTable(id) => {
                         self.edit("Remove table", |p| p.remove_table(id));
                         self.selection = Selection::None;
@@ -2410,6 +2513,7 @@ impl TabViewer for Viewer<'_> {
                     active_plan: app.active_plan,
                     active_territory: app.active_territory,
                     dark: ui.visuals().dark_mode,
+                    highlight: app.territories_panel.highlight(app.active_plan),
                 };
                 let map = map.clone();
                 let events = map_view::show(ui, &map, state, &mut cx);

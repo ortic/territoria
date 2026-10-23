@@ -84,6 +84,8 @@ pub struct MapContext<'a> {
     pub active_plan: Option<PlanId>,
     pub active_territory: Option<TerritoryId>,
     pub dark: bool,
+    /// Units to mark, e.g. the areas a scenario moves.
+    pub highlight: Option<(LayerId, &'a [u32])>,
 }
 
 /// Per plan: unit → territory index and where territory labels go.
@@ -338,6 +340,32 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
         for r in crate::resolve::resolve(&mut rcx, &meshes, &cells, ml, &map.crs) {
             draw_resolved(&mut shapes, &r, &view, ppp);
             resolved.push(r);
+        }
+    }
+
+    // Marked units: outlined and tinted.
+    if let Some((layer, units)) = cx.highlight
+        && let Some(mesh) = cells.get(&layer).or(meshes.get(&layer))
+    {
+        let level = paint::level(mesh, &view, ppp);
+        let c = Color32::from_rgb(0xd9, 0x46, 0xef);
+        paint::highlight(
+            &mut shapes,
+            mesh,
+            level,
+            &view,
+            units,
+            c.gamma_multiply(0.35),
+        );
+        for &u in units {
+            paint::outline(
+                &mut shapes,
+                mesh,
+                level,
+                &view,
+                u as usize,
+                Stroke::new(2.0, c),
+            );
         }
     }
 
