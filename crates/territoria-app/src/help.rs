@@ -294,7 +294,12 @@ fn shortcuts(ui: &mut Ui, keymap: &crate::commands::Keymap) {
             }
         });
     ui.add_space(6.0);
-    ui.label(RichText::new("Single keys work when no text field is being edited.").weak());
+    ui.label(
+        RichText::new(
+            "Single keys work when no text field is being edited. Change them in Settings → Keyboard shortcuts.",
+        )
+        .weak(),
+    );
 }
 
 #[cfg(test)]

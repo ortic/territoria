@@ -3142,3 +3142,31 @@ fn help_on_the_selection() {
     settle(&mut h);
     save(&mut h, "help");
 }
+
+/// A shortcut changed in Settings: clicked, then the new keys pressed.
+#[test]
+fn change_a_shortcut() {
+    use egui::{Key, Modifiers};
+    use egui_kittest::kittest::Queryable;
+    let (mut h, _lock) = harness(false);
+    h.state_mut().open_settings_for_test();
+    h.run_steps(3);
+    h.get_by_label("Keyboard shortcuts").click();
+    h.state_mut().find_shortcut_for_test("find an");
+    h.run_steps(3);
+    h.get_by_label("Ctrl+F").click();
+    h.run_steps(2);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::K);
+    h.run_steps(3);
+    save(&mut h, "settings-shortcuts");
+    let app = h.state();
+    assert_eq!(
+        app.settings.shortcuts.get("Find").map(String::as_str),
+        Some("Ctrl+K")
+    );
+    let k = egui::KeyboardShortcut::new(Modifiers::COMMAND, Key::K);
+    assert_eq!(
+        app.keymap_for_test().command_of(&k),
+        Some(crate::commands::Command::Find)
+    );
+}

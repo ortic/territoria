@@ -75,6 +75,15 @@ commands! {
 }
 
 impl Command {
+    /// A stable name for settings files.
+    pub fn id(self) -> String {
+        format!("{self:?}")
+    }
+
+    pub fn from_id(id: &str) -> Option<Command> {
+        Command::ALL.iter().copied().find(|c| c.id() == id)
+    }
+
     /// Label without the category prefix, for menus.
     pub fn short_label(self) -> &'static str {
         let label = self.label();
@@ -124,7 +133,66 @@ impl Default for Keymap {
     }
 }
 
+/// Keys as text for settings files: `Ctrl+Shift+S` (Ctrl is Cmd on macOS).
+pub fn shortcut_to_text(s: &KeyboardShortcut) -> String {
+    let mut out = String::new();
+    if s.modifiers.command || s.modifiers.ctrl {
+        out.push_str("Ctrl+");
+    }
+    if s.modifiers.alt {
+        out.push_str("Alt+");
+    }
+    if s.modifiers.shift {
+        out.push_str("Shift+");
+    }
+    out.push_str(s.logical_key.name());
+    out
+}
+
+/// Keys from text like `Ctrl+Shift+S`.
+pub fn shortcut_from_text(text: &str) -> Option<KeyboardShortcut> {
+    if text.trim().is_empty() {
+        return None;
+    }
+    let mut modifiers = Modifiers::NONE;
+    let mut key = None;
+    for part in text.split('+').map(str::trim) {
+        match part.to_lowercase().as_str() {
+            "ctrl" | "cmd" | "command" => modifiers |= Modifiers::COMMAND,
+            "alt" | "option" => modifiers |= Modifiers::ALT,
+            "shift" => modifiers |= Modifiers::SHIFT,
+            "" => key = Key::from_name("+").or(key),
+            _ => key = Some(Key::from_name(part)?),
+        }
+    }
+    Some(KeyboardShortcut::new(modifiers, key?))
+}
+
 impl Keymap {
+    /// The default keys with the user's changes: a command named there
+    /// gets just that shortcut (none when empty).
+    pub fn with_changes(changes: &std::collections::BTreeMap<String, String>) -> Keymap {
+        let mut map = Keymap::default();
+        for (id, keys) in changes {
+            let Some(c) = Command::from_id(id) else {
+                continue;
+            };
+            map.bindings.retain(|(b, _)| *b != c);
+            if let Some(s) = shortcut_from_text(keys) {
+                map.bindings.push((c, s));
+            }
+        }
+        map
+    }
+
+    /// The command that has these keys, if any.
+    pub fn command_of(&self, shortcut: &KeyboardShortcut) -> Option<Command> {
+        self.bindings
+            .iter()
+            .find(|(_, s)| s == shortcut)
+            .map(|(c, _)| *c)
+    }
+
     pub fn shortcut(&self, command: Command) -> Option<&KeyboardShortcut> {
         self.bindings
             .iter()
@@ -169,6 +237,27 @@ impl Keymap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shortcuts_as_text_and_changed() {
+        let s = KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, Key::S);
+        assert_eq!(shortcut_to_text(&s), "Ctrl+Shift+S");
+        assert_eq!(shortcut_from_text("Ctrl+Shift+S"), Some(s));
+        assert_eq!(
+            shortcut_from_text("F1"),
+            Some(KeyboardShortcut::new(Modifiers::NONE, Key::F1))
+        );
+        assert_eq!(shortcut_from_text("Ctrl+Nope"), None);
+        let mut changes = std::collections::BTreeMap::new();
+        changes.insert("Find".to_owned(), "Ctrl+K".to_owned());
+        changes.insert("Undo".to_owned(), String::new());
+        let map = Keymap::with_changes(&changes);
+        let k = KeyboardShortcut::new(Modifiers::COMMAND, Key::K);
+        assert_eq!(map.command_of(&k), Some(Command::Find));
+        assert!(map.shortcut(Command::Undo).is_none());
+        assert!(map.shortcut(Command::Redo).is_some(), "others stay");
+        assert_eq!(Command::from_id("SaveProject"), Some(Command::SaveProject));
+    }
 
     #[test]
     fn labels_have_categories() {

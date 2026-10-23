@@ -338,8 +338,8 @@ impl TerritoriaApp {
         };
         TerritoriaApp {
             paths,
+            keymap: Keymap::with_changes(&settings.shortcuts),
             settings,
-            keymap: Keymap::default(),
             project: Project::new(),
             history: History::default(),
             path: None,
@@ -1341,6 +1341,13 @@ impl TerritoriaApp {
     }
 
     #[cfg(test)]
+    pub fn find_shortcut_for_test(&mut self, text: &str) {
+        if let Some(d) = &mut self.settings_dialog {
+            d.find_for_test(text);
+        }
+    }
+
+    #[cfg(test)]
     pub fn import_as_addresses_for_test(&mut self) {
         if let Some(d) = &mut self.import_table {
             d.placement = crate::dialogs::Placement::Address(
@@ -1379,6 +1386,11 @@ impl TerritoriaApp {
         source: territoria_model::ValueSource,
     ) -> Option<MapLayerId> {
         self.add_choropleth(map, layer, "Value".into(), source)
+    }
+
+    #[cfg(test)]
+    pub fn keymap_for_test(&self) -> &Keymap {
+        &self.keymap
     }
 
     #[cfg(test)]
@@ -4339,6 +4351,9 @@ impl TerritoriaApp {
             let outcome = d.show(ctx, &mut self.settings, &mut open);
             if self.settings != before {
                 self.apply_theme(ctx);
+                if self.settings.shortcuts != before.shortcuts {
+                    self.keymap = Keymap::with_changes(&self.settings.shortcuts);
+                }
             }
             match outcome {
                 Some(crate::dialogs::SettingsOutcome::ClearTiles) => {

@@ -2718,6 +2718,12 @@ impl SelectListDialog {
 pub struct SettingsDialog {
     /// Size of the tile cache in bytes, measured on opening.
     tile_bytes: u64,
+    /// The command whose new keys are awaited.
+    recording: Option<crate::commands::Command>,
+    /// Filter of the shortcut list.
+    find: String,
+    /// What the last change did to another command.
+    note: Option<String>,
 }
 
 pub enum SettingsOutcome {
@@ -2739,7 +2745,12 @@ fn folder_size(dir: &std::path::Path) -> u64 {
 
 impl SettingsDialog {
     pub fn new(tile_dir: &std::path::Path) -> SettingsDialog {
-        let mut d = SettingsDialog { tile_bytes: 0 };
+        let mut d = SettingsDialog {
+            tile_bytes: 0,
+            recording: None,
+            find: String::new(),
+            note: None,
+        };
         d.measure_cache(tile_dir);
         d
     }
@@ -2854,6 +2865,10 @@ impl SettingsDialog {
                     });
                     ui.end_row();
                 });
+            ui.add_space(4.0);
+            egui::CollapsingHeader::new("Keyboard shortcuts")
+                .id_salt("settings-keys")
+                .show(ui, |ui| self.shortcuts_ui(ui, settings));
             ui.add_space(8.0);
             if ui.button("Close").clicked() {
                 close = true;
@@ -2863,6 +2878,122 @@ impl SettingsDialog {
             *open = false;
         }
         outcome
+    }
+
+    #[cfg(test)]
+    pub fn find_for_test(&mut self, text: &str) {
+        self.find = text.into();
+    }
+
+    /// The commands with their keys; a click records new keys.
+    fn shortcuts_ui(&mut self, ui: &mut Ui, settings: &mut territoria_config::Settings) {
+        use crate::commands::{Command, Keymap, shortcut_to_text};
+        // Keys pressed while recording become the command's shortcut.
+        if let Some(c) = self.recording {
+            let pressed = ui.ctx().input_mut(|i| {
+                let found = i.events.iter().find_map(|e| match e {
+                    egui::Event::Key {
+                        key,
+                        pressed: true,
+                        modifiers,
+                        ..
+                    } => Some((*key, *modifiers)),
+                    _ => None,
+                });
+                if let Some((key, modifiers)) = found {
+                    i.consume_key(modifiers, key);
+                }
+                found
+            });
+            match pressed {
+                Some((egui::Key::Escape, m)) if m.is_none() => self.recording = None,
+                Some((egui::Key::Delete | egui::Key::Backspace, m)) if m.is_none() => {
+                    settings.shortcuts.insert(c.id(), String::new());
+                    self.recording = None;
+                }
+                Some((key, m)) => {
+                    let mut modifiers = egui::Modifiers::NONE;
+                    if m.command || m.ctrl {
+                        modifiers |= egui::Modifiers::COMMAND;
+                    }
+                    if m.alt {
+                        modifiers |= egui::Modifiers::ALT;
+                    }
+                    if m.shift {
+                        modifiers |= egui::Modifiers::SHIFT;
+                    }
+                    let s = egui::KeyboardShortcut::new(modifiers, key);
+                    // Keys belong to one command: the other loses them.
+                    self.note = None;
+                    if let Some(other) = Keymap::with_changes(&settings.shortcuts).command_of(&s)
+                        && other != c
+                    {
+                        settings.shortcuts.insert(other.id(), String::new());
+                        self.note = Some(format!(
+                            "{} no longer has {}.",
+                            other.label(),
+                            shortcut_to_text(&s)
+                        ));
+                    }
+                    settings.shortcuts.insert(c.id(), shortcut_to_text(&s));
+                    self.recording = None;
+                }
+                None => {}
+            }
+        }
+        let keymap = Keymap::with_changes(&settings.shortcuts);
+        ui.horizontal(|ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut self.find)
+                    .hint_text("Find a command")
+                    .desired_width(220.0),
+            );
+            if ui
+                .add_enabled(
+                    !settings.shortcuts.is_empty(),
+                    egui::Button::new("Reset all"),
+                )
+                .clicked()
+            {
+                settings.shortcuts.clear();
+                self.note = None;
+            }
+        });
+        if let Some(note) = &self.note {
+            ui.label(RichText::new(note).color(theme::WARN));
+        }
+        let find = self.find.to_lowercase();
+        egui::ScrollArea::vertical()
+            .id_salt("settings-keys-list")
+            .max_height(240.0)
+            .show(ui, |ui| {
+                egui::Grid::new("settings-keys-grid")
+                    .num_columns(2)
+                    .striped(true)
+                    .show(ui, |ui| {
+                        for c in Command::ALL
+                            .iter()
+                            .filter(|c| c.label().to_lowercase().contains(&find))
+                        {
+                            ui.label(c.label());
+                            let text = if self.recording == Some(*c) {
+                                "Press keys… (Esc: cancel, Delete: none)".to_owned()
+                            } else {
+                                keymap
+                                    .shortcut(*c)
+                                    .map_or("—".to_owned(), |s| ui.ctx().format_shortcut(s))
+                            };
+                            if ui
+                                .selectable_label(self.recording == Some(*c), text)
+                                .on_hover_text("Click, then press the new keys")
+                                .clicked()
+                            {
+                                self.recording = Some(*c);
+                            }
+                            ui.end_row();
+                        }
+                    });
+            });
     }
 }
 

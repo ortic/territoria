@@ -129,7 +129,7 @@ territoria/
 - [x] Save/restore layout and open tabs (tabs and their layout are saved with the project; panels with the app)
 - [x] Main menu, toolbar, status bar (cursor coordinates, scale, selection, background tasks)
 - [x] Command palette (Ctrl+Shift+P) with fuzzy search over all commands (word search)
-- [ ] Keyboard shortcuts for all commands, configurable
+- [x] Keyboard shortcuts for all commands, configurable (Settings → Keyboard shortcuts: every command, click and press the new keys, Delete for none; keys taken from another command move; kept in the settings file)
 - [x] Light/dark themes (Pythia's palette)
 - [x] Settings dialog (theme, size, autosave, background of new maps, recent projects, tile cache)
 - [x] Welcome screen: recent projects, new project, open sample, getting started (no sample project yet)
