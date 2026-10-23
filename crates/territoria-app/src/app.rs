@@ -862,6 +862,62 @@ impl TerritoriaApp {
                 Ok(()) => self.toast(format!("Wrote {}", file_name(&path))),
                 Err(e) => self.error(format!("Couldn't write {}: {e}", file_name(&path))),
             },
+            JobResult::Geocoded {
+                name,
+                mut table,
+                path,
+                result,
+            } => match result {
+                Ok(found) => {
+                    use territoria_data::Column;
+                    let hits = &found.hits;
+                    let column = |t: &territoria_data::Table, n: &str| t.unique_name(n);
+                    let (lat, lon, quality) = (
+                        column(&table, "Latitude"),
+                        column(&table, "Longitude"),
+                        column(&table, "Geocoding"),
+                    );
+                    let _ = table.push_column(Column::number(
+                        lat.clone(),
+                        hits.iter().map(|h| h.as_ref().map(|h| h.lat)).collect(),
+                    ));
+                    let _ = table.push_column(Column::number(
+                        lon.clone(),
+                        hits.iter().map(|h| h.as_ref().map(|h| h.lon)).collect(),
+                    ));
+                    let _ = table.push_column(Column::text(
+                        quality,
+                        territoria_data::ColumnKind::Text,
+                        hits.iter()
+                            .map(|h| {
+                                Some(
+                                    h.as_ref()
+                                        .map_or("not found", |h| h.quality.label())
+                                        .to_owned(),
+                                )
+                            })
+                            .collect(),
+                    ));
+                    let found_n = hits.iter().flatten().count();
+                    let rows = hits.len();
+                    self.add_table(
+                        name,
+                        table,
+                        path,
+                        crate::dialogs::Placement::Points { x: lon, y: lat },
+                        None,
+                    );
+                    self.toast(if found.stopped {
+                        format!("Stopped: {found_n} of {rows} addresses found so far. Add the table again to go on; found ones are remembered.")
+                    } else {
+                        format!(
+                            "{found_n} of {rows} addresses found ({} remembered from before). The Geocoding column tells how precisely.",
+                            found.cached
+                        )
+                    });
+                }
+                Err(e) => self.error(format!("Couldn't find the addresses: {e}")),
+            },
             JobResult::Optimized { plan, result } => match result {
                 Ok(proposal) => self.territories_panel.proposal = Some((plan, proposal)),
                 Err(e) => self.error(format!("Balancing failed: {e}")),
@@ -998,6 +1054,15 @@ impl TerritoriaApp {
     #[cfg(test)]
     pub fn open_settings_for_test(&mut self) {
         self.settings_dialog = Some(crate::dialogs::SettingsDialog::new(self.tiles.cache_dir()));
+    }
+
+    #[cfg(test)]
+    pub fn import_as_addresses_for_test(&mut self) {
+        if let Some(d) = &mut self.import_table {
+            d.placement = crate::dialogs::Placement::Address(
+                crate::dialogs::AddressColumns::suggest(&d.table),
+            );
+        }
     }
 
     #[cfg(test)]
@@ -1476,6 +1541,37 @@ impl TerritoriaApp {
         crs: Option<territoria_geo::Crs>,
     ) {
         use crate::dialogs::Placement;
+        if let Placement::Address(columns) = &placement {
+            let addresses = columns.addresses(&table);
+            let settings = self.settings.geocoder.clone();
+            let dir = self.cache_dir().with_file_name("geocoding");
+            let n = addresses.iter().filter(|a| !a.is_empty()).count();
+            let label = format!(
+                "Finding {} addresses",
+                territoria_analysis::format::format_value(n as f64)
+            );
+            self.jobs.spawn_cancellable(label, move |job| {
+                let result = territoria_io::geocode::geocode(
+                    &settings,
+                    &addresses,
+                    &dir,
+                    &mut |done, total| {
+                        if total > 0 {
+                            job.progress(done as f32 / total as f32);
+                        }
+                        !job.cancelled()
+                    },
+                )
+                .map_err(|e| e.to_string());
+                JobResult::Geocoded {
+                    name,
+                    table,
+                    path,
+                    result,
+                }
+            });
+            return;
+        }
         let before = self.project.clone();
         if let Placement::Points { x, y } = &placement {
             let (Some(xi), Some(yi)) = (table.column_index(x), table.column_index(y)) else {

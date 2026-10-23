@@ -363,8 +363,109 @@ pub enum Placement {
     ByKey,
     /// Rows are points at their coordinates.
     Points { x: String, y: String },
+    /// Rows have addresses: find their coordinates first.
+    Address(AddressColumns),
     /// Just add the table.
     None,
+}
+
+/// Which columns hold the parts of an address.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AddressColumns {
+    pub street: Option<String>,
+    pub postcode: Option<String>,
+    pub city: Option<String>,
+    pub country: Option<String>,
+    /// The whole address in one column instead of the parts.
+    pub text: Option<String>,
+    /// The country when no column has it (e.g. "Switzerland").
+    pub default_country: String,
+}
+
+impl AddressColumns {
+    /// Guesses the columns from their names.
+    pub fn suggest(table: &Table) -> AddressColumns {
+        let find = |words: &[&str]| {
+            table
+                .columns
+                .iter()
+                .filter(|c| !c.kind.is_numeric() || c.kind == ColumnKind::Integer)
+                .find(|c| {
+                    let n = c.name.to_lowercase();
+                    words.iter().any(|w| n.contains(w))
+                })
+                .map(|c| c.name.clone())
+        };
+        let street = find(&[
+            "street", "strasse", "straße", "address", "adresse", "rue", "via", "calle", "addr",
+        ]);
+        let postcode = find(&[
+            "zip",
+            "plz",
+            "postcode",
+            "postal",
+            "post code",
+            "npa",
+            "cap",
+            "cp",
+        ]);
+        let city = find(&[
+            "city",
+            "town",
+            "ort",
+            "ville",
+            "stadt",
+            "gemeinde",
+            "locality",
+            "municipality",
+            "place",
+        ]);
+        let country = find(&["country", "land", "pays", "nation"]);
+        AddressColumns {
+            street,
+            postcode,
+            city,
+            country,
+            ..Default::default()
+        }
+    }
+
+    pub fn is_usable(&self) -> bool {
+        self.text.is_some()
+            || self.street.is_some()
+            || self.postcode.is_some()
+            || self.city.is_some()
+    }
+
+    /// Each row's address.
+    pub fn addresses(&self, table: &Table) -> Vec<territoria_io::geocode::Address> {
+        let col = |name: &Option<String>| name.as_deref().and_then(|n| table.column(n));
+        let (street, postcode, city, country, text) = (
+            col(&self.street),
+            col(&self.postcode),
+            col(&self.city),
+            col(&self.country),
+            col(&self.text),
+        );
+        let get = |c: Option<&territoria_data::Column>, r: usize| {
+            c.map(|c| c.display(r)).unwrap_or_default()
+        };
+        (0..table.rows())
+            .map(|r| {
+                let mut country_value = get(country, r);
+                if country_value.trim().is_empty() {
+                    country_value = self.default_country.clone();
+                }
+                territoria_io::geocode::Address {
+                    street: get(street, r),
+                    postcode: get(postcode, r),
+                    city: get(city, r),
+                    country: country_value,
+                    text: get(text, r),
+                }
+            })
+            .collect()
+    }
 }
 
 pub enum ImportTableOutcome {
@@ -576,6 +677,59 @@ impl ImportTable {
                     }
                 });
             }
+            let as_address = matches!(self.placement, Placement::Address(_));
+            if ui
+                .radio(
+                    as_address,
+                    "Rows have addresses: find their coordinates (geocoding)",
+                )
+                .on_hover_text("Each address is looked up with the geocoding service set in the settings; results are kept, so repeated addresses cost nothing")
+                .clicked()
+                && !as_address
+            {
+                self.placement = Placement::Address(AddressColumns::suggest(&self.table));
+            }
+            if let Placement::Address(a) = &mut self.placement {
+                ui.indent("address", |ui| {
+                    egui::Grid::new("address-grid")
+                        .num_columns(4)
+                        .spacing([8.0, 4.0])
+                        .show(ui, |ui| {
+                            let texts = |k: ColumnKind| k != ColumnKind::Number && k != ColumnKind::Bool;
+                            ui.label("Street");
+                            column_combo(ui, "addr-street", &self.table, &mut a.street, texts, Some("—"));
+                            ui.label("Postcode");
+                            column_combo(ui, "addr-postcode", &self.table, &mut a.postcode, texts, Some("—"));
+                            ui.end_row();
+                            ui.label("Town");
+                            column_combo(ui, "addr-city", &self.table, &mut a.city, texts, Some("—"));
+                            ui.label("Country");
+                            column_combo(ui, "addr-country", &self.table, &mut a.country, texts, Some("—"));
+                            ui.end_row();
+                            ui.label("Or all in");
+                            column_combo(ui, "addr-text", &self.table, &mut a.text, texts, Some("—"));
+                            if a.country.is_none() {
+                                ui.label("Country for all");
+                                ui.add(
+                                    egui::TextEdit::singleline(&mut a.default_country)
+                                        .hint_text("e.g. Switzerland")
+                                        .desired_width(140.0),
+                                )
+                                .on_hover_text("For all rows: helps the service where the table has no country");
+                            }
+                            ui.end_row();
+                        });
+                    let n = a.addresses(&self.table).iter().filter(|x| !x.is_empty()).count();
+                    let example = a.addresses(&self.table).into_iter().find(|x| !x.is_empty()).map(|x| x.line());
+                    ui.label(
+                        RichText::new(match example {
+                            Some(e) => format!("{} addresses, e.g. “{e}”", format_value(n as f64)),
+                            None => "Choose the columns with the address.".into(),
+                        })
+                        .weak(),
+                    );
+                });
+            }
             ui.radio_value(
                 &mut self.placement,
                 Placement::None,
@@ -583,7 +737,11 @@ impl ImportTable {
             );
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                if ui.button(RichText::new("Add data").strong()).clicked() {
+                let ready = !matches!(&self.placement, Placement::Address(a) if !a.is_usable());
+                if ui
+                    .add_enabled(ready, egui::Button::new(RichText::new("Add data").strong()))
+                    .clicked()
+                {
                     let crs = if self.crs_text.trim().is_empty() {
                         Ok(None)
                     } else {
@@ -2392,6 +2550,28 @@ impl SettingsDialog {
                         {
                             settings.recent_projects.clear();
                         }
+                    });
+                    ui.end_row();
+                    ui.label("Geocoding");
+                    ui.vertical(|ui| {
+                        let g = &mut settings.geocoder;
+                        ui.horizontal(|ui| {
+                            for kind in [territoria_io::geocode::GeocoderKind::Nominatim, territoria_io::geocode::GeocoderKind::Photon] {
+                                if ui.radio(g.kind == kind, kind.label()).clicked() && g.kind != kind {
+                                    g.kind = kind;
+                                    g.url = kind.default_url().to_owned();
+                                }
+                            }
+                        });
+                        ui.add(egui::TextEdit::singleline(&mut g.url).hint_text("Service address").desired_width(260.0))
+                            .on_hover_text("The public service or your own installation");
+                        ui.add(egui::TextEdit::singleline(&mut g.email).hint_text("Your e-mail (public services ask for it)").desired_width(260.0));
+                        ui.horizontal(|ui| {
+                            ui.label("Pause");
+                            ui.add(egui::DragValue::new(&mut g.interval_ms).range(0..=5000).suffix(" ms"));
+                        })
+                        .response
+                        .on_hover_text("Between requests: the public Nominatim allows one per second; your own server may allow 0");
                     });
                     ui.end_row();
                     ui.label("Map tiles");

@@ -216,8 +216,8 @@ territoria/
 - [x] Match report: share of rows matched, share of areas with data, duplicates; lists of unmatched rows and areas with likely fixes (padding, prefix) (unmatched samples and a tip; no list of areas without data)
 - [x] Several links per table, several tables per layer
 - [x] Aggregation when several rows hit one area (sum, mean, count, …), chosen per use
-- [x] Place rows as points: coordinate columns, geocoded address, or area centroid by key (coordinate columns)
-- [ ] Geocoding (M7): Nominatim/Photon/Pelias/custom endpoint, batch with progress and resume, cache, quality column
+- [x] Place rows as points: coordinate columns, geocoded address, or area centroid by key (coordinate columns, geocoded addresses)
+- [x] Geocoding (M7): Nominatim/Photon/Pelias/custom endpoint, batch with progress and resume, cache, quality column (Nominatim and Photon, public or own; structured or one-column addresses; no Pelias)
 
 ### 5.7 Analyses (M3)
 

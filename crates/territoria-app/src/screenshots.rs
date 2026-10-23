@@ -1523,3 +1523,107 @@ fn hexagon_grid() {
         assert_eq!(g.components(&m), 1, "contiguous on hexagons");
     }
 }
+
+/// A stand-in geocoder: answers `city=` queries with fixed coordinates.
+fn geocoder_server() -> String {
+    use std::io::{BufRead, BufReader, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { break };
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            let _ = reader.read_line(&mut line);
+            loop {
+                let mut h = String::new();
+                if reader.read_line(&mut h).unwrap_or(0) <= 2 {
+                    break;
+                }
+            }
+            let place = [
+                ("Bern", (7.4474, 46.948)),
+                ("Zurich", (8.5417, 47.3769)),
+                ("Basel", (7.5886, 47.5596)),
+            ]
+            .into_iter()
+            .find(|(c, _)| line.contains(&format!("city={c}")));
+            let body = match place {
+                Some((c, (lon, lat))) => format!(
+                    r#"[{{"lat":"{lat}","lon":"{lon}","display_name":"{c}","addresstype":"city","place_rank":16}}]"#
+                ),
+                None => "[]".to_owned(),
+            };
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        }
+    });
+    url
+}
+
+/// Customers with addresses become points through geocoding.
+#[test]
+fn geocoded_customers() {
+    use crate::dialogs::{AddressColumns, Placement};
+    let (mut h, _lock) = harness(false);
+    let table = Table::new(vec![
+        Column::text(
+            "Customer",
+            ColumnKind::Key,
+            ["C1", "C2", "C3", "C4"]
+                .map(|s| Some(s.to_owned()))
+                .to_vec(),
+        ),
+        Column::text(
+            "Town",
+            ColumnKind::Text,
+            ["Bern", "Zurich", "Atlantis", "Basel"]
+                .map(|s| Some(s.to_owned()))
+                .to_vec(),
+        ),
+    ])
+    .unwrap();
+    let app = h.state_mut();
+    app.settings.geocoder.url = geocoder_server();
+    app.settings.geocoder.interval_ms = 0;
+    let columns = AddressColumns::suggest(&table);
+    assert_eq!(columns.city.as_deref(), Some("Town"));
+    let columns = AddressColumns {
+        default_country: "Switzerland".into(),
+        ..columns
+    };
+    app.add_table(
+        format!("Customers {}", std::process::id()),
+        table,
+        PathBuf::from("customers.csv"),
+        Placement::Address(columns),
+        None,
+    );
+    settle(&mut h);
+    let layer = h.state().project.layers.last().expect("a points layer");
+    assert_eq!(layer.kind(), territoria_io::GeometryKind::Point);
+    let q = layer.attributes.column("Geocoding").unwrap();
+    assert_eq!(
+        (0..4).map(|r| q.display(r)).collect::<Vec<_>>(),
+        vec!["town", "town", "not found", "town"]
+    );
+    let p = &layer.geometry.points[0].0[0];
+    assert!((p.x() - 7.4474).abs() < 1e-9 && (p.y() - 46.948).abs() < 1e-9);
+    assert!(layer.geometry.points[2].0.is_empty(), "not found: no point");
+}
+
+/// The import dialog for a table with addresses.
+#[test]
+fn address_import_dialog() {
+    let (mut h, _lock) = harness(false);
+    h.state_mut().paste_table(
+        "Customer\tStreet\tZIP\tCity\tSales\nC001\tBundesplatz 3\t3011\tBern\t1200\nC002\tBahnhofstrasse 1\t8001\tZürich\t900\n",
+    );
+    settle(&mut h);
+    h.state_mut().import_as_addresses_for_test();
+    h.run_steps(3);
+    save(&mut h, "address-import");
+}

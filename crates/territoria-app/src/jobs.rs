@@ -56,6 +56,13 @@ pub enum JobResult {
         plan: territoria_model::PlanId,
         result: Result<crate::territories::Proposal, String>,
     },
+    /// Addresses of a table to be added, found (or not).
+    Geocoded {
+        name: String,
+        table: Table,
+        path: PathBuf,
+        result: Result<territoria_io::geocode::Geocoded, String>,
+    },
 }
 
 pub struct Running {

@@ -63,6 +63,8 @@ pub struct Settings {
     pub autosave_minutes: u32,
     /// Background map of new maps, by preset name (`None`: plain).
     pub background: Option<String>,
+    /// The service that finds coordinates for addresses.
+    pub geocoder: territoria_io::geocode::GeocoderSettings,
 }
 
 impl Default for Settings {
@@ -74,6 +76,7 @@ impl Default for Settings {
             last_dir: None,
             autosave_minutes: 3,
             background: None,
+            geocoder: Default::default(),
         }
     }
 }

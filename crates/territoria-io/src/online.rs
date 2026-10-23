@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::ImportError;
 
 const CATALOG_URL: &str = "https://www.geoboundaries.org/api/current/gbOpen/ALL/ALL/";
-const USER_AGENT: &str = concat!("Territoria/", env!("CARGO_PKG_VERSION"));
+pub(crate) const USER_AGENT: &str = concat!("Territoria/", env!("CARGO_PKG_VERSION"));
 const CATALOG_MAX_AGE: Duration = Duration::from_secs(30 * 24 * 3600);
 
 /// One downloadable boundary set: a country at one administrative level.
