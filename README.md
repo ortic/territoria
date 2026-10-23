@@ -53,7 +53,9 @@ Export the changes to Excel, or adopt the scenario into the original.
 
 Every change can be undone; projects are single `.territoria` files.
 
-See [CONCEPT.md](CONCEPT.md) for the full plan and what is done.
+New here? The [user guide](docs/guide.md) walks through a first project
+with open boundaries and a sample customer list. See
+[CONCEPT.md](CONCEPT.md) for the full plan and what is done.
 
 ## Building
 

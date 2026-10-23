@@ -3782,3 +3782,18 @@ fn printed_page_layout() {
     }
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// The guide's customer list reads cleanly and its address columns are
+/// recognised, as the tutorial says.
+#[test]
+fn tutorial_customers() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/tutorial/customers.csv");
+    let (table, _) = territoria_io::read_table(&path, &Default::default()).unwrap();
+    assert_eq!(table.rows(), 30);
+    assert_eq!(table.column("City").unwrap().display(0), "Zürich");
+    assert_eq!(table.column("Sales").unwrap().f64(0), Some(48200.0));
+    let a = crate::dialogs::AddressColumns::suggest(&table);
+    assert_eq!(a.postcode.as_deref(), Some("Postcode"));
+    assert_eq!(a.city.as_deref(), Some("City"));
+    assert_eq!(a.country.as_deref(), Some("Country"));
+}

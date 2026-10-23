@@ -314,7 +314,7 @@ territoria/
 - [x] Theme/corporate profile: default colours, fonts, logos (company name and logo (PNG, JPEG, SVG) on exported maps, web pages and reports; territory palettes per plan with a default for new plans; no fonts yet)
 - [ ] German UI translation
 - [ ] Packages for Linux (`.deb`, AppImage), Windows (MSI), macOS (`.dmg`)
-- [ ] User guide with a tutorial project built from open data
+- [x] User guide with a tutorial project built from open data (docs/guide.md: a first project from geoBoundaries cantons and a sample customer list geocoded by postcode and town, through colours, territories and exports; the window, data, selecting and settings; F1 help in the app)
 
 ---
 

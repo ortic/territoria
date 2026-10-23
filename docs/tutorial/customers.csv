@@ -1,0 +1,31 @@
+Customer;Postcode;City;Country;Segment;Sales
+Alpenblick AG;8001;Zürich;Switzerland;Retail;48200
+Brunner Söhne;8400;Winterthur;Switzerland;Wholesale;31750
+Cafe Central;3011;Bern;Switzerland;Retail;12900
+Dreiland Handel;4051;Basel;Switzerland;Wholesale;56300
+Eiger Sport;3800;Interlaken;Switzerland;Retail;9400
+Fondue & Co;1700;Fribourg;Switzerland;Retail;7300
+Gotthard Logistik;6460;Altdorf;Switzerland;Wholesale;22100
+Hafen Rorschach;9400;Rorschach;Switzerland;Online;5600
+Inselhof;6300;Zug;Switzerland;Online;18800
+Jura Uhren;2300;La Chaux-de-Fonds;Switzerland;Wholesale;27400
+Kappeler Bau;5000;Aarau;Switzerland;Wholesale;33100
+Lago Maggiore SA;6600;Locarno;Switzerland;Retail;11200
+Matterhorn Shop;3920;Zermatt;Switzerland;Retail;15800
+Neuenburger Wein;2000;Neuchâtel;Switzerland;Online;8700
+Ostschweiz Druck;9000;St. Gallen;Switzerland;Wholesale;29900
+Pilatus Optik;6003;Luzern;Switzerland;Retail;21400
+Quartier Lausanne;1003;Lausanne;Switzerland;Retail;19600
+Rhone Vins;1950;Sion;Switzerland;Wholesale;14300
+Solothurner Mühle;4500;Solothurn;Switzerland;Online;6100
+Thunersee Boote;3600;Thun;Switzerland;Retail;10800
+Urner Käse;6460;Altdorf;Switzerland;Online;4200
+Vaud Distribution;1400;Yverdon-les-Bains;Switzerland;Wholesale;24600
+Weinfelden Agrar;8570;Weinfelden;Switzerland;Wholesale;17700
+Xpress Genève;1201;Genève;Switzerland;Online;39500
+Ypsilon Design;7000;Chur;Switzerland;Retail;13600
+Zollikon Interiors;8702;Zollikon;Switzerland;Retail;22800
+Bellinzona Moto;6500;Bellinzona;Switzerland;Retail;9900
+Davos Ski;7270;Davos;Switzerland;Retail;12100
+Schaffhausen Werk;8200;Schaffhausen;Switzerland;Wholesale;26300
+Biel Präzision;2502;Biel/Bienne;Switzerland;Wholesale;35200
