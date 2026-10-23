@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Windows installer of Territoria (WiX 4 or newer); built by build-msi.ps1. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <!-- The UpgradeCode stays the same forever: newer versions replace older ones. -->
+  <Package Name="Territoria"
+           Manufacturer="ortic"
+           Version="$(var.Version)"
+           UpgradeCode="FDA16516-0237-435A-A23B-9A44FF7F9AF6"
+           Scope="perMachine"
+           Compressed="yes">
+    <SummaryInformation Description="Territoria – geomarketing and territory planning" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Territoria is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="territoria.ico" SourceFile="$(var.Packaging)\territoria.ico" />
+    <Property Id="ARPPRODUCTICON" Value="territoria.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/ortic/territoria" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Territoria">
+        <Component Id="Program" Bitness="always64">
+          <File Id="territoria.exe" Source="$(var.Target)\territoria.exe" KeyPath="yes">
+            <Shortcut Id="StartMenu" Directory="ProgramMenuFolder" Name="Territoria"
+                      Description="Geomarketing and territory planning"
+                      WorkingDirectory="INSTALLFOLDER" Icon="territoria.ico" Advertise="yes" />
+          </File>
+          <!-- .territoria files open in Territoria. -->
+          <ProgId Id="Territoria.Project" Description="Territoria project" Icon="territoria.ico">
+            <Extension Id="territoria" ContentType="application/x-territoria">
+              <Verb Id="open" Command="Open" TargetFile="territoria.exe" Argument="&quot;%1&quot;" />
+            </Extension>
+          </ProgId>
+        </Component>
+        <Component Id="Docs" Bitness="always64">
+          <File Id="Guide" Source="$(var.Root)\docs\guide.md" Name="Guide.md" KeyPath="yes" />
+          <File Id="Readme" Source="$(var.Root)\README.md" Name="README.md" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="Territoria">
+      <ComponentRef Id="Program" />
+      <ComponentRef Id="Docs" />
+    </Feature>
+  </Package>
+</Wix>

@@ -76,6 +76,19 @@ sudo apt install ./target/territoria_*.deb
 It installs the program, a menu entry with icon, the `.territoria` file
 type, and the guide with its sample data under `/usr/share/doc/territoria`.
 
+### Other packages
+
+```sh
+packaging/build-appimage.sh   # Linux, any distribution: target/Territoria-<version>-<arch>.AppImage
+packaging/build-dmg.sh        # on macOS: target/Territoria-<version>.dmg (universal app)
+packaging\build-msi.ps1       # on Windows, with WiX 4+: target\Territoria-<version>-x64.msi
+```
+
+The AppImage downloads `appimagetool` 1.9.1 when it isn't installed. The
+disk image signs the app when `CODESIGN_IDENTITY` is set. The installer
+registers the `.territoria` file type and a Start menu entry; the `.exe`
+carries the icon.
+
 ## Command line
 
 Exports run without a window, for scripts and scheduled jobs:
