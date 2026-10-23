@@ -480,6 +480,7 @@ impl Plan {
                     .map(|u| Some(self.pinned.get(u).copied().unwrap_or(false)))
                     .collect(),
             ),
+            formula: None,
         });
         Table::new(columns).unwrap_or_default()
     }
@@ -564,6 +565,7 @@ impl Plan {
             name: "Locked".into(),
             kind: ColumnKind::Bool,
             data: territoria_data::ColumnData::Bool(t.iter().map(|t| Some(t.locked)).collect()),
+            formula: None,
         });
         Table::new(columns).unwrap_or_default()
     }

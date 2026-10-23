@@ -23,6 +23,7 @@ serde.workspace = true
 territoria-analysis.workspace = true
 territoria-config.workspace = true
 territoria-data.workspace = true
+territoria-expr.workspace = true
 territoria-geo.workspace = true
 territoria-io.workspace = true
 territoria-model.workspace = true

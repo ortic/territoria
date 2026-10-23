@@ -801,3 +801,58 @@ fn scenario_compares_with_original() {
     assert_eq!(changes.rows(), border.len());
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A calculated column from a formula: errors point at the mistake, the
+/// column is added with its formula and goes again with undo.
+#[test]
+fn calculated_column() {
+    use egui_kittest::kittest::Queryable;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    h.state_mut()
+        .add_linked_table_now("Sales 2026", table, "Area", layer, Some("Revenue"));
+    let id = h.state().project.tables[0].id;
+    let data = crate::app::DataRef::Table(id);
+    h.state_mut()
+        .open_formula_for_test(data, "Per customer", "[Revenu] / [Customers]");
+    h.run_steps(3);
+    assert!(
+        h.query_by_label_contains("Did you mean [Revenue]?")
+            .is_some(),
+        "the mistake is explained"
+    );
+    h.state_mut().close_dialogs();
+    h.state_mut().open_formula_for_test(
+        data,
+        "Revenue per customer",
+        "round([Revenue] / [Customers], 1)",
+    );
+    h.run_steps(3);
+    save(&mut h, "formula");
+    h.get_by_label("Add column").click();
+    h.run_steps(2);
+    let t = &h.state().project.tables[0].table;
+    let c = t.column("Revenue per customer").expect("the new column");
+    assert_eq!(
+        c.formula.as_deref(),
+        Some("round([Revenue] / [Customers], 1)")
+    );
+    let (rev, cust) = (
+        t.column("Revenue").unwrap().f64(0).unwrap(),
+        t.column("Customers").unwrap().f64(0).unwrap(),
+    );
+    assert_eq!(c.f64(0), Some((rev / cust * 10.0).round() / 10.0));
+    h.state_mut()
+        .run_command_for_test(crate::commands::Command::Undo);
+    h.run_steps(2);
+    assert!(
+        h.state().project.tables[0]
+            .table
+            .column("Revenue per customer")
+            .is_none()
+    );
+}

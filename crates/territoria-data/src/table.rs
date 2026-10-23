@@ -137,6 +137,9 @@ pub struct Column {
     pub name: String,
     pub kind: ColumnKind,
     pub data: ColumnData,
+    /// The formula of a calculated column.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub formula: Option<String>,
 }
 
 impl Column {
@@ -145,6 +148,7 @@ impl Column {
             name: name.into(),
             kind,
             data: ColumnData::empty_for(kind, len),
+            formula: None,
         }
     }
 
@@ -153,6 +157,7 @@ impl Column {
             name: name.into(),
             kind,
             data: ColumnData::Text(values),
+            formula: None,
         }
     }
 
@@ -161,6 +166,7 @@ impl Column {
             name: name.into(),
             kind: ColumnKind::Number,
             data: ColumnData::Number(values),
+            formula: None,
         }
     }
 
@@ -325,6 +331,7 @@ impl Table {
                     ColumnData::Bool(v) => ColumnData::Bool(rows.iter().map(|&r| v[r]).collect()),
                     ColumnData::Date(v) => ColumnData::Date(rows.iter().map(|&r| v[r]).collect()),
                 },
+                formula: None,
             })
             .collect();
         Table {

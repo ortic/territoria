@@ -21,7 +21,7 @@ struct TableState {
 type OrderKey = (u64, Option<(usize, bool)>, String);
 
 pub fn show(ui: &mut Ui, project: &Project, data: DataRef) -> Vec<Action> {
-    let actions = Vec::new();
+    let mut actions = Vec::new();
     let (table, rev, keys): (&Table, u64, Option<&str>) = match data {
         DataRef::Layer(id) => match project.layer(id) {
             Some(l) => (&l.attributes, l.rev, l.key_column.as_deref()),
@@ -49,6 +49,15 @@ pub fn show(ui: &mut Ui, project: &Project, data: DataRef) -> Vec<Action> {
                 .desired_width(220.0),
         );
         ui.label(RichText::new(format!("{} rows", format_value(state.order.len() as f64))).weak());
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .button("ƒ Calculated column…")
+                .on_hover_text("A new column computed from the others with a formula")
+                .clicked()
+            {
+                actions.push(Action::Formula(data, None));
+            }
+        });
     });
 
     let key = Some((rev, state.sort, state.filter.clone()));
@@ -102,6 +111,8 @@ pub fn show(ui: &mut Ui, project: &Project, data: DataRef) -> Vec<Action> {
                         };
                         let key_mark = if keys == Some(c.name.as_str()) {
                             "🔑 "
+                        } else if c.formula.is_some() {
+                            "ƒ "
                         } else {
                             ""
                         };
@@ -112,7 +123,23 @@ pub fn show(ui: &mut Ui, project: &Project, data: DataRef) -> Vec<Action> {
                                 )
                                 .frame(false),
                             )
-                            .on_hover_text(format!("{} · click to sort", c.kind.label()));
+                            .on_hover_text(match &c.formula {
+                                Some(f) => format!(
+                                    "{} · = {f}\nClick to sort, right-click to edit",
+                                    c.kind.label()
+                                ),
+                                None => format!("{} · click to sort", c.kind.label()),
+                            });
+                        if c.formula.is_some() {
+                            r.context_menu(|ui| {
+                                if ui.button("✏ Edit formula…").clicked() {
+                                    actions.push(Action::Formula(data, Some(c.name.clone())));
+                                }
+                                if ui.button("🗑 Delete column").clicked() {
+                                    actions.push(Action::DeleteColumn(data, c.name.clone()));
+                                }
+                            });
+                        }
                         if r.clicked() {
                             state.sort = match state.sort {
                                 Some((s, true)) if s == i => Some((i, false)),

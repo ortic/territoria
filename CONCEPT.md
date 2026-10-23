@@ -189,7 +189,7 @@ territoria/
 - [ ] Linked tables: re-read from the source file on demand or on open; schema changes reported
 - [x] Data grid: virtualized, sort, filter, column statistics, sum row, search, copy (sort and search)
 - [ ] Edit cells of imported tables; add/delete rows
-- [ ] Calculated columns with one expression language (see 5.5)
+- [x] Calculated columns with one expression language (see 5.5) (on tables and layer attributes; the formula is kept and dependent columns recalculate)
 - [ ] Lookup columns (value from another table by key, with aggregation for several matches)
 - [ ] Spatial columns: "lies in" (area key/territory of a point), "count of points in", distance between coordinates or to nearest site
 - [ ] Score column: weighted combination of columns (absolute or as share of total)
@@ -202,11 +202,11 @@ territoria/
 
 ### 5.5 Expression language (M2)
 
-- [ ] Locale-independent syntax: `[Column Name]`, `"text"`, `1.5`, `+ - * / ^ %`, `& ` (concat), `= <> < <= > >=`, `and or not`, `null`
-- [ ] Functions: `if`, `ifnull`, `coalesce`, `case`/`switch`; math (`abs round floor ceil sqrt pow log exp min max clamp`); text (`left right mid len lower upper trim replace find contains startswith endswith like regex pad split`); dates (`date year month day weekday dateadd datediff format`); conversion (`num text bool`); `rank`, `percentile`, `share` (of column total), aggregates over a column (`sum([x])`)
-- [ ] Spatial functions: `distance(lat1, lon1, lat2, lon2)`, `dms(text)`
-- [ ] Typed checking with clear error messages pointing at the position
-- [ ] Autocomplete for columns and functions; live preview on the first rows
+- [x] Locale-independent syntax: `[Column Name]`, `"text"`, `1.5`, `+ - * / ^ %`, `& ` (concat), `= <> < <= > >=`, `and or not`, `null`
+- [x] Functions: `if`, `ifnull`, `coalesce`, `case`/`switch`; math (`abs round floor ceil sqrt pow log exp min max clamp`); text (`left right mid len lower upper trim replace find contains startswith endswith like regex pad split`); dates (`date year month day weekday dateadd datediff format`); conversion (`num text bool`); `rank`, `percentile`, `share` (of column total), aggregates over a column (`sum([x])`) (all but `regex`; column functions take an optional group: `sum([Revenue], [Region])`)
+- [x] Spatial functions: `distance(lat1, lon1, lat2, lon2)`, `dms(text)`
+- [x] Typed checking with clear error messages pointing at the position (underlined in the editor, with "did you mean")
+- [x] Autocomplete for columns and functions; live preview on the first rows (suggestions under the editor, Tab takes the first; syntax colours)
 - [ ] Text templates for labels, tooltips, legend titles: `{Name}: {sum([Sales])}`
 
 ### 5.6 Linking data to geometry (M2)

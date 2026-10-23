@@ -207,6 +207,7 @@ pub fn infer_column(name: &str, values: Vec<Option<String>>, options: InferOptio
         name: name.to_owned(),
         kind,
         data,
+        formula: None,
     }
 }
 

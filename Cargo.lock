@@ -4271,6 +4271,7 @@ dependencies = [
  "territoria-analysis",
  "territoria-config",
  "territoria-data",
+ "territoria-expr",
  "territoria-geo",
  "territoria-io",
  "territoria-model",
@@ -4297,6 +4298,13 @@ name = "territoria-data"
 version = "0.1.0"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "territoria-expr"
+version = "0.1.0"
+dependencies = [
+ "territoria-data",
 ]
 
 [[package]]

@@ -114,10 +114,38 @@ pub fn show(
                         actions.push(Action::LinkTable(id));
                     }
                     ui.add_space(8.0);
-                    ui.label(RichText::new("Columns").strong());
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Columns").strong());
+                        if ui
+                            .small_button("ƒ Calculated column…")
+                            .on_hover_text("A new column computed from the others with a formula")
+                            .clicked()
+                        {
+                            actions.push(Action::Formula(crate::app::DataRef::Table(id), None));
+                        }
+                    });
                     egui::Grid::new("cols").striped(true).show(ui, |ui| {
                         for c in &t.table.columns {
-                            ui.label(&c.name);
+                            match &c.formula {
+                                Some(f) => {
+                                    if ui
+                                        .link(format!("ƒ {}", c.name))
+                                        .on_hover_text(format!("= {f}\nClick to edit the formula"))
+                                        .clicked()
+                                    {
+                                        actions.push(Action::Formula(
+                                            crate::app::DataRef::Table(id),
+                                            Some(c.name.clone()),
+                                        ));
+                                    }
+                                    ui.label(RichText::new(c.kind.label()).weak());
+                                    ui.end_row();
+                                    continue;
+                                }
+                                None => {
+                                    ui.label(&c.name);
+                                }
+                            }
                             let mut kind = c.kind;
                             ComboBox::from_id_salt(("tk", &c.name))
                                 .selected_text(kind.label())
@@ -139,6 +167,7 @@ pub fn show(
                                             {
                                                 c.convert(kind);
                                             }
+                                            territoria_expr::recalculate(table);
                                             t.rev = rev;
                                         }
                                     }),

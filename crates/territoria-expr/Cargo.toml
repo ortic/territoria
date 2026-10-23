@@ -1,0 +1,8 @@
+[package]
+name = "territoria-expr"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+territoria-data.workspace = true

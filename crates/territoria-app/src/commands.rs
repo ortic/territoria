@@ -37,6 +37,7 @@ commands! {
     Redo => "Edit: Redo",
     LinkData => "Data: Link Table to Map…",
     MergeAreas => "Data: New Layer by Merging Areas…",
+    CalculatedColumn => "Data: Calculated Column…",
     ColorByValue => "Map: Colour Areas by Value…",
     NewMap => "Map: New Map",
     ExportMap => "Map: Export Map (PNG, SVG, PDF)…",

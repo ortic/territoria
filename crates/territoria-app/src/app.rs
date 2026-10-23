@@ -79,6 +79,9 @@ pub enum Action {
     Balance(PlanId),
     AcceptProposal(PlanId),
     DiscardProposal,
+    /// Open the formula editor for a new (`None`) or calculated column.
+    Formula(DataRef, Option<String>),
+    DeleteColumn(DataRef, String),
     /// Copy a plan as a scenario and compare the copy with it.
     DuplicatePlan(PlanId),
     RemovePlan(PlanId),
@@ -175,6 +178,7 @@ pub struct TerritoriaApp {
     color_by: Option<ColorByDialog>,
     new_plan: Option<NewPlanDialog>,
     merge: Option<MergeDialog>,
+    formula: Option<crate::dialogs::FormulaDialog>,
     download: Option<DownloadDialog>,
     export_map: Option<crate::dialogs::ExportMapDialog>,
     /// Settings of the map export waiting for its file name.
@@ -256,6 +260,7 @@ impl TerritoriaApp {
             color_by: None,
             new_plan: None,
             merge: None,
+            formula: None,
             download: None,
             export_map: None,
             map_export: None,
@@ -817,6 +822,14 @@ impl TerritoriaApp {
     }
 
     #[cfg(test)]
+    pub fn open_formula_for_test(&mut self, data: DataRef, name: &str, source: &str) {
+        let mut d = crate::dialogs::FormulaDialog::new(&self.project, data, None);
+        d.name = name.into();
+        d.source = source.into();
+        self.formula = Some(d);
+    }
+
+    #[cfg(test)]
     pub fn open_link_dialog(&mut self, table: TableId) {
         self.link = Some(LinkDialog::new(&self.project, table));
     }
@@ -828,6 +841,7 @@ impl TerritoriaApp {
         self.link = None;
         self.color_by = None;
         self.new_plan = None;
+        self.formula = None;
     }
 
     #[cfg(test)]
@@ -1376,6 +1390,44 @@ impl TerritoriaApp {
     }
 
     /// Puts a plan on the current map (once) and makes it the active one.
+    /// Adds or updates a calculated column.
+    fn apply_formula(&mut self, data: DataRef, editing: Option<String>, name: &str, source: &str) {
+        let label = if editing.is_some() {
+            format!("Edit formula of {name}")
+        } else {
+            format!("Add column {name}")
+        };
+        let mut result = Ok(Vec::new());
+        self.edit(label, |p| {
+            let Some(t) = data_table_mut(p, data) else {
+                return;
+            };
+            result = territoria_expr::Formula::compile(source, t).map(|f| {
+                let column = f.column(name, source, t);
+                match editing.as_deref().and_then(|c| t.column_index(c)) {
+                    Some(i) => t.columns[i] = column,
+                    None => {
+                        let _ = t.push_column(column);
+                    }
+                }
+                territoria_expr::recalculate(t)
+            });
+        });
+        match result {
+            Ok(broken) => self.report_broken(&broken),
+            Err(e) => self.error(e.message),
+        }
+    }
+
+    fn report_broken(&mut self, broken: &[String]) {
+        if !broken.is_empty() {
+            self.error(format!(
+                "These calculated columns no longer work and keep their last values: {}. Edit their formulas to fix them.",
+                broken.join(", ")
+            ));
+        }
+    }
+
     /// Copies a plan as a scenario, shows the copy and compares it with
     /// the original.
     fn duplicate_plan(&mut self, plan: PlanId) {
@@ -1497,6 +1549,21 @@ impl TerritoriaApp {
             Command::DownloadBoundaries => {
                 self.download = Some(DownloadDialog::new());
                 self.load_catalog();
+            }
+            Command::CalculatedColumn => {
+                let data = match self.selection {
+                    Selection::Data(d) => Some(d),
+                    _ => None,
+                }
+                .or_else(|| self.project.tables.first().map(|t| DataRef::Table(t.id)))
+                .or_else(|| self.project.layers.first().map(|l| DataRef::Layer(l.id)));
+                match data {
+                    Some(d) => {
+                        self.formula =
+                            Some(crate::dialogs::FormulaDialog::new(&self.project, d, None))
+                    }
+                    None => self.toast("Add data or boundaries first."),
+                }
             }
             Command::MergeAreas => {
                 let layer = match self.selection {
@@ -1742,6 +1809,23 @@ impl TerritoriaApp {
                 }
             }
             Action::DiscardProposal => self.territories_panel.proposal = None,
+            Action::Formula(data, column) => {
+                self.formula = Some(crate::dialogs::FormulaDialog::new(
+                    &self.project,
+                    data,
+                    column,
+                ));
+            }
+            Action::DeleteColumn(data, column) => {
+                let mut broken = Vec::new();
+                self.edit(format!("Delete column {column}"), |p| {
+                    if let Some(t) = data_table_mut(p, data) {
+                        t.columns.retain(|c| c.name != column);
+                        broken = territoria_expr::recalculate(t);
+                    }
+                });
+                self.report_broken(&broken);
+            }
             Action::DuplicatePlan(plan) => self.duplicate_plan(plan),
             Action::RemovePlan(id) => {
                 let name = self
@@ -1931,6 +2015,7 @@ impl TerritoriaApp {
                     Command::ColorByValue,
                     Command::LinkData,
                     Command::MergeAreas,
+                    Command::CalculatedColumn,
                     Command::ExportMap,
                     Command::NewMap,
                     Command::ZoomToAll,
@@ -2230,6 +2315,19 @@ impl TerritoriaApp {
                     name,
                 }) => self.merge_areas(layer, &column, prefix, &name),
                 None if open => self.merge = Some(d),
+                None => {}
+            }
+        }
+        if let Some(mut d) = self.formula.take() {
+            let mut open = true;
+            match d.show(ctx, &self.project, &mut open) {
+                Some(crate::dialogs::FormulaOutcome::Apply {
+                    data,
+                    editing,
+                    name,
+                    source,
+                }) => self.apply_formula(data, editing, &name, &source),
+                None if open => self.formula = Some(d),
                 None => {}
             }
         }
@@ -2548,6 +2646,7 @@ impl eframe::App for TerritoriaApp {
             || self.color_by.is_some()
             || self.new_plan.is_some()
             || self.merge.is_some()
+            || self.formula.is_some()
             || self.download.is_some()
             || self.export_map.is_some()
             || self.palette.is_some()
@@ -2709,5 +2808,20 @@ impl eframe::App for TerritoriaApp {
             },
         );
         self.save_settings();
+    }
+}
+
+/// The table behind a data reference, to change; marks it changed.
+pub fn data_table_mut(p: &mut Project, data: DataRef) -> Option<&mut territoria_data::Table> {
+    let rev = p.bump();
+    match data {
+        DataRef::Layer(id) => p.layer_mut(id).map(|l| {
+            l.rev = rev;
+            std::sync::Arc::make_mut(&mut l.attributes)
+        }),
+        DataRef::Table(id) => p.table_mut(id).map(|t| {
+            t.rev = rev;
+            std::sync::Arc::make_mut(&mut t.table)
+        }),
     }
 }

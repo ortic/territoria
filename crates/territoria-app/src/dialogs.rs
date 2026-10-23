@@ -1786,3 +1786,391 @@ impl ExportMapDialog {
         outcome
     }
 }
+
+/// A calculated column: a formula over the other columns of a table.
+pub struct FormulaDialog {
+    pub data: crate::app::DataRef,
+    /// The calculated column being edited.
+    pub editing: Option<String>,
+    pub name: String,
+    pub source: String,
+    /// Byte offset of the cursor in `source`.
+    cursor: usize,
+    /// The checked formula and a preview, for `source` at `rev`.
+    preview: Option<(String, u64, Result<FormulaPreview, territoria_expr::Error>)>,
+}
+
+struct FormulaPreview {
+    ty: territoria_expr::Type,
+    /// (row label, result) for the first rows.
+    rows: Vec<(String, String)>,
+    summary: String,
+}
+
+pub enum FormulaOutcome {
+    Apply {
+        data: crate::app::DataRef,
+        editing: Option<String>,
+        name: String,
+        source: String,
+    },
+}
+
+/// The table behind a data reference with its revision.
+pub fn data_table(project: &Project, data: crate::app::DataRef) -> Option<(&Table, u64)> {
+    match data {
+        crate::app::DataRef::Layer(id) => project.layer(id).map(|l| (&*l.attributes, l.rev)),
+        crate::app::DataRef::Table(id) => project.table(id).map(|t| (&*t.table, t.rev)),
+    }
+}
+
+impl FormulaDialog {
+    pub fn new(
+        project: &Project,
+        data: crate::app::DataRef,
+        editing: Option<String>,
+    ) -> FormulaDialog {
+        let source = editing
+            .as_deref()
+            .and_then(|c| data_table(project, data)?.0.column(c)?.formula.clone())
+            .unwrap_or_default();
+        let name = editing.clone().unwrap_or_default();
+        FormulaDialog {
+            data,
+            editing,
+            name,
+            cursor: source.len(),
+            source,
+            preview: None,
+        }
+    }
+
+    fn update_preview(&mut self, table: &Table, rev: u64) {
+        if self
+            .preview
+            .as_ref()
+            .is_some_and(|(s, r, _)| *s == self.source && *r == rev)
+        {
+            return;
+        }
+        let editing = self.editing.as_deref().and_then(|c| table.column_index(c));
+        let result = territoria_expr::Formula::compile(&self.source, table).and_then(|f| {
+            if editing.is_some_and(|i| f.columns().contains(&i)) {
+                return Err(territoria_expr::Error {
+                    message: "A column can't use its own values.".into(),
+                    span: 0..self.source.len(),
+                });
+            }
+            let values = f.evaluate(table);
+            let label_col = table
+                .columns
+                .iter()
+                .position(|c| c.kind == ColumnKind::Key)
+                .or_else(|| {
+                    table
+                        .columns
+                        .iter()
+                        .position(|c| c.kind == ColumnKind::Text)
+                })
+                .filter(|i| Some(*i) != editing);
+            let rows = values
+                .iter()
+                .take(8)
+                .enumerate()
+                .map(|(r, v)| {
+                    let label = label_col
+                        .map_or_else(|| format!("Row {}", r + 1), |c| table.columns[c].display(r));
+                    let text = match v {
+                        territoria_expr::Val::Num(n) => format_value(*n),
+                        v => v.text().unwrap_or_else(|| "–".into()),
+                    };
+                    (label, text)
+                })
+                .collect();
+            let empty = values
+                .iter()
+                .filter(|v| **v == territoria_expr::Val::Null)
+                .count();
+            let mut summary = match f.ty() {
+                territoria_expr::Type::Number => {
+                    let n: Vec<f64> = values
+                        .iter()
+                        .filter_map(territoria_expr::Val::as_num)
+                        .collect();
+                    let (lo, hi) = n
+                        .iter()
+                        .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &x| {
+                            (a.min(x), b.max(x))
+                        });
+                    if n.is_empty() {
+                        String::new()
+                    } else {
+                        format!("from {} to {}", format_value(lo), format_value(hi))
+                    }
+                }
+                territoria_expr::Type::Bool => {
+                    let yes = values
+                        .iter()
+                        .filter(|v| **v == territoria_expr::Val::Bool(true))
+                        .count();
+                    format!(
+                        "{} yes, {} no",
+                        format_value(yes as f64),
+                        format_value((values.len() - yes - empty) as f64)
+                    )
+                }
+                _ => {
+                    let distinct: std::collections::HashSet<String> = values
+                        .iter()
+                        .filter_map(territoria_expr::Val::text)
+                        .collect();
+                    format!("{} different values", format_value(distinct.len() as f64))
+                }
+            };
+            if empty > 0 {
+                if !summary.is_empty() {
+                    summary.push_str(" · ");
+                }
+                summary.push_str(&format!("{} empty", format_value(empty as f64)));
+            }
+            Ok(FormulaPreview {
+                ty: f.ty(),
+                rows,
+                summary,
+            })
+        });
+        self.preview = Some((self.source.clone(), rev, result));
+    }
+
+    /// Replaces `range` of the formula with `text` and puts the cursor after it.
+    fn insert(
+        &mut self,
+        ctx: &egui::Context,
+        editor: egui::Id,
+        range: std::ops::Range<usize>,
+        text: &str,
+    ) {
+        let range = range.start.min(self.source.len())..range.end.min(self.source.len());
+        self.source.replace_range(range.clone(), text);
+        self.cursor = range.start + text.len();
+        let chars = self.source[..self.cursor].chars().count();
+        let mut state = egui::TextEdit::load_state(ctx, editor).unwrap_or_default();
+        state
+            .cursor
+            .set_char_range(Some(egui::text::CCursorRange::one(
+                egui::text::CCursor::new(chars),
+            )));
+        egui::TextEdit::store_state(ctx, editor, state);
+        ctx.memory_mut(|m| m.request_focus(editor));
+    }
+
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        project: &Project,
+        open: &mut bool,
+    ) -> Option<FormulaOutcome> {
+        let Some((table, rev)) = data_table(project, self.data) else {
+            *open = false;
+            return None;
+        };
+        self.update_preview(table, rev);
+        let mut outcome = None;
+        let mut cancel = false;
+        let title = match &self.editing {
+            Some(c) => format!("Formula of [{c}]"),
+            None => "New calculated column".to_owned(),
+        };
+        let editor = egui::Id::new("formula-editor");
+        let completions = territoria_expr::completions(&self.source, self.cursor, table);
+        // Tab takes the first suggestion.
+        if ctx.memory(|m| m.has_focus(editor))
+            && let Some(first) = completions.items.first()
+            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Tab))
+        {
+            let insert = first.insert.clone();
+            self.insert(ctx, editor, completions.range.clone(), &insert);
+        }
+        *open = modal(ctx, "formula", &title, 620.0, |ui| {
+            ui.label(RichText::new("A column computed from the others, e.g. revenue per customer: [Revenue] / [Customers]. It updates when you edit the formula.").weak());
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label("Name");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.name)
+                        .hint_text("e.g. Revenue per customer")
+                        .desired_width(280.0),
+                );
+            });
+            ui.add_space(4.0);
+            let error = match &self.preview {
+                Some((_, _, Err(e))) => Some(e.clone()),
+                _ => None,
+            };
+            let dark = ui.visuals().dark_mode;
+            let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, wrap: f32| {
+                let text = text.as_str();
+                let mut job = egui::text::LayoutJob::default();
+                let font = egui::FontId::monospace(14.0);
+                let base = ui.visuals().text_color();
+                for (range, kind) in territoria_expr::highlight(text) {
+                    let color = match kind {
+                        territoria_expr::Highlight::Column => theme::ACCENT,
+                        territoria_expr::Highlight::Text => {
+                            if dark {
+                                egui::Color32::from_rgb(0x8f, 0xd1, 0x9e)
+                            } else {
+                                egui::Color32::from_rgb(0x1f, 0x7a, 0x3a)
+                            }
+                        }
+                        territoria_expr::Highlight::Number => {
+                            if dark {
+                                egui::Color32::from_rgb(0xf0, 0xb4, 0x6a)
+                            } else {
+                                egui::Color32::from_rgb(0xa8, 0x5a, 0x00)
+                            }
+                        }
+                        territoria_expr::Highlight::Function => {
+                            if dark {
+                                egui::Color32::from_rgb(0xc7, 0x9b, 0xf2)
+                            } else {
+                                egui::Color32::from_rgb(0x7b, 0x3f, 0xc4)
+                            }
+                        }
+                        territoria_expr::Highlight::Keyword => base.gamma_multiply(0.7),
+                        territoria_expr::Highlight::Plain => base,
+                    };
+                    let wrong = error.as_ref().is_some_and(|e| {
+                        let s = e.span.clone();
+                        (s.start < range.end && range.start < s.end)
+                            || (s.is_empty() && range.start == s.start)
+                    });
+                    let mut format = egui::TextFormat::simple(font.clone(), color);
+                    if wrong {
+                        format.underline = egui::Stroke::new(1.5, theme::DANGER);
+                        format.background = theme::DANGER.gamma_multiply(0.15);
+                    }
+                    job.append(&text[range], 0.0, format);
+                }
+                job.wrap.max_width = wrap;
+                ui.fonts_mut(|f| f.layout_job(job))
+            };
+            let out = egui::TextEdit::multiline(&mut self.source)
+                .id(editor)
+                .hint_text("[Revenue] / [Customers]")
+                .desired_rows(3)
+                .desired_width(f32::INFINITY)
+                .layouter(&mut layouter)
+                .show(ui);
+            if let Some(r) = out.cursor_range {
+                self.cursor = self
+                    .source
+                    .char_indices()
+                    .nth(r.primary.index.0)
+                    .map_or(self.source.len(), |(i, _)| i);
+            }
+            // Suggestions for what is being typed (unless it's complete).
+            {
+                let items: Vec<_> = completions.items.iter().take(8).collect();
+                let complete = items.len() == 1
+                    && self.source[completions.range.clone()]
+                        .eq_ignore_ascii_case(&items[0].insert);
+                if !items.is_empty() && !complete {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(RichText::new("Tab ↹").weak().small());
+                        for s in items {
+                            if ui.small_button(&s.label).on_hover_text(&s.detail).clicked() {
+                                let insert = s.insert.clone();
+                                self.insert(ui.ctx(), editor, completions.range.clone(), &insert);
+                            }
+                        }
+                    });
+                }
+            }
+            ui.add_space(4.0);
+            match &self.preview {
+                Some((_, _, Err(e))) if !self.source.trim().is_empty() => {
+                    ui.label(RichText::new(format!("⚠ {}", e.message)).color(theme::DANGER));
+                }
+                Some((_, _, Ok(p))) => {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(format!("→ {} column", p.ty.label())).strong());
+                        ui.label(RichText::new(&p.summary).weak());
+                    });
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        egui::Grid::new("formula-preview")
+                            .num_columns(2)
+                            .striped(true)
+                            .spacing([24.0, 2.0])
+                            .show(ui, |ui| {
+                                for (label, value) in &p.rows {
+                                    ui.label(RichText::new(label).weak());
+                                    ui.label(value);
+                                    ui.end_row();
+                                }
+                            });
+                    });
+                }
+                _ => {}
+            }
+            ui.collapsing("Functions", |ui| {
+                egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
+                    let mut group = "";
+                    for f in territoria_expr::FUNCTIONS {
+                        if f.group != group {
+                            group = f.group;
+                            ui.add_space(4.0);
+                            ui.label(RichText::new(group).strong());
+                        }
+                        ui.horizontal_wrapped(|ui| {
+                            if ui.small_button(f.signature).on_hover_text("Insert at the cursor").clicked() {
+                                let at = self.cursor.min(self.source.len());
+                                self.insert(ui.ctx(), editor, at..at, &format!("{}(", f.name));
+                            }
+                            ui.label(RichText::new(f.doc).weak());
+                        });
+                    }
+                    ui.add_space(4.0);
+                    ui.label(RichText::new("Operators").strong());
+                    ui.label(RichText::new("+ − * / ^ (power) % (remainder) · & joins text · = <> < <= > >= · and, or, not · null is empty. Columns in [brackets], text in \"quotes\", decimals with a point.").weak());
+                });
+            });
+            ui.add_space(8.0);
+            let name = self.name.trim();
+            let taken = table.column(name).is_some() && self.editing.as_deref() != Some(name);
+            if taken {
+                ui.label(
+                    RichText::new(format!("There is already a column “{name}”."))
+                        .color(theme::WARN),
+                );
+            }
+            let ok = !name.is_empty() && !taken && matches!(self.preview, Some((_, _, Ok(_))));
+            ui.horizontal(|ui| {
+                let label = if self.editing.is_some() {
+                    "Update column"
+                } else {
+                    "Add column"
+                };
+                if ui
+                    .add_enabled(ok, egui::Button::new(RichText::new(label).strong()))
+                    .clicked()
+                {
+                    outcome = Some(FormulaOutcome::Apply {
+                        data: self.data,
+                        editing: self.editing.clone(),
+                        name: name.to_owned(),
+                        source: self.source.trim().to_owned(),
+                    });
+                }
+                if ui.button("Cancel").clicked() {
+                    cancel = true;
+                }
+            });
+        });
+        if cancel || outcome.is_some() {
+            *open = false;
+        }
+        outcome
+    }
+}

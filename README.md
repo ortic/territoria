@@ -29,6 +29,13 @@ breaks, standard deviation, equal sums, or a smooth gradient) or by
 category, with ColorBrewer ramps (colour-blind safe ones marked), a live
 histogram of the classes and a legend in the Contents panel.
 
+**Formulas.** Calculated columns in one formula language that reads the
+same in every locale: `round([Revenue] / [Customers], 1)`,
+`share([Revenue], [Region])`, `pad(left([Postcode], 2), 3)`. Mistakes are
+underlined with a hint while typing (`There is no column [Revenu]. Did you
+mean [Revenue]?`), suggestions complete column and function names, and a
+preview shows the first rows.
+
 **Territories.** Create a plan with empty territories and paint them on
 the map, or start from an assignment table (areas may be listed as ranges
 and wildcards: `8000-8099; 8105; 81*`). The Territories panel shows each
@@ -38,6 +45,11 @@ Locked territories and pinned areas stay put. **Balance** moves areas
 between neighbouring territories until they are within tolerance, compact
 and contiguous, with as few moves as possible, or builds territories from
 scratch; the result is a proposal you apply or discard.
+
+**Scenarios.** Duplicate a plan to try changes on the copy. The copy is
+compared with the original: which areas move (marked on the map), how many
+customers change territory, and each territory's figures before and after.
+Export the changes to Excel, or adopt the scenario into the original.
 
 Every change can be undone; projects are single `.territoria` files.
 
@@ -75,6 +87,7 @@ They use a generated grid of hexagons, or real boundaries from
 | `territoria-app` | the application: panels, map view, dialogs, commands |
 | `territoria-geo` | coordinate systems, shared-border topology, simplification, spatial index |
 | `territoria-data` | typed tables, type inference, key matching, aggregation |
+| `territoria-expr` | the formula language: parser, type checking, functions, autocomplete |
 | `territoria-io` | Shapefile, GeoJSON, CSV and Excel import |
 | `territoria-model` | the project: layers, tables, links, plans, maps; file format; undo |
 | `territoria-analysis` | colour ramps, classification, legends |

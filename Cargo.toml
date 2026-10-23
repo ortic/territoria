@@ -12,6 +12,7 @@ publish = false
 territoria-analysis = { path = "crates/territoria-analysis" }
 territoria-config = { path = "crates/territoria-config" }
 territoria-data = { path = "crates/territoria-data" }
+territoria-expr = { path = "crates/territoria-expr" }
 territoria-geo = { path = "crates/territoria-geo" }
 territoria-io = { path = "crates/territoria-io" }
 territoria-model = { path = "crates/territoria-model" }
