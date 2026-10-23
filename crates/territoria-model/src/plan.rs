@@ -524,6 +524,36 @@ impl Plan {
         out
     }
 
+    /// Regions like the areas of another layer (cantons, districts): each
+    /// territory joins the area most of its units lie in. Returns the
+    /// regions' names with their territories (indices), by name.
+    pub fn regions_like(
+        &self,
+        units: &LayerGeometry,
+        other: &crate::Layer,
+    ) -> Vec<(String, Vec<usize>)> {
+        let members = self.members();
+        let mut groups: std::collections::BTreeMap<String, Vec<usize>> = Default::default();
+        for (i, m) in members.iter().enumerate() {
+            let mut count: HashMap<usize, usize> = HashMap::new();
+            for &u in m {
+                if let Some(f) = units
+                    .label_points
+                    .get(u as usize)
+                    .copied()
+                    .flatten()
+                    .and_then(|p| other.geometry.feature_at(p, 0.0))
+                {
+                    *count.entry(f).or_default() += 1;
+                }
+            }
+            if let Some((f, _)) = count.into_iter().max_by_key(|(f, n)| (*n, usize::MAX - f)) {
+                groups.entry(other.display_name(f)).or_default().push(i);
+            }
+        }
+        groups.into_iter().collect()
+    }
+
     /// The colours territories take.
     pub fn colors(&self) -> &[Rgba] {
         if self.palette.is_empty() {

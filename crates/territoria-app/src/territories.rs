@@ -1468,6 +1468,52 @@ impl TerritoriesPanel {
                         ));
                     }
                 });
+                // Regions like another layer's areas: cantons, districts.
+                let others: Vec<&territoria_model::Layer> = project
+                    .layers
+                    .iter()
+                    .filter(|l| l.id != plan.layer && l.kind() == territoria_io::GeometryKind::Area)
+                    .collect();
+                if !others.is_empty() {
+                    ui.menu_button(tr("Regions like…"), |ui| {
+                        for l in others {
+                            if ui
+                                .button(&l.name)
+                                .on_hover_text(tr("Each territory joins the area of this layer most of its areas lie in; existing regions are replaced"))
+                                .clicked()
+                            {
+                                let other = l.id;
+                                actions.push(Action::Edit(
+                                    "Regions like a layer".into(),
+                                    Box::new(move |p| {
+                                        let (Some(pl), Some(units), Some(o)) = (
+                                            p.plan(plan_id),
+                                            p.plan(plan_id).and_then(|pl| p.layer(pl.layer)),
+                                            p.layer(other),
+                                        ) else {
+                                            return;
+                                        };
+                                        let groups = pl.regions_like(&units.geometry, o);
+                                        if let Some(pl) = p.plan_mut(plan_id) {
+                                            pl.regions.clear();
+                                            for t in &mut pl.territories {
+                                                t.region = None;
+                                            }
+                                            for (name, members) in groups {
+                                                let r = pl.add_region(Some(name));
+                                                for i in members {
+                                                    pl.territories[i].region = Some(r);
+                                                }
+                                            }
+                                        }
+                                        touch(p, plan_id);
+                                    }),
+                                ));
+                                ui.close();
+                            }
+                        }
+                    });
+                }
             });
     }
 

@@ -302,6 +302,11 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
         ("Rows of", "Zeilen von"),
         // Panels: properties, territories, contents, tables.
         ("of", "von"),
+        ("Regions like…", "Regionen wie…"),
+        (
+            "Each territory joins the area of this layer most of its areas lie in; existing regions are replaced",
+            "Jedes Gebiet kommt zur Fläche dieser Ebene, in der die meisten seiner Flächen liegen; bestehende Regionen werden ersetzt",
+        ),
         ("Rounds for all territories", "Touren für alle Gebiete"),
         (
             "Each territory's quickest round by road through its customers, from its site. The workload adds the time at each customer to the time on the road.",

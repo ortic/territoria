@@ -4412,3 +4412,33 @@ fn balance_by_road() {
         crate::territories::balance_input(&app.project, &mut values, plan, &settings).unwrap();
     assert!(crate::territories::run_balance(input, &mut |_| true).is_err());
 }
+
+/// Regions like another layer's areas: each territory joins the area most
+/// of its areas lie in.
+#[test]
+fn regions_like_a_layer() {
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&hexagons())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    app.merge_areas_for_test(layer, "code", Some(2), "Districts");
+    let districts = app.project.layers.last().unwrap().id;
+    let plan = app.add_balanced_plan_now(layer, 8);
+    let (groups, names) = {
+        let p = app.project.plan(plan).unwrap();
+        let units = app.project.layer(layer).unwrap();
+        let other = app.project.layer(districts).unwrap();
+        let groups = p.regions_like(&units.geometry, other);
+        let names: Vec<String> = (0..other.len()).map(|f| other.display_name(f)).collect();
+        (groups, names)
+    };
+    assert!(groups.len() >= 2, "{groups:?}");
+    assert_eq!(
+        groups.iter().map(|g| g.1.len()).sum::<usize>(),
+        8,
+        "every territory once"
+    );
+    assert!(groups.iter().all(|(n, _)| names.contains(n)));
+}
