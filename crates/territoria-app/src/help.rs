@@ -123,6 +123,7 @@ Everything can be undone (Ctrl+Z). The command palette (Ctrl+Shift+P) finds ever
         body: "- Map → Export Map: PNG, SVG or PDF with title, legend and scale bar; Copy Map puts it on the clipboard.
 - Export as Web Page: one HTML file that zooms, pans and shows hover cards, to send to anyone.
 - Territory report: a PDF with an overview and a page per territory.
+- Map → Export Atlas: the map as a PDF with a page per region, rep or area, each zoomed to it with the rest veiled.
 - Plan exports: the assignment as CSV or Excel, changes between scenarios, territory figures.
 - Settings → Company puts your company's name and logo on exported maps, web pages and reports.
 - Command line: territoria project.territoria --export-map map.png (see --help).",

@@ -3513,3 +3513,64 @@ fn drag_column_onto_the_map() {
         ml.kind.type_label()
     );
 }
+
+/// An atlas of the map: a PDF page per region, zoomed to it.
+#[test]
+fn map_atlas() {
+    use crate::app::Export;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    let app = h.state_mut();
+    app.add_linked_table_now("Sales 2026", table, "Area", layer, None);
+    // Regions by the first two characters of the key.
+    let l = app.project.layer_mut(layer).unwrap();
+    let n = l.len();
+    let keys: Vec<Option<String>> = (0..n)
+        .map(|f| Some(l.key(f).chars().take(2).collect()))
+        .collect();
+    std::sync::Arc::make_mut(&mut l.attributes)
+        .columns
+        .push(Column::text("Region", ColumnKind::Text, keys));
+    let link = app.project.links[0].id;
+    let map = app.project.maps[0].id;
+    app.add_choropleth_for_test(
+        map,
+        layer,
+        territoria_model::ValueSource::Linked {
+            link,
+            column: "Revenue".into(),
+            agg: territoria_data::Aggregate::Sum,
+        },
+    );
+    settle(&mut h);
+    let app = h.state_mut();
+    let d = crate::dialogs::AtlasDialog::new(&app.project, app.project.map(map).unwrap());
+    assert_eq!(d.layer, Some(layer));
+    assert_eq!(d.column.as_deref(), Some("Region"));
+    let groups = app.atlas_groups(layer, Some("Region"));
+    assert!(groups.len() >= 2);
+    let dir = std::env::temp_dir().join(format!("territoria-atlas-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("atlas.pdf");
+    app.export(Export::Atlas(layer, Some("Region".into())), path.clone());
+    settle(&mut h);
+    let pdf = std::fs::read(&path).unwrap();
+    assert!(pdf.starts_with(b"%PDF"));
+    let text = String::from_utf8_lossy(&pdf);
+    let pages = text.matches("/Type /Page").count() - text.matches("/Type /Pages").count();
+    assert_eq!(pages, groups.len(), "a page per region");
+    if let Some(out) = out_dir() {
+        let svg = h.state_mut().atlas_page_for_test(layer, "Region", 1);
+        let font = egui::FontDefinitions::default().font_data["Ubuntu-Light"]
+            .font
+            .to_vec();
+        let png =
+            crate::export_map::encode(&svg, crate::export_map::Format::Png, 1.5, &font).unwrap();
+        std::fs::write(out.join("atlas-page.png"), png).unwrap();
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}

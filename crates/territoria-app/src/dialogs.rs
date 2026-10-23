@@ -4397,3 +4397,140 @@ impl FlowDialog {
         apply
     }
 }
+
+// ---------------------------------------------------------------------------
+// Atlas
+
+/// A PDF of the map with a page per value of a column (region, rep…).
+pub struct AtlasDialog {
+    pub layer: Option<LayerId>,
+    /// `None`: a page per area.
+    pub column: Option<String>,
+}
+
+/// How many pages: distinct values of `column` (or areas).
+fn atlas_count(project: &Project, layer: LayerId, column: Option<&str>) -> usize {
+    let Some(l) = project.layer(layer) else {
+        return 0;
+    };
+    match column.and_then(|c| l.attributes.column(c)) {
+        Some(c) => (0..l.len())
+            .filter_map(|f| c.get(f).to_text().filter(|t| !t.trim().is_empty()))
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        None => l.len(),
+    }
+}
+
+impl AtlasDialog {
+    /// For the map's areas: a column of a few dozen values if there is one.
+    pub fn new(project: &Project, map: &territoria_model::Map) -> AtlasDialog {
+        let layer = map
+            .layers
+            .iter()
+            .filter_map(|ml| match &ml.kind {
+                territoria_model::MapLayerKind::Territories { plan, .. } => {
+                    project.plan(*plan).map(|p| p.layer)
+                }
+                k => k.layer(),
+            })
+            .find(|l| {
+                project
+                    .layer(*l)
+                    .is_some_and(|l| l.kind() == GeometryKind::Area)
+            });
+        let column = layer.and_then(|l| {
+            let layer = project.layer(l)?;
+            layer
+                .attributes
+                .columns
+                .iter()
+                .filter(|c| !c.kind.is_numeric())
+                .map(|c| (c.name.clone(), atlas_count(project, l, Some(&c.name))))
+                .filter(|(_, n)| (2..=60).contains(n))
+                .min_by_key(|(_, n)| n.abs_diff(20))
+                .map(|(c, _)| c)
+        });
+        AtlasDialog { layer, column }
+    }
+
+    pub fn show(&mut self, ctx: &egui::Context, project: &Project, open: &mut bool) -> bool {
+        let mut apply = false;
+        let mut cancel = false;
+        *open = modal(ctx, "atlas", "Map atlas", 480.0, |ui| {
+            ui.label(
+                RichText::new(
+                    "A PDF of this map with a page per region, rep or area: each zoomed to its areas, the others veiled, with legend and scale bar.",
+                )
+                .weak(),
+            );
+            ui.add_space(6.0);
+            egui::Grid::new("atlas-grid")
+                .num_columns(2)
+                .spacing([12.0, 8.0])
+                .show(ui, |ui| {
+                    ui.label("Areas");
+                    if layer_combo(
+                        ui,
+                        "atlas-layer",
+                        project,
+                        &mut self.layer,
+                        Some(GeometryKind::Area),
+                    ) {
+                        self.column = None;
+                    }
+                    ui.end_row();
+                    ui.label("A page per");
+                    if let Some(l) = self.layer.and_then(|l| project.layer(l)) {
+                        ComboBox::from_id_salt("atlas-column")
+                            .width(220.0)
+                            .selected_text(self.column.clone().unwrap_or_else(|| "area".into()))
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut self.column, None, "area");
+                                for c in l.attributes.columns.iter().filter(|c| {
+                                    !c.kind.is_numeric() || c.kind == ColumnKind::Integer
+                                }) {
+                                    ui.selectable_value(
+                                        &mut self.column,
+                                        Some(c.name.clone()),
+                                        &c.name,
+                                    );
+                                }
+                            });
+                    }
+                    ui.end_row();
+                    let pages = self
+                        .layer
+                        .map_or(0, |l| atlas_count(project, l, self.column.as_deref()));
+                    ui.label("");
+                    let text = format!("{} pages", format_value(pages as f64));
+                    if pages > 300 {
+                        ui.colored_label(theme::WARN, format!("{text}: at most 300"));
+                    } else {
+                        ui.label(RichText::new(text).weak());
+                    }
+                    ui.end_row();
+                    ui.label("");
+                    ui.horizontal(|ui| {
+                        if ui
+                            .add_enabled(
+                                (1..=300).contains(&pages),
+                                egui::Button::new(RichText::new("Create PDF…").strong()),
+                            )
+                            .clicked()
+                        {
+                            apply = true;
+                        }
+                        if ui.button("Cancel").clicked() {
+                            cancel = true;
+                        }
+                    });
+                    ui.end_row();
+                });
+        });
+        if cancel || apply {
+            *open = false;
+        }
+        apply
+    }
+}

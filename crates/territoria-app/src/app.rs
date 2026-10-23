@@ -135,6 +135,12 @@ enum FileAction {
     Logo,
 }
 
+/// One page of a map atlas: its view and the areas it is about.
+pub struct AtlasPage {
+    pub view: territoria_render::View,
+    pub veil: Option<(LayerId, std::collections::HashSet<usize>)>,
+}
+
 /// A table column being dragged (to the map, to show it there).
 #[derive(Clone)]
 pub struct ColumnDrag {
@@ -164,6 +170,9 @@ pub enum Export {
     Data(DataRef, bool, Option<String>),
     /// A PDF with an overview and a page per territory.
     Report(PlanId),
+    /// The current map as a PDF with a page per value of a layer's column
+    /// (or per area), each zoomed to its areas.
+    Atlas(LayerId, Option<String>),
 }
 
 struct Confirm {
@@ -253,6 +262,7 @@ pub struct TerritoriaApp {
     join: Option<crate::dialogs::JoinDialog>,
     summarise: Option<crate::dialogs::SummariseDialog>,
     flows: Option<crate::dialogs::FlowDialog>,
+    atlas: Option<crate::dialogs::AtlasDialog>,
     score: Option<crate::dialogs::ScoreDialog>,
     /// The search box: query and what it found.
     search: String,
@@ -393,6 +403,7 @@ impl TerritoriaApp {
             join: None,
             summarise: None,
             flows: None,
+            atlas: None,
             score: None,
             search: String::new(),
             search_hits: Vec::new(),
@@ -544,6 +555,11 @@ impl TerritoriaApp {
                         "pdf",
                         self.project.plan(p).map(|p| format!("Report {}", p.name)),
                     ),
+                    Export::Atlas(l, _) => (
+                        "PDF document",
+                        "pdf",
+                        self.project.layer(l).map(|l| format!("Atlas {}", l.name)),
+                    ),
                     Export::Data(d, excel, segment) => (
                         if excel { "Excel workbook" } else { "CSV" },
                         if excel { "xlsx" } else { "csv" },
@@ -657,6 +673,25 @@ impl TerritoriaApp {
             let label = format!("Writing {}", file_name(&path));
             self.jobs.spawn(label, move |_| {
                 let result = std::fs::write(&path, page).map_err(|e| e.to_string());
+                JobResult::Exported { path, result }
+            });
+            return;
+        }
+        if let Export::Atlas(layer, column) = &what {
+            let pages = match self.atlas_pages(*layer, column.as_deref()) {
+                Ok(p) => p,
+                Err(e) => {
+                    self.error(e);
+                    return;
+                }
+            };
+            let font = egui::FontDefinitions::default().font_data["Ubuntu-Light"]
+                .font
+                .to_vec();
+            let label = format!("Writing {}", file_name(&path));
+            self.jobs.spawn(label, move |_| {
+                let result = crate::export_map::pdf_pages(&pages, &font)
+                    .and_then(|bytes| std::fs::write(&path, bytes).map_err(|e| e.to_string()));
                 JobResult::Exported { path, result }
             });
             return;
@@ -797,7 +832,7 @@ impl TerritoriaApp {
                         .map_err(err)
                     }
                     // Written on the UI thread's request above.
-                    Export::Map(_) | Export::Report(_) | Export::Html => Ok(()),
+                    Export::Map(_) | Export::Report(_) | Export::Html | Export::Atlas(..) => Ok(()),
                 }
             })();
             JobResult::Exported { path, result }
@@ -1467,6 +1502,13 @@ impl TerritoriaApp {
     }
 
     #[cfg(test)]
+    pub fn atlas_page_for_test(&mut self, layer: LayerId, column: &str, page: usize) -> String {
+        self.atlas_pages(layer, Some(column))
+            .unwrap()
+            .swap_remove(page)
+    }
+
+    #[cfg(test)]
     pub fn keymap_for_test(&self) -> &Keymap {
         &self.keymap
     }
@@ -1667,14 +1709,14 @@ impl TerritoriaApp {
 
     /// The current map as SVG, as it is on screen.
     fn map_svg(&mut self, settings: &crate::dialogs::MapExportSettings) -> Result<String, String> {
-        self.map_render(settings, false)
+        self.map_render(settings, false, None)
     }
 
     pub(crate) fn map_svg_for_cli(
         &mut self,
         settings: &crate::dialogs::MapExportSettings,
     ) -> Result<String, String> {
-        self.map_render(settings, false)
+        self.map_render(settings, false, None)
     }
 
     pub(crate) fn set_map_export_settings(&mut self, settings: crate::dialogs::MapExportSettings) {
@@ -1686,13 +1728,14 @@ impl TerritoriaApp {
         &mut self,
         settings: &crate::dialogs::MapExportSettings,
     ) -> Result<String, String> {
-        self.map_render(settings, true)
+        self.map_render(settings, true, None)
     }
 
     fn map_render(
         &mut self,
         settings: &crate::dialogs::MapExportSettings,
         page: bool,
+        at: Option<&AtlasPage>,
     ) -> Result<String, String> {
         use territoria_model::map::Background;
         let map_id = self.current_map.ok_or("There's no map to export.")?;
@@ -1707,13 +1750,16 @@ impl TerritoriaApp {
             egui::Pos2::ZERO,
             on_screen.map_or(egui::vec2(1600.0, 1000.0), |v| v.rect.size()),
         );
-        let kept_view = on_screen
-            .map(|v| territoria_render::View { rect, ..v })
-            .or(map.view.map(|(center, scale)| territoria_render::View {
-                center,
-                scale,
-                rect,
-            }));
+        let kept_view = match at {
+            Some(a) => Some(a.view),
+            None => on_screen
+                .map(|v| territoria_render::View { rect, ..v })
+                .or(map.view.map(|(center, scale)| territoria_render::View {
+                    center,
+                    scale,
+                    rect,
+                })),
+        };
         let mut meshes = HashMap::new();
         let mut cells = HashMap::new();
         for ml in map.layers.iter().filter(|l| l.visible) {
@@ -1935,6 +1981,31 @@ impl TerritoriaApp {
             {
                 credits.push(a);
             }
+        }
+        // An atlas page: everything but its areas veiled.
+        if let Some((layer, keep)) = at.and_then(|a| a.veil.as_ref())
+            && let Some(mesh) = meshes.get(layer)
+        {
+            let veil = egui::Color32::from_white_alpha(190);
+            resolved.push(crate::resolve::Resolved {
+                mesh: mesh.clone(),
+                fills: (0..mesh.bounds.len())
+                    .map(|f| (!keep.contains(&f)).then_some(veil))
+                    .collect(),
+                arcs: Vec::new(),
+                line_width: 1.0,
+                point_radius: 0.0,
+                point_stroke: egui::Stroke::NONE,
+                labels: crate::resolve::Labels::None,
+                sites: Vec::new(),
+                symbols: Vec::new(),
+                symbol_fill: egui::Color32::TRANSPARENT,
+                symbol_colors: Vec::new(),
+                symbol_stroke: egui::Stroke::NONE,
+                charts: Vec::new(),
+                flows: Vec::new(),
+                rings: Vec::new(),
+            });
         }
         // Legends top layer first, like the Contents panel.
         legends.reverse();
@@ -3215,6 +3286,95 @@ impl TerritoriaApp {
         })
     }
 
+    /// The groups of an atlas: per value of `column` (each feature without
+    /// one), its name and features, by name.
+    pub(crate) fn atlas_groups(
+        &self,
+        layer: LayerId,
+        column: Option<&str>,
+    ) -> Vec<(String, Vec<usize>)> {
+        let Some(l) = self.project.layer(layer) else {
+            return Vec::new();
+        };
+        let mut groups: std::collections::BTreeMap<String, Vec<usize>> = Default::default();
+        let c = column.and_then(|c| l.attributes.column(c));
+        for f in 0..l.len() {
+            let name = match c {
+                Some(c) => match c.get(f).to_text() {
+                    Some(t) if !t.trim().is_empty() => t,
+                    _ => continue,
+                },
+                None => l.display_name(f),
+            };
+            groups.entry(name).or_default().push(f);
+        }
+        groups.into_iter().collect()
+    }
+
+    /// The current map's pages for an atlas, as SVG (A4 landscape).
+    fn atlas_pages(&mut self, layer: LayerId, column: Option<&str>) -> Result<Vec<String>, String> {
+        const MAX_PAGES: usize = 300;
+        let groups = self.atlas_groups(layer, column);
+        if groups.is_empty() {
+            return Err("Nothing to make pages of.".into());
+        }
+        if groups.len() > MAX_PAGES {
+            return Err(format!(
+                "{} pages are too many; choose a column with at most {MAX_PAGES} values.",
+                groups.len()
+            ));
+        }
+        let map = self
+            .current_map
+            .and_then(|m| self.project.map(m))
+            .ok_or("There's no map to export.")?;
+        let l = self.project.layer(layer).ok_or("The layer was removed.")?;
+        let mesh = self
+            .meshes
+            .get(l, &map.crs, &mut self.jobs)
+            .ok_or("The map is still being prepared; try again in a moment.")?;
+        let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(842.0, 595.0));
+        let mut pages = Vec::new();
+        for (name, members) in groups {
+            let mut extent = territoria_render::Bounds::EMPTY;
+            for &f in &members {
+                if let Some(b) = mesh.bounds.get(f).filter(|b| !b.is_empty()) {
+                    let (a, c) = (mesh.to_display(b.min), mesh.to_display(b.max));
+                    extent.add([a[0] as f32, a[1] as f32]);
+                    extent.add([c[0] as f32, c[1] as f32]);
+                }
+            }
+            if extent.is_empty() {
+                continue;
+            }
+            let mut view = territoria_render::View::fit(
+                [extent.min[0] as f64, extent.min[1] as f64],
+                [extent.max[0] as f64, extent.max[1] as f64],
+                rect,
+            );
+            // A margin around the areas, for their neighbours.
+            view.scale *= 1.15;
+            let page = AtlasPage {
+                view,
+                veil: Some((layer, members.into_iter().collect())),
+            };
+            // Bare numbers say little alone: "Region 02".
+            let title = match column {
+                Some(c) if name.chars().all(|ch| ch.is_ascii_digit()) => format!("{c} {name}"),
+                _ => name,
+            };
+            let settings = crate::dialogs::MapExportSettings {
+                format: crate::export_map::Format::Pdf,
+                scale: 1.0,
+                title,
+                legend: true,
+                scale_bar: true,
+            };
+            pages.push(self.map_render(&settings, false, Some(&page))?);
+        }
+        Ok(pages)
+    }
+
     /// Copies a plan as a scenario, shows the copy and compares it with
     /// the original.
     fn duplicate_plan(&mut self, plan: PlanId) {
@@ -3391,6 +3551,17 @@ impl TerritoriaApp {
                     self.toast("Show a map first.");
                 }
             }
+            Command::ExportAtlas => match self.current_map.and_then(|m| self.project.map(m)) {
+                Some(map) => {
+                    let d = crate::dialogs::AtlasDialog::new(&self.project, map);
+                    if d.layer.is_some() {
+                        self.atlas = Some(d);
+                    } else {
+                        self.toast("The map needs areas for an atlas.");
+                    }
+                }
+                None => self.toast("There's no map yet."),
+            },
             Command::FlowLines => {
                 let d = crate::dialogs::FlowDialog::new(&self.project);
                 if d.rows.is_none() {
@@ -4162,6 +4333,7 @@ impl TerritoriaApp {
                     Command::CalculatedColumn,
                     Command::ExportMap,
                     Command::ExportHtml,
+                    Command::ExportAtlas,
                     Command::CopyMap,
                     Command::NewMap,
                     Command::ZoomToAll,
@@ -4570,6 +4742,16 @@ impl TerritoriaApp {
                 self.formula = Some(f);
             } else if open {
                 self.score = Some(d);
+            }
+        }
+        if let Some(mut d) = self.atlas.take() {
+            let mut open = true;
+            if d.show(ctx, &self.project, &mut open) {
+                if let Some(layer) = d.layer {
+                    self.ask_file(FileAction::Export(Export::Atlas(layer, d.column.clone())));
+                }
+            } else if open {
+                self.atlas = Some(d);
             }
         }
         if let Some(mut d) = self.flows.take() {
@@ -5074,6 +5256,7 @@ impl eframe::App for TerritoriaApp {
             || self.join.is_some()
             || self.summarise.is_some()
             || self.flows.is_some()
+            || self.atlas.is_some()
             || self.score.is_some()
             || self.settings_dialog.is_some()
             || self.select_list.is_some()
