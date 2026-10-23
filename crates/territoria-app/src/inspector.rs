@@ -729,6 +729,133 @@ fn scale_ui(
     });
 }
 
+/// The ways a value can be shown, for switching between them.
+#[derive(Clone, Copy, PartialEq)]
+enum Shown {
+    Colours,
+    Circles,
+    Heat,
+}
+
+/// `kind` shown another way, keeping its layer and value.
+fn shown_as(project: &Project, kind: &MapLayerKind, to: Shown) -> Option<MapLayerKind> {
+    let (layer, source, normalize, style) = match kind {
+        MapLayerKind::Choropleth {
+            layer,
+            source,
+            normalize,
+            style,
+            ..
+        }
+        | MapLayerKind::Symbols {
+            layer,
+            source,
+            normalize,
+            style,
+            ..
+        } => (
+            *layer,
+            Some(source.clone()),
+            normalize.clone(),
+            style.clone(),
+        ),
+        MapLayerKind::Heatmap { layer, weight, .. } => (
+            *layer,
+            weight
+                .clone()
+                .map(|column| ValueSource::Attribute { column }),
+            Normalize::None,
+            BoundaryStyle::default(),
+        ),
+        _ => return None,
+    };
+    let l = project.layer(layer)?;
+    Some(match to {
+        Shown::Colours => MapLayerKind::Choropleth {
+            layer,
+            source: source?,
+            normalize,
+            scale: ColorScale::default(),
+            style: BoundaryStyle {
+                stroke: territoria_analysis::Rgba([0xff, 0xff, 0xff, 140]),
+                stroke_width: 0.5,
+                ..style
+            },
+        },
+        Shown::Circles => MapLayerKind::Symbols {
+            layer,
+            source: source?,
+            normalize,
+            symbol: territoria_model::SymbolStyle::for_count(l.len()),
+            style,
+        },
+        Shown::Heat => {
+            if l.kind() != territoria_io::GeometryKind::Point {
+                return None;
+            }
+            let radius_km = l.geometry.bbox.map_or(5.0, |b| {
+                (territoria_geo::haversine(b.min(), b.max()) / 1000.0 / 40.0).max(0.1)
+            });
+            MapLayerKind::Heatmap {
+                layer,
+                weight: match source {
+                    Some(ValueSource::Attribute { column }) => Some(column),
+                    _ => None,
+                },
+                radius_km: (radius_km * 10.0).round() / 10.0,
+                ramp: crate::heat::default_ramp(),
+            }
+        }
+    })
+}
+
+/// Buttons to show the layer's value another way: colours, circles, heat.
+fn gallery_ui(
+    ui: &mut Ui,
+    project: &Project,
+    ml: &MapLayer,
+    map: MapId,
+    actions: &mut Vec<Action>,
+) {
+    let current = match ml.kind {
+        MapLayerKind::Choropleth { .. } => Shown::Colours,
+        MapLayerKind::Symbols { .. } => Shown::Circles,
+        MapLayerKind::Heatmap { .. } => Shown::Heat,
+        _ => return,
+    };
+    let id = ml.id;
+    ui.horizontal(|ui| {
+        ui.label("Show as");
+        for (to, label, tip) in [
+            (Shown::Colours, "Colours", "Each area coloured by its class"),
+            (Shown::Circles, "Circles", "A circle sized by the value"),
+            (
+                Shown::Heat,
+                "Heat map",
+                "Where points are dense, weighted by the value",
+            ),
+        ] {
+            let other = (to != current)
+                .then(|| shown_as(project, &ml.kind, to))
+                .flatten();
+            if to != current && other.is_none() {
+                continue;
+            }
+            if ui
+                .selectable_label(to == current, label)
+                .on_hover_text(tip)
+                .clicked()
+                && let Some(kind) = other
+            {
+                actions.push(edit_layer(map, id, "Show another way", move |l| {
+                    l.opacity = if to == Shown::Heat { 0.85 } else { 1.0 };
+                    l.kind = kind;
+                }));
+            }
+        }
+    });
+}
+
 /// At which zoom levels the layer shows: limits taken from the view.
 fn zoom_ui(
     ui: &mut Ui,
@@ -823,6 +950,7 @@ fn map_layer(
         actions.push(edit_layer(map, id, "Rename layer", move |l| l.name = name));
     }
     ui.label(RichText::new(ml.kind.type_label()).weak());
+    gallery_ui(ui, project, ml, map, actions);
     ui.add_space(4.0);
     ui.horizontal(|ui| {
         ui.label("Opacity");

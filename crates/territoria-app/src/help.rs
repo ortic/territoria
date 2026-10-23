@@ -69,7 +69,8 @@ Everything can be undone (Ctrl+Z). The command palette (Ctrl+Shift+P) finds ever
 - Relative to: per km², per another value (e.g. sales per inhabitant) or as a share of the total.
 - Only where: count or add up only the rows that pass a filter, e.g. [Segment] = \"Retail\".
 - Two values at once: a grid of colours shows where both are high, or one but not the other.
-- Categories: a text column gives each value its own colour; the most frequent ones get colours, the rest is \"Other\".",
+- Categories: a text column gives each value its own colour; the most frequent ones get colours, the rest is \"Other\".
+- Quickest of all: drag a column's heading from a table onto the map (or the drop strip in Contents); \"Show as\" in Properties switches between colours, circles and a heat map.",
     },
     Topic {
         id: "symbols",

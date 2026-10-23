@@ -350,6 +350,20 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                     }
                 }
                 ui.add_space(4.0);
+                // A column dragged from a table: dropped here, it goes on the map.
+                if let Some(drag) =
+                    egui::DragAndDrop::payload::<crate::app::ColumnDrag>(ui.ctx())
+                {
+                    let (_, dropped) = ui.dnd_drop_zone::<crate::app::ColumnDrag, ()>(
+                        egui::Frame::default().inner_margin(8.0),
+                        |ui| {
+                            ui.label(format!("⤵ Drop here to show {} on the map", drag.column));
+                        },
+                    );
+                    if let Some(d) = dropped {
+                        actions.push(Action::ShowColumn(d.data, d.column.clone()));
+                    }
+                }
                 ui.menu_button("➕ Add to map", |ui| {
                     for l in &project.layers {
                         if ui.button(format!("▣ {}", l.name)).clicked() {

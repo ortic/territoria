@@ -221,7 +221,7 @@ territoria/
 
 ### 5.7 Analyses (M3)
 
-- [ ] Drag a column onto the map → suggested analysis with defaults and legend; analysis gallery to switch type
+- [x] Drag a column onto the map → suggested analysis with defaults and legend; analysis gallery to switch type (table column headers drag onto the map or a drop strip in Contents: numbers as colours (circles on points), texts as categories, linked tables through their link; "Show as" switches colours/circles/heat map keeping the value)
 - [x] Choropleth (area colouring): classified, continuous, colour from a column, unique values (no colour from a column)
 - [x] Classification: quantiles, equal interval, natural breaks (Jenks), standard deviation, mean split, equal sum, unique values, manual; rounded breaks; class count; range limits (manual limits by dragging or typing; no range limits yet)
 - [x] Class editor with a live histogram and draggable breaks; class labels; "no data" and "not classified" styles (limits dragged in the histogram or typed; own labels per class; a colour for areas without data)

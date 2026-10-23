@@ -68,6 +68,8 @@ pub enum Action {
     Edit(String, EditFn),
     LinkTable(TableId),
     ColorBy(Option<LayerId>),
+    /// A table column dropped on the map: show it.
+    ShowColumn(DataRef, String),
     /// Show a data layer's boundaries on the current map.
     AddToMap(LayerId),
     /// Show and activate a plan.
@@ -131,6 +133,13 @@ enum FileAction {
     ReplaceLayer(LayerId),
     /// The company logo for exports.
     Logo,
+}
+
+/// A table column being dragged (to the map, to show it there).
+#[derive(Clone)]
+pub struct ColumnDrag {
+    pub data: DataRef,
+    pub column: String,
 }
 
 /// What File → Export writes.
@@ -2813,6 +2822,68 @@ impl TerritoriaApp {
         }
     }
 
+    /// A column on the map the way that suits it: numbers as colours (or
+    /// circles on points), texts as categories.
+    pub(crate) fn show_column(&mut self, data: DataRef, column: &str) {
+        use crate::dialogs::Colorable;
+        use territoria_model::{TextSource, ValueSource};
+        let found = match data {
+            DataRef::Layer(l) => crate::dialogs::colorables(&self.project, l)
+                .into_iter()
+                .find(|(_, c)| match c {
+                    Colorable::Number(ValueSource::Attribute { column: c })
+                    | Colorable::Category(TextSource::Attribute { column: c }) => c == column,
+                    _ => false,
+                })
+                .map(|o| (l, o)),
+            DataRef::Table(t) => self
+                .project
+                .links
+                .iter()
+                .filter(|k| k.table == t)
+                .find_map(|k| {
+                    crate::dialogs::colorables(&self.project, k.layer)
+                        .into_iter()
+                        .find(|(_, c)| match c {
+                            Colorable::Number(ValueSource::Linked {
+                                link, column: c, ..
+                            })
+                            | Colorable::Category(TextSource::Linked { link, column: c }) => {
+                                *link == k.id && c == column
+                            }
+                            _ => false,
+                        })
+                        .map(|o| (k.layer, o))
+                }),
+        };
+        let Some((layer, (name, what))) = found else {
+            self.toast(match data {
+                DataRef::Table(_) => {
+                    format!("Link the table to boundaries first to show {column} on the map.")
+                }
+                DataRef::Layer(_) => format!("{column} can't be shown on the map."),
+            });
+            return;
+        };
+        let points = self
+            .project
+            .layer(layer)
+            .is_some_and(|l| l.kind() == GeometryKind::Point);
+        self.apply_color_by(ColorByOutcome::Create {
+            layer,
+            name,
+            what,
+            circles: points,
+            heat: false,
+        });
+        // The map in front, to see it.
+        if let Some(map) = self.current_map
+            && let Some(found) = self.dock.find_tab(&Tab::Map(map))
+        {
+            let _ = self.dock.set_active_tab(found);
+        }
+    }
+
     /// A chart layer on `layer` of several values, each a slice or bar.
     pub(crate) fn add_charts(
         &mut self,
@@ -3594,6 +3665,7 @@ impl TerritoriaApp {
             }
             Action::LinkTable(t) => self.link = Some(LinkDialog::new(&self.project, t)),
             Action::ColorBy(layer) => self.color_by = Some(ColorByDialog::new(layer)),
+            Action::ShowColumn(data, column) => self.show_column(data, &column),
             Action::AddToMap(layer) => {
                 let before = self.project.clone();
                 let map = self.ensure_map();
@@ -3903,6 +3975,7 @@ impl TerritoriaApp {
                     self.selected = None;
                     self.focus = false;
                 }
+                MapEvent::ShowColumn(data, column) => self.show_column(data, &column),
                 MapEvent::Round => {
                     if let Some((layer, units)) = self.selected.clone() {
                         self.plan_round(layer, units);
@@ -5181,6 +5254,23 @@ impl eframe::App for TerritoriaApp {
         self.dialogs(&ctx);
         self.palette_ui(&ctx, &mut commands);
         self.toasts_ui(&ctx);
+        // A dragged column follows the pointer with where it can go.
+        if let Some(drag) = egui::DragAndDrop::payload::<ColumnDrag>(&ctx)
+            && let Some(p) = ctx.pointer_hover_pos()
+        {
+            egui::Area::new(egui::Id::new("column-drag"))
+                .order(egui::Order::Tooltip)
+                .fixed_pos(p + egui::vec2(14.0, 10.0))
+                .interactable(false)
+                .show(&ctx, |ui| {
+                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        ui.label(format!(
+                            "{}: drop on the map or its layer list",
+                            drag.column
+                        ));
+                    });
+                });
+        }
         for a in actions {
             self.apply_action(&ctx, a);
         }

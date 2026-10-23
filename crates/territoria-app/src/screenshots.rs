@@ -3458,3 +3458,58 @@ fn territory_palettes() {
             .all(|t| territoria_model::plan::TERRITORY_COLORS.contains(&t.color))
     );
 }
+
+/// A table column dragged onto the Contents panel goes on the map, and
+/// the Properties panel switches how it is shown.
+#[test]
+fn drag_column_onto_the_map() {
+    use crate::app::DataRef;
+    use egui_kittest::kittest::Queryable;
+    use territoria_model::MapLayerKind;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    h.state_mut()
+        .add_linked_table_now("Sales 2026", table, "Area", layer, None);
+    let t = h.state().project.tables[0].id;
+    h.state_mut().open_table_for_test(DataRef::Table(t));
+    settle(&mut h);
+    let start = h.get_by_label("Revenue").rect().center();
+    let before = h.state().project.maps[0].layers.len();
+    h.hover_at(start);
+    h.run_steps(1);
+    h.drag_at(start);
+    h.run_steps(1);
+    for k in 1..=5 {
+        h.hover_at(start + egui::vec2(0.0, 12.0 * k as f32));
+        h.run_steps(1);
+    }
+    let zone = h
+        .get_by_label("⤵ Drop here to show Revenue on the map")
+        .rect()
+        .center();
+    h.hover_at(zone);
+    h.run_steps(2);
+    save(&mut h, "drag-column");
+    h.drop_at(zone);
+    h.run_steps(3);
+    let app = h.state();
+    let layers = &app.project.maps[0].layers;
+    assert_eq!(layers.len(), before + 1, "a new map layer");
+    let ml = layers.last().unwrap();
+    assert!(matches!(ml.kind, MapLayerKind::Choropleth { .. }));
+    assert_eq!(ml.name, "Revenue (Sales 2026)");
+    // Shown as circles instead, from the Properties panel.
+    h.get_by_label("Circles").click();
+    settle(&mut h);
+    save(&mut h, "dropped-column");
+    let ml = h.state().project.maps[0].layers.last().unwrap().clone();
+    assert!(
+        matches!(ml.kind, MapLayerKind::Symbols { .. }),
+        "{:?}",
+        ml.kind.type_label()
+    );
+}

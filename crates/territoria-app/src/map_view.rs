@@ -110,6 +110,8 @@ pub enum MapEvent {
     ClearSelection,
     /// The quickest round by road through the selected points.
     Round,
+    /// A table column dropped on the map.
+    ShowColumn(crate::app::DataRef, String),
     /// Select the features of another layer related to the selection.
     TransferSelection {
         to: LayerId,
@@ -248,6 +250,10 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
     let mut events = Vec::new();
     let project: &Project = cx.project;
     let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
+    // A table column dropped on the map is shown on it.
+    if let Some(drag) = response.dnd_release_payload::<crate::app::ColumnDrag>() {
+        events.push(MapEvent::ShowColumn(drag.data, drag.column.clone()));
+    }
     let painter = ui.painter_at(rect);
     let bg = if cx.dark {
         Color32::from_rgb(0x1c, 0x1f, 0x24)

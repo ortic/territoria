@@ -270,15 +270,23 @@ pub fn show(
                                 egui::Button::new(
                                     RichText::new(format!("{key_mark}{}{arrow}", c.name)).strong(),
                                 )
-                                .frame(false),
+                                .frame(false)
+                                .sense(Sense::click_and_drag()),
                             )
                             .on_hover_text(match &c.formula {
                                 Some(f) => format!(
                                     "{} · = {f}\nClick to sort, right-click to edit",
                                     c.kind.label()
                                 ),
-                                None => format!("{} · click to sort", c.kind.label()),
+                                None => format!(
+                                    "{} · click to sort, drag onto the map to show it",
+                                    c.kind.label()
+                                ),
                             });
+                        r.dnd_set_drag_payload(crate::app::ColumnDrag {
+                            data,
+                            column: c.name.clone(),
+                        });
                         if c.formula.is_some() {
                             r.context_menu(|ui| {
                                 if ui.button("✏ Edit formula…").clicked() {
