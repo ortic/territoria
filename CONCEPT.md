@@ -183,7 +183,7 @@ territoria/
 
 - [x] Import CSV/TSV/TXT: delimiter, quote, encoding and decimal separator detected, previewed, overridable
 - [x] Import Excel (xlsx, xls, ods): sheet or named range, header row detection (sheets; no named ranges)
-- [ ] Paste a table from the clipboard
+- [x] Paste a table from the clipboard (Ctrl+V outside text fields opens the import dialog with the cells)
 - [x] Column types inferred with preview: text, number, integer, boolean, date, key/code (text that keeps leading zeros), coordinate
 - [x] Change a column's type after import
 - [ ] Linked tables: re-read from the source file on demand or on open; schema changes reported

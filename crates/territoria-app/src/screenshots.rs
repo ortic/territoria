@@ -1382,3 +1382,20 @@ fn settings_dialog() {
     h.run_steps(3);
     save(&mut h, "settings");
 }
+
+/// Cells pasted from a spreadsheet open the table import dialog.
+#[test]
+fn paste_cells() {
+    let (mut h, _lock) = harness(false);
+    h.state_mut()
+        .paste_table("Postcode\tRevenue\n0811\t1200,50\n8001\t900\n");
+    settle(&mut h);
+    save(&mut h, "paste");
+    let d = h
+        .state()
+        .import_table_for_test()
+        .expect("the import dialog");
+    assert_eq!(d.0.rows(), 2);
+    assert_eq!(d.0.columns[0].display(0), "0811", "leading zeros stay");
+    assert_eq!(d.0.columns[1].f64(0), Some(1200.5), "decimal comma");
+}

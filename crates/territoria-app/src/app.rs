@@ -999,6 +999,13 @@ impl TerritoriaApp {
     }
 
     #[cfg(test)]
+    pub fn import_table_for_test(&self) -> Option<(&territoria_data::Table, &str)> {
+        self.import_table
+            .as_ref()
+            .map(|d| (&d.table, d.name.as_str()))
+    }
+
+    #[cfg(test)]
     pub fn open_table_for_test(&mut self, data: DataRef) {
         self.dock.push_to_focused_leaf(Tab::Table(data));
     }
@@ -2537,7 +2544,7 @@ impl TerritoriaApp {
             button(ui, "💾 Save", Command::SaveProject, "Save the project");
             ui.separator();
             button(ui, "🗺 Add boundaries", Command::AddBoundaries, "Postcodes, municipalities, regions… from a Shapefile, GeoJSON, GeoPackage or zip");
-            button(ui, "📊 Add data", Command::AddData, "A table from CSV or Excel, linked to areas by a key");
+            button(ui, "📊 Add data", Command::AddData, "A table from CSV or Excel (or paste cells with Ctrl+V), linked to areas by a key");
             button(ui, "🎨 Colour by value", Command::ColorByValue, "Colour areas, or draw circles sized by a number");
             ui.separator();
             button(ui, "⬣ New territories", Command::NewPlan, "Plan sales or service territories");
@@ -2654,7 +2661,7 @@ impl TerritoriaApp {
                 if card(ui, "1  Add boundaries", "Postcodes, municipalities or any areas: Shapefile, GeoJSON, GeoPackage or a zip download.") {
                     commands.push(Command::AddBoundaries);
                 }
-                if card(ui, "2  Add your data", "A CSV or Excel table. Keys are matched to areas automatically.") {
+                if card(ui, "2  Add your data", "A CSV or Excel table, or cells pasted with Ctrl+V. Keys are matched to areas automatically.") {
                     commands.push(Command::AddData);
                 }
                 if card(ui, "3  Plan territories", "Paint territories or start from a list, then balance them.") {
@@ -3010,6 +3017,50 @@ impl TerritoriaApp {
         ctx.request_repaint_after(Duration::from_millis(500));
     }
 
+    /// Cells pasted outside a text field (copied from a spreadsheet)
+    /// become a table, through the usual import dialog.
+    fn handle_paste(&mut self, ctx: &egui::Context, modal_open: bool) {
+        if modal_open || ctx.egui_wants_keyboard_input() {
+            return;
+        }
+        let pasted = ctx.input(|i| {
+            i.events.iter().find_map(|e| match e {
+                egui::Event::Paste(t) => Some(t.clone()),
+                _ => None,
+            })
+        });
+        if let Some(text) = pasted {
+            self.paste_table(&text);
+        }
+    }
+
+    pub(crate) fn paste_table(&mut self, text: &str) {
+        let lines = text.lines().filter(|l| !l.trim().is_empty()).count();
+        if lines < 2 || !text.contains(['\t', ';', ',']) {
+            self.toast("To paste a table, copy cells with a header row from a spreadsheet.");
+            return;
+        }
+        let dir = self.paths.as_ref().map_or_else(
+            || std::env::temp_dir().join(format!("territoria-pasted-{}", std::process::id())),
+            |p| p.data_dir.join("pasted"),
+        );
+        let _ = std::fs::create_dir_all(&dir);
+        let path = (1..)
+            .map(|i| {
+                dir.join(if i == 1 {
+                    "Pasted table.txt".to_owned()
+                } else {
+                    format!("Pasted table {i}.txt")
+                })
+            })
+            .find(|p| !p.exists())
+            .unwrap_or_else(|| dir.join("Pasted table.txt"));
+        match std::fs::write(&path, text) {
+            Ok(()) => self.import_table_file(path, TableOptions::default()),
+            Err(e) => self.error(format!("Couldn't keep the pasted table: {e}")),
+        }
+    }
+
     fn handle_dropped_files(&mut self, ctx: &egui::Context) {
         let files: Vec<PathBuf> = ctx.input(|i| {
             i.raw
@@ -3155,6 +3206,7 @@ impl eframe::App for TerritoriaApp {
             || self.palette.is_some()
             || self.confirm.is_some()
             || self.about;
+        self.handle_paste(&ctx, modal_open);
         if self.tool == Tool::Site && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.tool = Tool::Navigate;
         }
