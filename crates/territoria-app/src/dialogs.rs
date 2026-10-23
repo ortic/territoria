@@ -2852,6 +2852,30 @@ impl SettingsDialog {
                         .on_hover_text("Between requests: the public Nominatim allows one per second; your own server may allow 0");
                     });
                     ui.end_row();
+                    ui.label("Routing");
+                    ui.vertical(|ui| {
+                        let r = &mut settings.routing;
+                        ui.add(egui::TextEdit::singleline(&mut r.url).hint_text("OSRM server address").desired_width(260.0))
+                            .on_hover_text("An OSRM server for travel times by road: the public demo is for trying only; your own server has no limits");
+                        ui.horizontal(|ui| {
+                            ComboBox::from_id_salt("routing-profile")
+                                .selected_text(match r.profile.as_str() {
+                                    "cycling" => "By bike",
+                                    "walking" | "foot" => "On foot",
+                                    _ => "By car",
+                                })
+                                .show_ui(ui, |ui| {
+                                    for (p, label) in [("driving", "By car"), ("cycling", "By bike"), ("walking", "On foot")] {
+                                        if ui.selectable_label(r.profile == p, label).clicked() {
+                                            r.profile = p.to_owned();
+                                        }
+                                    }
+                                });
+                            ui.label("Pause");
+                            ui.add(egui::DragValue::new(&mut r.interval_ms).range(0..=5000).suffix(" ms"));
+                        });
+                    });
+                    ui.end_row();
                     ui.label("Map tiles");
                     ui.horizontal(|ui| {
                         ui.label(format!("{:.1} MB stored", self.tile_bytes as f64 / 1_048_576.0));
@@ -3476,6 +3500,9 @@ pub enum JoinMode {
     Nearest,
     /// Any table: another table's rows by key.
     Lookup,
+    /// Places: travel time and distance by road to the nearest point of
+    /// another layer (from the routing service).
+    ByRoad,
 }
 
 /// New columns for a table from the map or another table.
@@ -3518,7 +3545,7 @@ impl JoinDialog {
     fn default_source(&mut self, project: &Project) {
         let want = match self.mode {
             JoinMode::AreaOf => Some(GeometryKind::Area),
-            JoinMode::PointsIn | JoinMode::Nearest => Some(GeometryKind::Point),
+            JoinMode::PointsIn | JoinMode::Nearest | JoinMode::ByRoad => Some(GeometryKind::Point),
             JoinMode::Lookup => None,
         };
         let own = match self.target {
@@ -3569,6 +3596,8 @@ impl JoinDialog {
             JoinMode::AreaOf => join::from_areas(project, cache, own?, self.layer?, &self.columns),
             JoinMode::PointsIn => join::from_points(project, cache, own?, self.layer?),
             JoinMode::Nearest => join::nearest(project, own?, self.layer?),
+            // Asked from the routing service in the background.
+            JoinMode::ByRoad => return None,
             JoinMode::Lookup => {
                 let (target, _) = data_table(project, self.target)?;
                 let source = &project.table(self.table?)?.table;
@@ -3614,6 +3643,14 @@ impl JoinDialog {
                     "The points in each area: how many, and their numbers summed",
                 );
             }
+            if matches!(kind, Some(GeometryKind::Area | GeometryKind::Point)) {
+                ui.radio_value(
+                    &mut self.mode,
+                    JoinMode::ByRoad,
+                    "Travel time by road to the nearest point of another layer (branch, rep)",
+                )
+                .on_hover_text("Minutes and km by road from each area's centre or point, from the routing service in Settings");
+            }
             ui.radio_value(&mut self.mode, JoinMode::Lookup, "Another table, by key");
             if self.mode != before {
                 self.default_source(project);
@@ -3621,7 +3658,7 @@ impl JoinDialog {
             ui.add_space(6.0);
             egui::Grid::new("join-grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
                 match self.mode {
-                    JoinMode::AreaOf | JoinMode::PointsIn | JoinMode::Nearest => {
+                    JoinMode::AreaOf | JoinMode::PointsIn | JoinMode::Nearest | JoinMode::ByRoad => {
                         let want = if self.mode == JoinMode::AreaOf { GeometryKind::Area } else { GeometryKind::Point };
                         ui.label("From");
                         if layer_combo(ui, "join-layer", project, &mut self.layer, Some(want)) {

@@ -44,7 +44,7 @@ Everything can be undone (Ctrl+Z). The command palette (Ctrl+Shift+P) finds ever
 - A table with an area key column is linked to a layer; several rows per area are added up (or counted, averaged…).
 - Addresses become points by geocoding (Settings → geocoder); coordinates in one column (\"47.37, 8.54\") or two are read directly.
 - The table view edits cells, adds and deletes rows, and sorts; Reload reads a changed file again.
-- ⊕ Columns from takes columns of the area each point lies in, counts points per area, looks up another table by key or finds the nearest point of another layer.
+- ⊕ Columns from takes columns of the area each point lies in, counts points per area, looks up another table by key or finds the nearest point of another layer, also by road: minutes and km to the nearest branch from a routing server (Settings → Routing).
 - Σ Summarise makes a new table with one row per group; ⚖ Score combines columns into one weighted score.
 - Segments are yes/no columns, e.g. a calculated [Key account] = [Sales] > 10000: the table shows and exports only a segment's rows, and \"Only where\" in analyses picks segments or keeps a typed filter as a new one.",
     },

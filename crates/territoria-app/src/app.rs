@@ -1128,6 +1128,21 @@ impl TerritoriaApp {
                     set.country, set.level
                 )),
             },
+            JobResult::Columns { target, result } => match result {
+                Ok(columns) => {
+                    let n = columns.len();
+                    self.edit("Add columns", |p| {
+                        if let Some(t) = data_table_mut(p, target) {
+                            for mut c in columns {
+                                c.name = t.unique_name(&c.name);
+                                let _ = t.push_column(c);
+                            }
+                        }
+                    });
+                    self.toast(format!("{n} columns added."));
+                }
+                Err(e) => self.error(format!("Couldn't add the columns: {e}")),
+            },
             JobResult::Exported { path, result } => match result {
                 Ok(()) => self.toast(format!("Wrote {}", file_name(&path))),
                 Err(e) => self.error(format!("Couldn't write {}: {e}", file_name(&path))),
@@ -2053,6 +2068,12 @@ impl TerritoriaApp {
 
     /// Adds the columns a join dialog gives.
     pub(crate) fn apply_join(&mut self, d: &crate::dialogs::JoinDialog) {
+        if d.mode == crate::dialogs::JoinMode::ByRoad {
+            if let (DataRef::Layer(from), Some(to)) = (d.target, d.layer) {
+                self.join_by_road(from, to);
+            }
+            return;
+        }
         let Some(columns) = d.columns_for(&self.project, &mut self.values) else {
             return;
         };
@@ -2071,6 +2092,88 @@ impl TerritoriaApp {
             }
         });
         self.toast(format!("{n} columns added."));
+    }
+
+    /// Travel time and distance by road from each feature of `from` to the
+    /// nearest point of `to`, asked from the routing service.
+    fn join_by_road(&mut self, from: LayerId, to: LayerId) {
+        use territoria_data::{Column, ColumnKind};
+        let (Some(a), Some(b)) = (self.project.layer(from), self.project.layer(to)) else {
+            return;
+        };
+        let place = |l: &territoria_model::Layer, f: usize| {
+            l.geometry
+                .points
+                .get(f)
+                .and_then(|p| p.0.first().map(|p| p.0))
+                .or_else(|| l.geometry.label_points.get(f).copied().flatten())
+        };
+        let origins: Vec<Option<geo_types::Coord<f64>>> =
+            (0..a.len()).map(|f| place(a, f)).collect();
+        let dests: Vec<(String, geo_types::Coord<f64>)> = (0..b.len())
+            .filter_map(|f| Some((b.display_name(f), place(b, f)?)))
+            .collect();
+        if dests.is_empty() {
+            self.error(format!("{} has no points to travel to.", b.name));
+            return;
+        }
+        let settings = self.settings.routing.clone();
+        let name = b.name.clone();
+        let label = format!("Travel times to {name}");
+        self.jobs.spawn_cancellable(label, move |job| {
+            let present: Vec<geo_types::Coord<f64>> = origins.iter().flatten().copied().collect();
+            let targets: Vec<geo_types::Coord<f64>> = dests.iter().map(|d| d.1).collect();
+            let result = territoria_io::routing::nearest_by_road(
+                &settings,
+                &present,
+                &targets,
+                &mut |done, total| {
+                    if total > 0 {
+                        job.progress(done as f32 / total as f32);
+                    }
+                    !job.cancelled()
+                },
+            )
+            .map_err(|e| e.to_string())
+            .map(|found| {
+                // Back to one value per feature (features without a place get none).
+                let mut found = found.into_iter();
+                let per: Vec<Option<territoria_io::routing::Nearest>> = origins
+                    .iter()
+                    .map(|o| o.and_then(|_| found.next().flatten()))
+                    .collect();
+                let mut minutes = Column::number(
+                    format!("Minutes to {name}"),
+                    per.iter()
+                        .map(|n| n.map(|n| (n.minutes * 10.0).round() / 10.0))
+                        .collect(),
+                );
+                minutes.kind = ColumnKind::Number;
+                vec![
+                    Column::text(
+                        format!("Nearest {name} by road"),
+                        ColumnKind::Text,
+                        per.iter()
+                            .map(|n| n.map(|n| dests[n.destination].0.clone()))
+                            .collect(),
+                    ),
+                    minutes,
+                    Column::number(
+                        format!("Road km to {name}"),
+                        per.iter()
+                            .map(|n| {
+                                n.map(|n| (n.km * 10.0).round() / 10.0)
+                                    .filter(|k| k.is_finite())
+                            })
+                            .collect(),
+                    ),
+                ]
+            });
+            JobResult::Columns {
+                target: DataRef::Layer(from),
+                result,
+            }
+        });
     }
 
     /// Rings on the map and a table of what lies within them.

@@ -6,6 +6,7 @@ pub mod geocode;
 pub mod gpkg;
 pub mod kml;
 pub mod online;
+pub mod routing;
 pub mod table;
 pub mod vector;
 

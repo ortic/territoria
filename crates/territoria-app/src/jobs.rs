@@ -69,6 +69,11 @@ pub enum JobResult {
     },
     /// The map as an image for the clipboard.
     Copied(Result<egui::ColorImage, String>),
+    /// New columns for a table or layer, worked out in the background.
+    Columns {
+        target: crate::app::DataRef,
+        result: Result<Vec<territoria_data::Column>, String>,
+    },
     /// Addresses of a table to be added, found (or not).
     Geocoded {
         name: String,

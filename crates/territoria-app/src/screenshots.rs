@@ -3228,3 +3228,71 @@ fn segments() {
     save(&mut h, "segments");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Each area's travel time by road to the nearest branch, from a routing
+/// server (a stand-in here).
+#[test]
+fn travel_time_by_road() {
+    use crate::app::DataRef;
+    use crate::dialogs::{JoinDialog, JoinMode, Placement};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    app.settings.routing.url = territoria_io::routing::mock_server();
+    app.settings.routing.interval_ms = 0;
+    let b = app.project.layer(layer).unwrap().geometry.bbox.unwrap();
+    let at = |u: f64, v: f64| (b.min().x + u * b.width(), b.min().y + v * b.height());
+    let spots = [at(0.25, 0.3), at(0.75, 0.7)];
+    let branches = Table::new(vec![
+        Column::text(
+            "Branch",
+            ColumnKind::Key,
+            vec![Some("West".into()), Some("East".into())],
+        ),
+        Column::number("Lon", spots.iter().map(|s| Some(s.0)).collect()),
+        Column::number("Lat", spots.iter().map(|s| Some(s.1)).collect()),
+    ])
+    .unwrap();
+    app.add_table(
+        "Branches".into(),
+        branches,
+        PathBuf::from("branches.csv"),
+        Placement::Points {
+            x: "Lon".into(),
+            y: "Lat".into(),
+        },
+        None,
+    );
+    let points = app.project.layers.last().unwrap().id;
+    let mut d = JoinDialog::new(&app.project, DataRef::Layer(layer));
+    d.mode = JoinMode::ByRoad;
+    d.layer = Some(points);
+    app.apply_join(&d);
+    settle(&mut h);
+    let l = h.state().project.layer(layer).unwrap();
+    let t = &l.attributes;
+    let minutes = t.column("Minutes to Branches").expect("travel times");
+    let nearest = t.column("Nearest Branches by road").unwrap();
+    let n = l.len();
+    assert!(
+        (0..n).all(|f| minutes.f64(f).is_some()),
+        "a time for every area"
+    );
+    // The area at the west branch goes there in no time.
+    let g = &l.geometry;
+    let west = g
+        .feature_at(
+            geo_types::Coord {
+                x: spots[0].0,
+                y: spots[0].1,
+            },
+            0.0,
+        )
+        .unwrap();
+    assert_eq!(nearest.display(west), "West");
+    assert!(minutes.f64(west).unwrap() < 1.0);
+    assert!(t.column("Road km to Branches").is_some());
+}

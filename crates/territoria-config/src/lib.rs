@@ -65,6 +65,8 @@ pub struct Settings {
     pub background: Option<String>,
     /// The service that finds coordinates for addresses.
     pub geocoder: territoria_io::geocode::GeocoderSettings,
+    /// The service that tells travel times by road.
+    pub routing: territoria_io::routing::RoutingSettings,
     /// Keyboard shortcuts changed from the defaults: command → keys like
     /// `Ctrl+Shift+S` (empty: none).
     pub shortcuts: std::collections::BTreeMap<String, String>,
@@ -80,6 +82,7 @@ impl Default for Settings {
             autosave_minutes: 3,
             background: None,
             geocoder: Default::default(),
+            routing: Default::default(),
             shortcuts: Default::default(),
         }
     }

@@ -301,8 +301,8 @@ territoria/
 
 ### 5.11 Geo services (M7)
 
-- [ ] Provider settings (URL, key, rate limit) for geocoding, routing, tiles; keys in the OS keychain
-- [ ] Drive-time/distance matrices (OSRM `table`, Valhalla, GraphHopper), cached in the project
+- [ ] Provider settings (URL, key, rate limit) for geocoding, routing, tiles; keys in the OS keychain (geocoding and routing: server, profile and pause in Settings; tiles from presets; no keys or keychain yet)
+- [x] Drive-time/distance matrices (OSRM `table`, Valhalla, GraphHopper), cached in the project (OSRM: minutes and km by road to the nearest point of another layer as columns of areas or points, asked in blocks with a pause; no Valhalla/GraphHopper, no full matrix for balancing yet)
 - [ ] Isochrones around sites (several rings), as analysis and optimizer input
 - [ ] Routes between points; visit order (TSP) for a rep's customers
 - [ ] Workload: visit frequency × duration + travel time per territory as a KPI
