@@ -381,7 +381,25 @@ fn exports_plan() {
     h.state_mut().export(Export::PlanExcel(plan), xlsx.clone());
     h.state_mut()
         .export(Export::PlanGeoJson(plan), geojson.clone());
+    let sheets = dir.join("sheets.xlsx");
+    h.state_mut()
+        .export(Export::PlanSheets(plan), sheets.clone());
     settle(&mut h);
+    // A sheet per territory with its areas.
+    let (_, info) = territoria_io::read_table(&sheets, &Default::default()).unwrap();
+    assert_eq!(info.sheets.len(), 5, "{:?}", info.sheets);
+    assert_eq!(info.sheets[1], "01 Territory 01");
+    let first = territoria_io::read_table(
+        &sheets,
+        &territoria_io::TableOptions {
+            sheet: Some("01 Territory 01".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .0;
+    let members = h.state().project.plan(plan).unwrap().members();
+    assert_eq!(first.rows(), members[0].len());
     let (territories, info) = territoria_io::read_table(&xlsx, &Default::default()).unwrap();
     assert_eq!(
         info.sheets,

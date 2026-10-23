@@ -158,6 +158,8 @@ pub struct ColumnDrag {
 pub enum Export {
     /// Territories and assignment as an Excel workbook.
     PlanExcel(PlanId),
+    /// A workbook with the territories and a sheet of areas per territory.
+    PlanSheets(PlanId),
     /// The assignment (area → territory) as CSV.
     PlanCsv(PlanId),
     /// Territory outlines with their figures as GeoJSON.
@@ -520,6 +522,13 @@ impl TerritoriaApp {
             }
             FileAction::Export(e) => {
                 let (filter, ext, name) = match e.clone() {
+                    Export::PlanSheets(p) => (
+                        "Excel workbook",
+                        "xlsx",
+                        self.project
+                            .plan(p)
+                            .map(|p| format!("{} per territory", p.name)),
+                    ),
                     Export::PlanExcel(p) => (
                         "Excel workbook",
                         "xlsx",
@@ -766,8 +775,21 @@ impl TerritoriaApp {
             Export::Changes(a, b) => project.compare_plans(a, b, &mut self.values),
             _ => None,
         };
+        // Per unit the plan's measure, for the sheets per territory.
+        let measure = match what {
+            Export::PlanSheets(p) => project.plan(p).and_then(|plan| {
+                let m = plan.measures.first()?;
+                (m.source != territoria_model::ValueSource::Units).then(|| {
+                    (
+                        m.source.label(&project),
+                        self.values.values(&project, plan.layer, &m.source),
+                    )
+                })
+            }),
+            _ => None,
+        };
         let stats = match what {
-            Export::PlanExcel(p) | Export::PlanGeoJson(p) => project
+            Export::PlanExcel(p) | Export::PlanGeoJson(p) | Export::PlanSheets(p) => project
                 .plan(p)
                 .map(|plan| plan.stats(&project, &mut self.values)),
             _ => None,
@@ -785,6 +807,35 @@ impl TerritoriaApp {
                         let mut sheets =
                             vec![("Territories", &territories), ("Assignment", &assignment)];
                         sheets.extend(data_sheets.iter().map(|(n, t)| (n.as_str(), t)));
+                        territoria_io::export::write_xlsx(&path, &sheets).map_err(err)
+                    }
+                    Export::PlanSheets(p) => {
+                        let plan = project.plan(p).ok_or("the plan was removed")?;
+                        let stats = stats.unwrap_or_default();
+                        let territories = plan.territory_table(&project, &stats);
+                        let mut areas = plan.assignment_table(&project);
+                        if let Some((name, values)) = measure {
+                            let name = areas.unique_name(&name);
+                            let _ =
+                                areas.push_column(territoria_data::Column::number(name, values));
+                        }
+                        let members = plan.members();
+                        let per: Vec<(String, territoria_data::Table)> = plan
+                            .territories
+                            .iter()
+                            .zip(&members)
+                            .map(|(t, m)| {
+                                let rows: Vec<usize> = m.iter().map(|&u| u as usize).collect();
+                                let name = if t.code.is_empty() || t.code == t.name {
+                                    t.name.clone()
+                                } else {
+                                    format!("{} {}", t.code, t.name)
+                                };
+                                (name, areas.take_rows(&rows))
+                            })
+                            .collect();
+                        let mut sheets = vec![("Territories", &territories)];
+                        sheets.extend(per.iter().map(|(n, t)| (n.as_str(), t)));
                         territoria_io::export::write_xlsx(&path, &sheets).map_err(err)
                     }
                     Export::PlanCsv(p) => {

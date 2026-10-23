@@ -626,6 +626,13 @@ impl TerritoriesPanel {
                     actions.push(Action::Export(Export::PlanExcel(plan_id)));
                 }
                 if ui
+                    .button("Excel, a sheet per territory…")
+                    .on_hover_text("The territories, and each territory's areas with their figures on a sheet of its own, e.g. to hand to each rep")
+                    .clicked()
+                {
+                    actions.push(Action::Export(Export::PlanSheets(plan_id)));
+                }
+                if ui
                     .button("Report (PDF)…")
                     .on_hover_text("An overview and a page per territory")
                     .clicked()
