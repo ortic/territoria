@@ -2419,16 +2419,16 @@ impl SettingsDialog {
     }
 }
 
+/// How many cells, of what size (km²), or why none.
+type CellEstimate = Result<(usize, f64), String>;
+
 /// A new layer of equal hexagons over points or areas.
 pub struct HexGridDialog {
     pub cover: Option<LayerId>,
     pub width_km: f64,
     pub count: Option<LayerId>,
     /// Cells for the spec they were computed for.
-    estimate: Option<(
-        territoria_model::grid::HexSpec,
-        Result<(usize, f64), String>,
-    )>,
+    estimate: Option<(territoria_model::grid::HexSpec, CellEstimate)>,
 }
 
 impl HexGridDialog {

@@ -48,7 +48,7 @@ fn grid(project: &Project, layer: LayerId, width_km: f64) -> Result<HexGrid, Str
 
 /// The cells `spec` gives, without building them.
 pub fn hex_cells(project: &Project, spec: &HexSpec) -> Result<(HexGrid, Vec<Cell>), String> {
-    if !(spec.width_km > 0.0) {
+    if spec.width_km.is_nan() || spec.width_km <= 0.0 {
         return Err("Choose a cell size above 0.".into());
     }
     let g = grid(project, spec.cover.layer(), spec.width_km)?;
