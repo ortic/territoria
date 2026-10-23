@@ -2179,6 +2179,10 @@ pub struct MapExportSettings {
     pub title: String,
     pub legend: bool,
     pub scale_bar: bool,
+    /// The screen's size, or a printed page with the legend beside the map.
+    pub page: crate::export_map::PageSize,
+    /// Text at the foot of pages: `{project}`, `{map}`, `{date}` filled in.
+    pub footer: String,
 }
 
 pub struct ExportMapDialog {
@@ -2194,6 +2198,8 @@ impl ExportMapDialog {
                 title,
                 legend: true,
                 scale_bar: true,
+                page: Default::default(),
+                footer: "{map} · {date}".into(),
             },
         }
     }
@@ -2204,7 +2210,7 @@ impl ExportMapDialog {
         *open = modal(ctx, "export-map", "Export map", 440.0, |ui| {
             ui.label(
                 RichText::new(
-                    "Exports what the map shows now, with title, legend, scale bar and credits.",
+                    "Exports what the map shows now, with title, legend, scale bar and credits, as on screen or on a printed page.",
                 )
                 .weak(),
             );
@@ -2232,9 +2238,30 @@ impl ExportMapDialog {
                         });
                         ui.end_row();
                     }
+                    ui.label("Page");
+                    ComboBox::from_id_salt("export-page")
+                        .selected_text(s.page.label())
+                        .show_ui(ui, |ui| {
+                            for p in crate::export_map::PageSize::ALL {
+                                ui.selectable_value(&mut s.page, p, p.label());
+                            }
+                        })
+                        .response
+                        .on_hover_text("A printed page puts the legend beside the map, with a north arrow and a footer");
+                    ui.end_row();
                     ui.label("Title");
                     ui.add(egui::TextEdit::singleline(&mut s.title).desired_width(260.0));
                     ui.end_row();
+                    if s.page != crate::export_map::PageSize::Screen {
+                        ui.label("Footer");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut s.footer)
+                                .desired_width(260.0)
+                                .hint_text("{project}, {map} and {date} are filled in"),
+                        )
+                        .on_hover_text("{project}, {map} and {date} are filled in");
+                        ui.end_row();
+                    }
                     ui.label("");
                     ui.checkbox(&mut s.legend, "Legend");
                     ui.end_row();

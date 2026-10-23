@@ -664,6 +664,8 @@ impl TerritoriaApp {
                 },
                 legend: true,
                 scale_bar: false,
+                page: Default::default(),
+                footer: String::new(),
             };
             let page = match self.map_page(&settings) {
                 Ok(p) => p,
@@ -1748,14 +1750,31 @@ impl TerritoriaApp {
             .ok_or("The map was removed.")?;
         // The view on screen, else the one kept with the map, else all of it.
         let on_screen = self.map_states.get(&map_id).and_then(|s| s.view);
-        let rect = egui::Rect::from_min_size(
-            egui::Pos2::ZERO,
-            on_screen.map_or(egui::vec2(1600.0, 1000.0), |v| v.rect.size()),
-        );
+        // A printed page: the map in its frame, showing what the screen shows.
+        let page_size = if at.is_none() && !page {
+            settings.page.size()
+        } else {
+            None
+        };
+        let frame = page_size
+            .map(|p| crate::export_map::page_frame(p, !settings.title.is_empty(), settings.legend));
+        let rect = frame.unwrap_or_else(|| {
+            egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                on_screen.map_or(egui::vec2(1600.0, 1000.0), |v| v.rect.size()),
+            )
+        });
         let kept_view = match at {
             Some(a) => Some(a.view),
             None => on_screen
-                .map(|v| territoria_render::View { rect, ..v })
+                .map(|v| {
+                    let k = (v.rect.width() / rect.width()).max(v.rect.height() / rect.height());
+                    territoria_render::View {
+                        rect,
+                        scale: v.scale * k.max(0.01) as f64,
+                        ..v
+                    }
+                })
                 .or(map.view.map(|(center, scale)| territoria_render::View {
                     center,
                     scale,
@@ -2016,7 +2035,16 @@ impl TerritoriaApp {
         if !company.is_empty() {
             credits.insert(0, company.to_owned());
         }
+        let today = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| (d.as_secs() / 86_400) as i32);
+        let footer = settings
+            .footer
+            .replace("{project}", &self.project.title)
+            .replace("{map}", &map.name)
+            .replace("{date}", &territoria_data::date::format(today));
         let deco = crate::export_map::Decorations {
+            footer,
             title: settings.title.clone(),
             logo: self
                 .settings
@@ -2135,6 +2163,17 @@ impl TerritoriaApp {
                     ));
                 }
             }
+        }
+        if let Some(size) = page_size {
+            return Ok(crate::export_map::page_svg(
+                &resolved,
+                &view,
+                &map.crs,
+                &deco,
+                size,
+                "sans-serif",
+                &overlays,
+            ));
         }
         Ok(crate::export_map::svg(
             &resolved,
@@ -3371,6 +3410,8 @@ impl TerritoriaApp {
                 title,
                 legend: true,
                 scale_bar: true,
+                page: Default::default(),
+                footer: String::new(),
             };
             pages.push(self.map_render(&settings, false, Some(&page))?);
         }
@@ -3499,6 +3540,8 @@ impl TerritoriaApp {
                     title: String::new(),
                     legend: true,
                     scale_bar: true,
+                    page: Default::default(),
+                    footer: String::new(),
                 };
                 match self.map_svg(&settings) {
                     Ok(svg) => {

@@ -120,7 +120,7 @@ Everything can be undone (Ctrl+Z). The command palette (Ctrl+Shift+P) finds ever
     Topic {
         id: "export",
         title: "Exports and reports",
-        body: "- Map → Export Map: PNG, SVG or PDF with title, legend and scale bar; Copy Map puts it on the clipboard.
+        body: "- Map → Export Map: PNG, SVG or PDF with title, legend and scale bar, as on screen or on an A4/A3 page with the legend beside the map, a north arrow and a footer ({project}, {map}, {date}); Copy Map puts it on the clipboard.
 - Export as Web Page: one HTML file that zooms, pans and shows hover cards, to send to anyone.
 - Territory report: a PDF with an overview and a page per territory.
 - Map → Export Atlas: the map as a PDF with a page per region, rep or area, each zoomed to it with the rest veiled.

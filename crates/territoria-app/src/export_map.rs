@@ -90,6 +90,8 @@ pub struct Decorations {
     pub legends: Vec<(String, Vec<LegendEntry>)>,
     /// Legends of two values at once, below the others.
     pub grids: Vec<GridLegend>,
+    /// Text at the foot of printed pages.
+    pub footer: String,
     pub credits: Vec<String>,
     pub scale_bar: bool,
 }
@@ -712,7 +714,36 @@ fn decorations(s: &mut String, view: &View, crs: &Crs, deco: &Decorations) {
         );
     }
     // Legends stacked in the top right corner.
-    let mut y = 12.0f32;
+    legends_at(s, deco, w - 12.0, 12.0);
+    // Scale bar, bottom right.
+    if deco.scale_bar {
+        scale_bar_at(s, view, crs, w - 18.0, h - 16.0);
+    }
+    if let Some(logo) = &deco.logo {
+        let bottom = if deco.credits.is_empty() {
+            h - 10.0
+        } else {
+            h - 30.0
+        };
+        logo.svg(s, 10.0, bottom - logo.height);
+    }
+    if !deco.credits.is_empty() {
+        let text = deco.credits.join(" · ");
+        let _ = write!(
+            s,
+            r##"<rect x="8" y="{:.1}" width="{:.1}" height="16" rx="3" fill="#ffffff" fill-opacity="0.75"/><text x="12" y="{:.1}" font-size="9" fill="#50545a">{}</text>"##,
+            h - 24.0,
+            text_width(&text, 9.0) + 8.0,
+            h - 13.0,
+            escape(&text)
+        );
+    }
+}
+
+/// The legends stacked downward from `top`, right-aligned at `right`;
+/// returns where they end.
+fn legends_at(s: &mut String, deco: &Decorations, right: f32, top: f32) -> f32 {
+    let mut y = top;
     for (title, entries) in &deco.legends {
         if entries.is_empty() {
             continue;
@@ -730,7 +761,7 @@ fn decorations(s: &mut String, view: &View, crs: &Crs, deco: &Decorations) {
             } else {
                 0.0
             };
-        let x = w - width - 12.0;
+        let x = right - width;
         let _ = write!(
             s,
             r##"<rect x="{x:.1}" y="{y:.1}" width="{width:.1}" height="{height:.1}" rx="6" fill="#ffffff" fill-opacity="0.9"/><text x="{:.1}" y="{:.1}" font-size="12" fill="#202328">{}</text>"##,
@@ -770,18 +801,18 @@ fn decorations(s: &mut String, view: &View, crs: &Crs, deco: &Decorations) {
         let cell = 14.0;
         let side = cell * k as f32;
         let up = format!("↑ {}", g.y);
-        let right = format!("{} →", g.x);
+        let across = format!("{} →", g.x);
         let width = [
             text_width(&g.title, 12.0),
             text_width(&up, 11.0),
-            text_width(&right, 11.0),
+            text_width(&across, 11.0),
             side,
         ]
         .into_iter()
         .fold(0.0, f32::max)
             + 20.0;
         let height = 26.0 + 16.0 + side + 20.0;
-        let x = w - width - 12.0;
+        let x = right - width;
         let _ = write!(
             s,
             r##"<rect x="{x:.1}" y="{y:.1}" width="{width:.1}" height="{height:.1}" rx="6" fill="#ffffff" fill-opacity="0.9"/><text x="{:.1}" y="{:.1}" font-size="12" fill="#202328">{}</text><text x="{:.1}" y="{:.1}" font-size="11" fill="#202328">{}</text>"##,
@@ -814,14 +845,16 @@ fn decorations(s: &mut String, view: &View, crs: &Crs, deco: &Decorations) {
             r##"<text x="{:.1}" y="{:.1}" font-size="11" fill="#202328">{}</text>"##,
             x + 10.0,
             top + side + 14.0,
-            escape(&right)
+            escape(&across)
         );
         y += height + 8.0;
     }
-    // Scale bar, bottom right.
-    if deco.scale_bar
-        && let Ok(t) = Transformer::new(crs, &Crs::wgs84())
-    {
+    y
+}
+
+/// A scale bar for `view` whose right end is at `right`, `bottom`.
+fn scale_bar_at(s: &mut String, view: &View, crs: &Crs, right: f32, bottom: f32) {
+    if let Ok(t) = Transformer::new(crs, &Crs::wgs84()) {
         let c = view.rect.center();
         let a = view.to_display(c);
         let b = view.to_display(c + vec2(100.0, 0.0));
@@ -841,13 +874,13 @@ fn decorations(s: &mut String, view: &View, crs: &Crs, deco: &Decorations) {
                 } else {
                     format!("{} m", territoria_analysis::format::format_value(nice))
                 };
-                let (x1, y1) = (w - 18.0, h - 16.0);
+                let (x1, y1) = (right, bottom);
                 let x0 = x1 - len;
                 let _ = write!(
                     s,
                     r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="30" rx="4" fill="#ffffff" fill-opacity="0.8"/><path d="M{x0:.1} {:.1}L{x0:.1} {y1:.1}L{x1:.1} {y1:.1}L{x1:.1} {:.1}" fill="none" stroke="#303338" stroke-width="2"/><text x="{:.1}" y="{:.1}" font-size="11" text-anchor="middle" fill="#303338">{label}</text>"##,
                     x0 - 8.0,
-                    h - 40.0,
+                    bottom - 24.0,
                     len + 16.0,
                     y1 - 5.0,
                     y1 - 5.0,
@@ -856,25 +889,6 @@ fn decorations(s: &mut String, view: &View, crs: &Crs, deco: &Decorations) {
                 );
             }
         }
-    }
-    if let Some(logo) = &deco.logo {
-        let bottom = if deco.credits.is_empty() {
-            h - 10.0
-        } else {
-            h - 30.0
-        };
-        logo.svg(s, 10.0, bottom - logo.height);
-    }
-    if !deco.credits.is_empty() {
-        let text = deco.credits.join(" · ");
-        let _ = write!(
-            s,
-            r##"<rect x="8" y="{:.1}" width="{:.1}" height="16" rx="3" fill="#ffffff" fill-opacity="0.75"/><text x="12" y="{:.1}" font-size="9" fill="#50545a">{}</text>"##,
-            h - 24.0,
-            text_width(&text, 9.0) + 8.0,
-            h - 13.0,
-            escape(&text)
-        );
     }
 }
 
@@ -999,4 +1013,165 @@ mod tests {
         let pdf = encode(svg, Format::Pdf, 1.0, &font).unwrap();
         assert_eq!(&pdf[..5], b"%PDF-");
     }
+}
+
+/// The size of an exported map: the screen's, or a printed page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PageSize {
+    #[default]
+    Screen,
+    A4Landscape,
+    A4Portrait,
+    A3Landscape,
+    A3Portrait,
+}
+
+impl PageSize {
+    pub const ALL: [PageSize; 5] = [
+        PageSize::Screen,
+        PageSize::A4Landscape,
+        PageSize::A4Portrait,
+        PageSize::A3Landscape,
+        PageSize::A3Portrait,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            PageSize::Screen => "As on screen",
+            PageSize::A4Landscape => "A4 landscape",
+            PageSize::A4Portrait => "A4 portrait",
+            PageSize::A3Landscape => "A3 landscape",
+            PageSize::A3Portrait => "A3 portrait",
+        }
+    }
+
+    /// The page in points; `None` for the screen's size.
+    pub fn size(self) -> Option<egui::Vec2> {
+        match self {
+            PageSize::Screen => None,
+            PageSize::A4Landscape => Some(vec2(842.0, 595.0)),
+            PageSize::A4Portrait => Some(vec2(595.0, 842.0)),
+            PageSize::A3Landscape => Some(vec2(1191.0, 842.0)),
+            PageSize::A3Portrait => Some(vec2(842.0, 1191.0)),
+        }
+    }
+}
+
+const PAGE_MARGIN: f32 = 28.0;
+
+/// Where the map goes on a page: below the title, beside the legend (on
+/// the right, or below the map on portrait pages), above the footer.
+pub fn page_frame(page: egui::Vec2, title: bool, legend: bool) -> Rect {
+    let top = PAGE_MARGIN + if title { 40.0 } else { 0.0 };
+    let bottom = page.y - PAGE_MARGIN - 22.0;
+    let portrait = page.y > page.x;
+    let right = page.x - PAGE_MARGIN - if legend && !portrait { 214.0 } else { 0.0 };
+    let bottom = if legend && portrait {
+        bottom - 200.0
+    } else {
+        bottom
+    };
+    Rect::from_min_max(pos2(PAGE_MARGIN, top), pos2(right, bottom))
+}
+
+/// A printed page: title, the map in its frame with north arrow and scale
+/// bar, the legend beside it, the footer and credits below.
+#[allow(clippy::too_many_arguments)]
+pub fn page_svg(
+    resolved: &[Resolved],
+    view: &View,
+    crs: &Crs,
+    deco: &Decorations,
+    page: egui::Vec2,
+    font: &str,
+    overlays: &str,
+) -> String {
+    let (w, h) = (page.x, page.y);
+    let frame = view.rect;
+    let mut s = String::new();
+    let _ = write!(
+        s,
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" font-family="{font}"><rect width="{w}" height="{h}" fill="#ffffff"/>"##
+    );
+    if !deco.title.is_empty() {
+        let room = w - 2.0 * PAGE_MARGIN - deco.logo.as_ref().map_or(0.0, |l| l.width + 16.0);
+        let mut title = deco.title.clone();
+        while text_width(&title, 20.0) > room && title.chars().count() > 1 {
+            title.pop();
+        }
+        let _ = write!(
+            s,
+            r##"<text x="{PAGE_MARGIN}" y="{:.1}" font-size="20" fill="#202328">{}</text>"##,
+            PAGE_MARGIN + 22.0,
+            escape(&title)
+        );
+    }
+    if let Some(logo) = &deco.logo {
+        logo.svg(&mut s, w - PAGE_MARGIN - logo.width, PAGE_MARGIN - 4.0);
+    }
+    let _ = write!(
+        s,
+        r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="#f3f1ec"/>"##,
+        frame.min.x,
+        frame.min.y,
+        frame.width(),
+        frame.height()
+    );
+    map_into(&mut s, resolved, view, "frame");
+    s.push_str(overlays);
+    // North arrow, top right in the frame.
+    let (nx, ny) = (frame.max.x - 20.0, frame.min.y + 12.0);
+    let _ = write!(
+        s,
+        r##"<path d="M{nx:.1} {ny:.1}L{:.1} {:.1}L{nx:.1} {:.1}L{:.1} {:.1}Z" fill="#303338"/><text x="{nx:.1}" y="{:.1}" font-size="10" text-anchor="middle" fill="#303338">N</text>"##,
+        nx + 6.0,
+        ny + 18.0,
+        ny + 13.0,
+        nx - 6.0,
+        ny + 18.0,
+        ny + 30.0
+    );
+    if deco.scale_bar {
+        scale_bar_at(&mut s, view, crs, frame.max.x - 12.0, frame.max.y - 12.0);
+    }
+    let _ = write!(
+        s,
+        r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="none" stroke="#8a8d96" stroke-width="0.75"/>"##,
+        frame.min.x,
+        frame.min.y,
+        frame.width(),
+        frame.height()
+    );
+    // The legend beside the map, or below it on portrait pages.
+    if h > w {
+        legends_at(&mut s, deco, w - PAGE_MARGIN, frame.max.y + 12.0);
+    } else {
+        legends_at(&mut s, deco, w - PAGE_MARGIN, frame.min.y);
+    }
+    // Footer: the text on the left, credits on the right.
+    let y = h - PAGE_MARGIN;
+    let _ = write!(
+        s,
+        r##"<path d="M{PAGE_MARGIN} {:.1}L{:.1} {:.1}" stroke="#c8cad0" stroke-width="0.5"/>"##,
+        y - 12.0,
+        w - PAGE_MARGIN,
+        y - 12.0
+    );
+    if !deco.footer.is_empty() {
+        let _ = write!(
+            s,
+            r##"<text x="{PAGE_MARGIN}" y="{y:.1}" font-size="9" fill="#50545a">{}</text>"##,
+            escape(&deco.footer)
+        );
+    }
+    if !deco.credits.is_empty() {
+        let _ = write!(
+            s,
+            r##"<text x="{:.1}" y="{y:.1}" font-size="8" text-anchor="end" fill="#6b6f78">{}</text>"##,
+            w - PAGE_MARGIN,
+            escape(&deco.credits.join(" · "))
+        );
+    }
+    s.push_str("</svg>");
+    s
 }

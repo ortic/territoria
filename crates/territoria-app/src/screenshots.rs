@@ -631,6 +631,8 @@ fn exports_map_files() {
             title: "Sales territories 2027".into(),
             legend: true,
             scale_bar: true,
+            page: Default::default(),
+            footer: String::new(),
         });
         app.export(Export::Map(format), path.clone());
         settle(&mut h);
@@ -1004,6 +1006,8 @@ fn label_templates() {
         title: String::new(),
         legend: true,
         scale_bar: true,
+        page: Default::default(),
+        footer: String::new(),
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -1310,6 +1314,8 @@ fn proportional_circles() {
         title: String::new(),
         legend: true,
         scale_bar: false,
+        page: Default::default(),
+        footer: String::new(),
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -2609,6 +2615,8 @@ fn heat_map() {
         title: String::new(),
         legend: true,
         scale_bar: false,
+        page: Default::default(),
+        footer: String::new(),
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -2706,6 +2714,8 @@ fn charts_per_area() {
         title: String::new(),
         legend: true,
         scale_bar: false,
+        page: Default::default(),
+        footer: String::new(),
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -2768,6 +2778,8 @@ fn two_values_at_once() {
         title: String::new(),
         legend: true,
         scale_bar: false,
+        page: Default::default(),
+        footer: String::new(),
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -2813,6 +2825,8 @@ fn zoom_dependent_layer() {
         title: String::new(),
         legend: true,
         scale_bar: false,
+        page: Default::default(),
+        footer: String::new(),
     };
     app.set_map_export_for_test(settings());
     settle(&mut h);
@@ -3015,6 +3029,8 @@ fn flow_lines() {
         title: String::new(),
         legend: true,
         scale_bar: false,
+        page: Default::default(),
+        footer: String::new(),
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -3101,6 +3117,8 @@ fn circles_by_category() {
         title: String::new(),
         legend: true,
         scale_bar: false,
+        page: Default::default(),
+        footer: String::new(),
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -3387,6 +3405,8 @@ fn company_logo_on_exports() {
         title: String::new(),
         legend: false,
         scale_bar: false,
+        page: Default::default(),
+        footer: String::new(),
     };
     let svg_path = dir.join("map.svg");
     h.state_mut().set_map_export_for_test(settings());
@@ -3680,6 +3700,8 @@ fn labels_sized_by_value() {
         title: String::new(),
         legend: false,
         scale_bar: false,
+        page: Default::default(),
+        footer: String::new(),
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -3690,5 +3712,73 @@ fn labels_sized_by_value() {
         .filter_map(|t| t.split('"').next().map(str::to_owned))
         .collect();
     assert!(sizes.len() > 3, "labels of several sizes: {sizes:?}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// The map on a printed page: frame, legend beside it, north arrow, footer.
+#[test]
+fn printed_page_layout() {
+    use crate::app::Export;
+    use crate::export_map::{Format, PageSize};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    let app = h.state_mut();
+    app.add_linked_table_now("Sales 2026", table, "Area", layer, None);
+    app.project.title = "Sales 2026".into();
+    let link = app.project.links[0].id;
+    let map = app.project.maps[0].id;
+    app.add_choropleth_for_test(
+        map,
+        layer,
+        territoria_model::ValueSource::Linked {
+            link,
+            column: "Revenue".into(),
+            agg: territoria_data::Aggregate::Sum,
+        },
+    );
+    settle(&mut h);
+    let dir = std::env::temp_dir().join(format!("territoria-page-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for (page, name) in [
+        (PageSize::A4Landscape, "page-a4-landscape"),
+        (PageSize::A4Portrait, "page-a4-portrait"),
+    ] {
+        let settings = || crate::dialogs::MapExportSettings {
+            format: Format::Png,
+            scale: 1.5,
+            title: "Revenue by area".into(),
+            legend: true,
+            scale_bar: true,
+            page,
+            footer: "{project} · {map} · {date}".into(),
+        };
+        let svg_path = dir.join(format!("{name}.svg"));
+        h.state_mut().set_map_export_for_test(settings());
+        h.state_mut()
+            .export(Export::Map(Format::Svg), svg_path.clone());
+        settle(&mut h);
+        let svg = std::fs::read_to_string(&svg_path).unwrap();
+        let size = page.size().unwrap();
+        assert!(svg.starts_with(&format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}""#,
+            size.x, size.y
+        )));
+        assert!(svg.contains(">N</text>"), "north arrow");
+        assert!(svg.contains("Sales 2026 · Map · 20"), "footer filled in");
+        let png_path = dir.join(format!("{name}.png"));
+        h.state_mut().set_map_export_for_test(settings());
+        h.state_mut()
+            .export(Export::Map(Format::Png), png_path.clone());
+        settle(&mut h);
+        let img = image::open(&png_path).unwrap();
+        assert_eq!(img.width(), (size.x * 1.5).round() as u32);
+        if let Some(out) = out_dir() {
+            std::fs::copy(&png_path, out.join(format!("{name}.png"))).unwrap();
+        }
+    }
     let _ = std::fs::remove_dir_all(dir);
 }
