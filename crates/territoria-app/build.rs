@@ -6,7 +6,10 @@ fn main() {
         println!("cargo:rerun-if-changed=../../packaging/territoria.ico");
         let mut res = winresource::WindowsResource::new();
         res.set_icon("../../packaging/territoria.ico")
-            .set("FileDescription", "Territoria – geomarketing and territory planning")
+            .set(
+                "FileDescription",
+                "Territoria – geomarketing and territory planning",
+            )
             .set("ProductName", "Territoria");
         if let Err(e) = res.compile() {
             println!("cargo:warning=no icon in the .exe: {e}");

@@ -28,9 +28,14 @@ pub struct Plan {
     pub measures: Vec<Measure>,
     next_territory: u32,
     pub rev: u64,
-    /// Groups of territories (sales regions), one level above them.
+    /// Groups of territories (sales regions) at level 1, and groups of
+    /// those at the levels above (areas, divisions…).
     #[serde(default)]
     pub regions: Vec<Region>,
+    /// Names of the levels above the territories, from level 1 up (empty
+    /// or missing: "Region", "Division", …).
+    #[serde(default)]
+    pub level_names: Vec<String>,
     #[serde(default)]
     next_region: u32,
     /// Colours for territories (empty: [`TERRITORY_COLORS`]).
@@ -49,14 +54,35 @@ pub struct SharedUnit {
     pub share: f64,
 }
 
-/// A group of territories.
+/// A group of territories (level 1), or of the regions one level below.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Region {
     pub id: RegionId,
     pub code: String,
     pub name: String,
     pub color: Rgba,
+    /// 1: groups territories; 2: groups level-1 regions; …
+    #[serde(default = "first_level")]
+    pub level: u8,
+    /// The region one level up it belongs to.
+    #[serde(default)]
+    pub parent: Option<RegionId>,
 }
+
+fn first_level() -> u8 {
+    1
+}
+
+/// What the regions of a level group: territories at level 1, the
+/// regions one level down above that.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LevelItem {
+    Territory(TerritoryId),
+    Region(RegionId),
+}
+
+/// Default names of the levels above territories.
+const LEVEL_NAMES: [&str; 3] = ["Region", "Division", "Zone"];
 
 /// A region's figures: its territories' summed.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -134,6 +160,7 @@ impl Plan {
             next_region: 0,
             palette: Vec::new(),
             shared: Vec::new(),
+            level_names: Vec::new(),
         }
     }
 
@@ -141,11 +168,65 @@ impl Plan {
         self.regions.iter().find(|r| r.id == id)
     }
 
-    /// Adds a region with the next code and a colour.
+    /// The highest level of regions (0: none).
+    pub fn top_level(&self) -> u8 {
+        self.regions.iter().map(|r| r.level).max().unwrap_or(0)
+    }
+
+    /// The regions of one level.
+    pub fn regions_at(&self, level: u8) -> impl Iterator<Item = &Region> {
+        self.regions.iter().filter(move |r| r.level == level)
+    }
+
+    /// What a level's regions are called: "Region", "Division", …
+    pub fn level_name(&self, level: u8) -> String {
+        let i = level.saturating_sub(1) as usize;
+        match self.level_names.get(i).filter(|n| !n.trim().is_empty()) {
+            Some(n) => n.clone(),
+            None => LEVEL_NAMES
+                .get(i)
+                .map_or_else(|| format!("Level {level}"), |n| (*n).to_owned()),
+        }
+    }
+
+    pub fn set_level_name(&mut self, level: u8, name: &str) {
+        let i = level.saturating_sub(1) as usize;
+        if self.level_names.len() <= i {
+            self.level_names.resize(i + 1, String::new());
+        }
+        self.level_names[i] = name.trim().to_owned();
+    }
+
+    /// The region of `level` a territory belongs to, up through its
+    /// region's parents.
+    pub fn ancestor(&self, t: &Territory, level: u8) -> Option<RegionId> {
+        let mut r = self.region(t.region?)?;
+        while r.level < level {
+            r = self.region(r.parent?)?;
+        }
+        (r.level == level).then_some(r.id)
+    }
+
+    /// The region of `level` a region belongs to (itself at its level).
+    pub fn region_ancestor(&self, id: RegionId, level: u8) -> Option<RegionId> {
+        let mut r = self.region(id)?;
+        while r.level < level {
+            r = self.region(r.parent?)?;
+        }
+        (r.level == level).then_some(r.id)
+    }
+
+    /// Adds a level-1 region with the next code and a colour.
     pub fn add_region(&mut self, name: Option<String>) -> RegionId {
+        self.add_region_at(1, name)
+    }
+
+    /// Adds a region at `level` with the next code and a colour.
+    pub fn add_region_at(&mut self, level: u8, name: Option<String>) -> RegionId {
         self.next_region += 1;
         let id = RegionId(self.next_region);
-        let n = self.regions.len();
+        let n = self.regions_at(level).count();
+        let level_name = self.level_name(level);
         let code = format!("R{}", self.next_region);
         // Darker colours than territories: regions are drawn as borders.
         const REGION_COLORS: [Rgba; 6] = [
@@ -158,14 +239,16 @@ impl Plan {
         ];
         self.regions.push(Region {
             id,
-            name: name.unwrap_or_else(|| format!("Region {}", n + 1)),
+            name: name.unwrap_or_else(|| format!("{level_name} {}", n + 1)),
             code,
-            color: REGION_COLORS[n % REGION_COLORS.len()],
+            color: REGION_COLORS[(n + level as usize - 1) % REGION_COLORS.len()],
+            level,
+            parent: None,
         });
         id
     }
 
-    /// Removes a region; its territories belong to none.
+    /// Removes a region; its territories (or lower regions) belong to none.
     pub fn remove_region(&mut self, id: RegionId) {
         self.regions.retain(|r| r.id != id);
         for t in &mut self.territories {
@@ -173,19 +256,107 @@ impl Plan {
                 t.region = None;
             }
         }
+        for r in &mut self.regions {
+            if r.parent == Some(id) {
+                r.parent = None;
+            }
+        }
     }
 
-    /// Per unit its region, through its territory.
-    pub fn unit_regions(&self) -> Vec<Option<RegionId>> {
-        let of: HashMap<TerritoryId, Option<RegionId>> =
-            self.territories.iter().map(|t| (t.id, t.region)).collect();
+    /// What the regions of `level` group, each with the indices of the
+    /// territories it holds.
+    pub fn level_items(&self, level: u8) -> Vec<(LevelItem, Vec<usize>)> {
+        if level <= 1 {
+            return (0..self.territories.len())
+                .map(|i| (LevelItem::Territory(self.territories[i].id), vec![i]))
+                .collect();
+        }
+        self.regions_at(level - 1)
+            .map(|r| {
+                let members = (0..self.territories.len())
+                    .filter(|&i| self.ancestor(&self.territories[i], level - 1) == Some(r.id))
+                    .collect();
+                (LevelItem::Region(r.id), members)
+            })
+            .collect()
+    }
+
+    /// The region one level up an item belongs to.
+    pub fn item_parent(&self, item: LevelItem) -> Option<RegionId> {
+        match item {
+            LevelItem::Territory(t) => self.territory(t)?.region,
+            LevelItem::Region(r) => self.region(r)?.parent,
+        }
+    }
+
+    pub fn set_item_parent(&mut self, item: LevelItem, parent: Option<RegionId>) {
+        match item {
+            LevelItem::Territory(t) => {
+                if let Some(t) = self.territory_mut(t) {
+                    t.region = parent;
+                }
+            }
+            LevelItem::Region(r) => {
+                if let Some(r) = self.regions.iter_mut().find(|x| x.id == r) {
+                    r.parent = parent;
+                }
+            }
+        }
+    }
+
+    /// Replaces the regions of `level` (and those above) with `groups`:
+    /// each a name (or the default) and the indices of
+    /// [`Plan::level_items`] it holds.
+    pub fn regroup(&mut self, level: u8, groups: Vec<(Option<String>, Vec<usize>)>) {
+        let items: Vec<LevelItem> = self
+            .level_items(level)
+            .into_iter()
+            .map(|(i, _)| i)
+            .collect();
+        self.remove_levels_from(level);
+        for (name, members) in groups {
+            let r = self.add_region_at(level, name);
+            for i in members {
+                if let Some(&item) = items.get(i) {
+                    self.set_item_parent(item, Some(r));
+                }
+            }
+        }
+    }
+
+    /// Removes a level of regions and the ones above it.
+    pub fn remove_levels_from(&mut self, level: u8) {
+        let gone: Vec<RegionId> = self
+            .regions
+            .iter()
+            .filter(|r| r.level >= level)
+            .map(|r| r.id)
+            .collect();
+        for id in gone {
+            self.remove_region(id);
+        }
+    }
+
+    /// Per unit its region at `level`, through its territory.
+    pub fn unit_regions_at(&self, level: u8) -> Vec<Option<RegionId>> {
+        let of: HashMap<TerritoryId, Option<RegionId>> = self
+            .territories
+            .iter()
+            .map(|t| (t.id, self.ancestor(t, level)))
+            .collect();
         self.assignment
             .iter()
             .map(|t| t.and_then(|t| of.get(&t).copied().flatten()))
             .collect()
     }
 
-    /// Each region's figures from its territories'.
+    /// Per unit its level-1 region, through its territory.
+    pub fn unit_regions(&self) -> Vec<Option<RegionId>> {
+        self.unit_regions_at(1)
+    }
+
+    /// Each region's figures from its territories' (at any level, through
+    /// the regions below), in the order of [`Plan::regions`].
     pub fn region_stats(&self, stats: &PlanStats) -> Vec<RegionStats> {
         self.regions
             .iter()
@@ -195,7 +366,7 @@ impl Plan {
                     ..Default::default()
                 };
                 for (t, ts) in self.territories.iter().zip(&stats.territories) {
-                    if t.region != Some(r.id) {
+                    if self.ancestor(t, r.level) != Some(r.id) {
                         continue;
                     }
                     s.territories += 1;
@@ -536,19 +707,21 @@ impl Plan {
         out
     }
 
-    /// Regions like the areas of another layer (cantons, districts): each
-    /// territory joins the area most of its units lie in. Returns the
-    /// regions' names with their territories (indices), by name.
+    /// Regions of `level` like the areas of another layer (cantons,
+    /// districts): each item of the level (territory, or region one level
+    /// down) joins the area most of its units lie in. Returns the regions'
+    /// names with their items (indices into [`Plan::level_items`]), by name.
     pub fn regions_like(
         &self,
         units: &LayerGeometry,
         other: &crate::Layer,
+        level: u8,
     ) -> Vec<(String, Vec<usize>)> {
         let members = self.members();
         let mut groups: std::collections::BTreeMap<String, Vec<usize>> = Default::default();
-        for (i, m) in members.iter().enumerate() {
+        for (i, (_, territories)) in self.level_items(level).iter().enumerate() {
             let mut count: HashMap<usize, usize> = HashMap::new();
-            for &u in m {
+            for &u in territories.iter().flat_map(|&t| &members[t]) {
                 if let Some(f) = units
                     .label_points
                     .get(u as usize)
@@ -944,14 +1117,15 @@ impl Plan {
                 .map(|u| territory(u).map(|t| t.code.clone()))
                 .collect(),
         ));
-        if !self.regions.is_empty() {
+        // The highest level first, as people read it: zone, region, territory.
+        for level in (1..=self.top_level()).rev() {
             columns.push(Column::text(
-                "Region",
+                self.level_name(level),
                 ColumnKind::Text,
                 (0..n)
                     .map(|u| {
                         territory(u)
-                            .and_then(|t| t.region)
+                            .and_then(|t| self.ancestor(t, level))
                             .and_then(|r| self.region(r))
                             .map(|r| r.name.clone())
                     })
@@ -992,17 +1166,6 @@ impl Plan {
                 "Territory",
                 ColumnKind::Text,
                 t.iter().map(|t| Some(t.name.clone())).collect(),
-            ),
-            Column::text(
-                "Region",
-                ColumnKind::Text,
-                t.iter()
-                    .map(|t| {
-                        t.region
-                            .and_then(|r| self.region(r))
-                            .map(|r| r.name.clone())
-                    })
-                    .collect(),
             ),
             {
                 let mut c = Column::number(
@@ -1071,8 +1234,22 @@ impl Plan {
             data: territoria_data::ColumnData::Bool(t.iter().map(|t| Some(t.locked)).collect()),
             formula: None,
         });
-        if self.regions.is_empty() {
-            columns.retain(|c| c.name != "Region");
+        // Each level's region after the territory's name, the lowest first.
+        for level in (1..=self.top_level()).rev() {
+            columns.insert(
+                2,
+                Column::text(
+                    self.level_name(level),
+                    ColumnKind::Text,
+                    t.iter()
+                        .map(|t| {
+                            self.ancestor(t, level)
+                                .and_then(|r| self.region(r))
+                                .map(|r| r.name.clone())
+                        })
+                        .collect(),
+                ),
+            );
         }
         Table::new(columns).unwrap_or_default()
     }
@@ -1355,6 +1532,7 @@ impl Project {
         target.measures = source.measures;
         target.next_territory = target.next_territory.max(source.next_territory);
         target.regions = source.regions;
+        target.level_names = source.level_names;
         target.next_region = target.next_region.max(source.next_region);
         target.rev = rev;
         true
@@ -1826,6 +2004,67 @@ mod tests {
         assert!(p.adopt_plan(b, a));
         assert!(p.compare_plans(a, b, &mut cache).unwrap().moves.is_empty());
         assert_eq!(p.plan(a).unwrap().name, "Now");
+    }
+
+    #[test]
+    fn levels_of_regions() {
+        use crate::layer::LayerGeometry;
+        use geo_types::{MultiPolygon, polygon};
+        // Four squares, a territory each.
+        let areas: Vec<MultiPolygon<f64>> = (0..4)
+            .map(|i| {
+                let x = i as f64;
+                MultiPolygon(vec![polygon![(x: x, y: 0.0), (x: x + 1.0, y: 0.0), (x: x + 1.0, y: 1.0), (x: x, y: 1.0), (x: x, y: 0.0)]])
+            })
+            .collect();
+        let mut p = Project::new();
+        let g = LayerGeometry::from_imported(territoria_io::Geometries::Areas(areas), true);
+        let layer = p.add_layer("A", g, Table::with_rows(4), Default::default());
+        let id = p.add_plan("Sales", layer, 4);
+        let pl = p.plan_mut(id).unwrap();
+        for u in 0..4 {
+            let t = pl.territories[u].id;
+            pl.assign(&[u as u32], Some(t));
+        }
+        // Territories 0+1 and 2+3 in two regions, both in one division.
+        let (r1, r2) = (pl.add_region(None), pl.add_region(None));
+        for (i, t) in pl.territories.iter_mut().enumerate() {
+            t.region = Some(if i < 2 { r1 } else { r2 });
+        }
+        let d = pl.add_region_at(2, None);
+        for r in pl.regions.iter_mut().filter(|r| r.level == 1) {
+            r.parent = Some(d);
+        }
+        assert_eq!(pl.top_level(), 2);
+        assert_eq!(pl.region(d).unwrap().name, "Division 1");
+        assert_eq!(pl.ancestor(&pl.territories[3], 1), Some(r2));
+        assert_eq!(pl.ancestor(&pl.territories[3], 2), Some(d));
+        assert_eq!(pl.unit_regions_at(2), vec![Some(d); 4]);
+        pl.set_level_name(2, "Country");
+        let mut cache = Cache::default();
+        let pl = p.plan(id).unwrap();
+        let stats = pl.stats(&p, &mut cache);
+        let rs = pl.region_stats(&stats);
+        let of = |r: RegionId| rs.iter().find(|s| s.id == r).unwrap();
+        assert_eq!((of(r1).territories, of(d).territories), (2, 4));
+        assert_eq!(of(d).units, 4);
+        // Exports name each level, the highest first.
+        let t = pl.assignment_table(&p);
+        let names: Vec<&str> = t.columns.iter().map(|c| c.name.as_str()).collect();
+        let (ci, ri) = (
+            names.iter().position(|n| *n == "Country").unwrap(),
+            names.iter().position(|n| *n == "Region").unwrap(),
+        );
+        assert!(ci < ri, "{names:?}");
+        assert_eq!(t.column("Country").unwrap().display(0), "Division 1");
+        let tt = pl.territory_table(&p, &stats);
+        assert_eq!(tt.columns[2].name, "Region");
+        assert_eq!(tt.columns[3].name, "Country");
+        // Removing level 1 takes the levels above along.
+        let pl = p.plan_mut(id).unwrap();
+        pl.remove_levels_from(1);
+        assert!(pl.regions.is_empty());
+        assert!(pl.territories.iter().all(|t| t.region.is_none()));
     }
 
     #[test]

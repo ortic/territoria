@@ -92,7 +92,7 @@ Everything can be undone (Ctrl+Z). The command palette (Ctrl+Shift+P) finds ever
 - Paint (B): drag over areas to give them to the active territory; Shift+click picks the territory under the pointer.
 - Balance improves sizes while keeping territories contiguous and compact; locked territories stay as they are.
 - Sites place each territory's office or rep; territories can be built around sites, distances to the site measured, and \"Coverage from the sites\" shows what the sites can cover up to their capacity.
-- Regions group territories with wider borders; they can be formed automatically or by hand, and territories dragged between regions.
+- Regions group territories with wider borders; they can be formed automatically or by hand, and territories dragged between regions. ➕ Level above groups the regions in turn (regions into divisions, and so on, any number of levels), each level with its own name, figures, wider borders and a column in exports.
 - On plans of customer points, \"Rounds for all territories\" plans a round by road for each.
 - Before balancing, a check points out what would get in the way: areas without data, negative values, areas cut off from their neighbours.",
     },
@@ -216,7 +216,7 @@ Alles lässt sich rückgängig machen (Ctrl+Z). Die Befehlspalette (Ctrl+Shift+P
 - Malen (B): über Flächen ziehen gibt sie dem aktiven Gebiet; Shift+Klick wählt das Gebiet unter dem Mauszeiger.
 - Ausgleichen verbessert die Grössen und hält die Gebiete zusammenhängend und kompakt; gesperrte Gebiete bleiben, wie sie sind.
 - Standorte setzen das Büro oder den Vertreter jedes Gebiets; Gebiete lassen sich um Standorte aufbauen, Distanzen zum Standort messen, und «Abdeckung von den Standorten» zeigt, was die Standorte bis zu ihrer Kapazität abdecken.
-- Regionen gruppieren Gebiete mit breiteren Grenzen; automatisch gebildet oder von Hand, Gebiete lassen sich zwischen Regionen ziehen.
+- Regionen gruppieren Gebiete mit breiteren Grenzen; automatisch gebildet oder von Hand, Gebiete lassen sich zwischen Regionen ziehen. ➕ Ebene darüber gruppiert die Regionen wiederum (Regionen zu Divisionen und so weiter, beliebig viele Ebenen), jede Ebene mit eigenem Namen, Kennzahlen, breiteren Grenzen und einer Spalte in Exporten.
 - Bei Planungen auf Kundenpunkten plant «Touren für alle Gebiete» je eine Tour über die Strasse.
 - Vor dem Ausgleichen zeigt eine Prüfung, was im Weg stünde: Gebiete ohne Daten, negative Werte, von ihren Nachbarn abgeschnittene Flächen.",
     ),

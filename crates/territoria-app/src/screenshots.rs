@@ -1840,7 +1840,8 @@ fn regions_above_territories() {
         .plan(plan)
         .unwrap()
         .stats(&app.project, &mut values);
-    let groups = crate::territories::group_regions(&app.project, &stats, plan, 3).expect("regions");
+    let groups =
+        crate::territories::group_regions(&app.project, &stats, plan, 1, 3).expect("regions");
     {
         let p = app.project.plan_mut(plan).unwrap();
         let ids: Vec<_> = (0..3).map(|_| p.add_region(None)).collect();
@@ -1880,6 +1881,55 @@ fn regions_above_territories() {
     app.active_plan = Some(plan);
     settle(&mut h);
     save(&mut h, "regions");
+    // A level above: the three regions grouped into two divisions.
+    let app = h.state_mut();
+    let groups =
+        crate::territories::group_regions(&app.project, &stats, plan, 2, 2).expect("divisions");
+    assert_eq!(groups.len(), 3, "one entry per region");
+    {
+        let p = app.project.plan_mut(plan).unwrap();
+        let mut members = vec![Vec::new(); 2];
+        for (i, g) in groups.iter().enumerate() {
+            members[g.expect("every region in a division")].push(i);
+        }
+        assert!(members.iter().all(|m| !m.is_empty()));
+        p.regroup(2, members.into_iter().map(|m| (None, m)).collect());
+        p.rev += 1;
+    }
+    app.project.bump();
+    let p = app.project.plan(plan).unwrap();
+    assert_eq!(p.top_level(), 2);
+    assert_eq!(p.regions_at(1).count(), 3, "the regions stay");
+    let unit_divisions = p.unit_regions_at(2);
+    for d in p.regions_at(2) {
+        let units: Vec<u32> = (0..unit_divisions.len() as u32)
+            .filter(|&u| unit_divisions[u as usize] == Some(d.id))
+            .collect();
+        assert_eq!(
+            g_components(app, layer, &units),
+            1,
+            "{} in one piece",
+            d.name
+        );
+    }
+    let rs = p.region_stats(&stats);
+    let divisions: usize = rs
+        .iter()
+        .filter(|s| p.region(s.id).is_some_and(|r| r.level == 2))
+        .map(|s| s.territories)
+        .sum();
+    assert_eq!(divisions, 8, "every territory counts once per level");
+    assert!(
+        p.territory_table(&app.project, &stats)
+            .column("Division")
+            .is_some()
+    );
+    settle(&mut h);
+    save(&mut h, "regions-levels");
+}
+
+fn g_components(app: &crate::app::TerritoriaApp, layer: LayerId, units: &[u32]) -> usize {
+    app.project.layer(layer).unwrap().geometry.components(units)
 }
 
 /// The class editor: manual limits, own labels, a colour for no data.
@@ -4472,7 +4522,7 @@ fn regions_like_a_layer() {
         let p = app.project.plan(plan).unwrap();
         let units = app.project.layer(layer).unwrap();
         let other = app.project.layer(districts).unwrap();
-        let groups = p.regions_like(&units.geometry, other);
+        let groups = p.regions_like(&units.geometry, other, 1);
         let names: Vec<String> = (0..other.len()).map(|f| other.display_name(f)).collect();
         (groups, names)
     };

@@ -919,6 +919,39 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
         ("Light", "Hell"),
         ("Dark", "Dunkel"),
         (
+            "Regions ({n}) · {levels} levels",
+            "Regionen ({n}) · {levels} Ebenen",
+        ),
+        ("➕ Level above: {name}", "➕ Ebene darüber: {name}"),
+        (
+            "Neighbouring regions of the highest level are grouped in turn, e.g. regions into divisions; any number of levels",
+            "Benachbarte Regionen der obersten Ebene werden wiederum gruppiert, z. B. Regionen zu Divisionen; beliebig viele Ebenen",
+        ),
+        ("Level {level}", "Ebene {level}"),
+        (
+            "What this level's regions are called, in tables and exports",
+            "Wie die Regionen dieser Ebene heissen, in Tabellen und Exporten",
+        ),
+        (
+            "Remove this level (and any above); the regions below stay",
+            "Diese Ebene (und alle darüber) entfernen; die Regionen darunter bleiben",
+        ),
+        ("{n} in no {level}", "{n} in keiner {level}"),
+        ("➕ {name}", "➕ {name}"),
+        (
+            "Neighbouring regions of the level below are grouped, of about equal size by the measure; this level is replaced",
+            "Benachbarte Regionen der Ebene darunter werden gruppiert, etwa gleich gross nach der Kennzahl; diese Ebene wird ersetzt",
+        ),
+        ("{name} like…", "{name} wie…"),
+        (
+            "Drag regions between the groups above them.",
+            "Regionen zwischen den Gruppen darüber ziehen.",
+        ),
+        ("Rename level", "Ebene umbenennen"),
+        ("Remove level", "Ebene entfernen"),
+        ("Division", "Division"),
+        ("Zone", "Zone"),
+        (
             "Couldn't read an API key from the system keychain ({problem}).",
             "Ein API-Schlüssel konnte nicht aus dem Schlüsselbund des Systems gelesen werden ({problem}).",
         ),

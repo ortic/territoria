@@ -49,10 +49,11 @@ pub fn show(
     // Sorting, kept per tab.
     let state_id = ui.id().with(("plan-table", plan_id));
     let mut sort: Option<(usize, bool)> = ui.data_mut(|d| d.get_temp(state_id)).unwrap_or(None);
+    let region_header = plan.level_name(1);
     let headers = [
         "Code",
         "Territory",
-        "Region",
+        &region_header,
         "Size",
         "Locked",
         "Areas",
@@ -199,7 +200,7 @@ pub fn show(
                             .selected_text(current)
                             .show_ui(ui, |ui| {
                                 ui.selectable_value(&mut region, None, "—");
-                                for r in &plan.regions {
+                                for r in plan.regions_at(1) {
                                     ui.selectable_value(&mut region, Some(r.id), &r.name);
                                 }
                             });

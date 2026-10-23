@@ -319,12 +319,26 @@ fn resolve_one(
                 0.55,
             );
             let ut = &tr.unit_territory;
-            // Per territory index its region: region borders are drawn wider.
-            let region_of: Vec<Option<territoria_model::RegionId>> =
-                p.territories.iter().map(|t| t.region).collect();
-            let region =
-                |t: Option<u16>| t.and_then(|t| region_of.get(t as usize).copied().flatten());
+            // Per level, per territory index its region: region borders are
+            // drawn wider, the more so the higher their level.
+            let region_of: Vec<Vec<Option<territoria_model::RegionId>>> = (1..=p.top_level())
+                .map(|level| p.territories.iter().map(|t| p.ancestor(t, level)).collect())
+                .collect();
             let region_width = style.region_border_width.max(style.border_width);
+            let width_between = |ta: Option<u16>, tb: Option<u16>| {
+                let of = |regions: &Vec<Option<territoria_model::RegionId>>, t: Option<u16>| {
+                    t.and_then(|t| regions.get(t as usize).copied().flatten())
+                };
+                region_of
+                    .iter()
+                    .rposition(|regions| {
+                        let (ra, rb) = (of(regions, ta), of(regions, tb));
+                        ra != rb && (ra.is_some() || rb.is_some())
+                    })
+                    .map_or(style.border_width, |l| {
+                        region_width * (1.0 + 0.5 * l as f32)
+                    })
+            };
             let arcs = mesh
                 .geometry
                 .topology
@@ -340,13 +354,10 @@ fn resolve_one(
                     if arc.a == arc.b {
                         None
                     } else if ta != tb && (ta.is_some() || tb.is_some()) {
-                        let (ra, rb) = (region(ta), region(tb));
-                        let width = if ra != rb && (ra.is_some() || rb.is_some()) {
-                            region_width
-                        } else {
-                            style.border_width
-                        };
-                        Some(Stroke::new(width, with_opacity(border, opacity)))
+                        Some(Stroke::new(
+                            width_between(ta, tb),
+                            with_opacity(border, opacity),
+                        ))
                     } else if style.unit_borders && !points {
                         Some(Stroke::new(0.5, with_opacity(inner, opacity)))
                     } else {

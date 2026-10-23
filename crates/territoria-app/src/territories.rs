@@ -115,8 +115,8 @@ pub struct TerritoriesPanel {
     compared: Option<Compared>,
     /// What's wrong with the active plan's data, by plan key.
     diagnostics: Option<(PlanId, u64, Vec<territoria_model::Diagnostic>)>,
-    /// How many regions "Group into regions" makes.
-    region_count: usize,
+    /// How many regions "Group into" makes, per level.
+    region_counts: HashMap<u8, usize>,
 }
 
 pub struct PanelContext<'a> {
@@ -129,27 +129,38 @@ pub struct PanelContext<'a> {
     pub busy: bool,
 }
 
-/// Groups a plan's territories into `k` contiguous regions, balanced by
-/// the plan's measure: per territory the index of its region.
+/// Groups what the regions of `level` hold (territories, or the regions
+/// one level down) into `k` contiguous regions, balanced by the plan's
+/// measure: per item of [`territoria_model::Plan::level_items`] the index
+/// of its region.
 pub fn group_regions(
     project: &Project,
     stats: &PlanStats,
     plan: PlanId,
+    level: u8,
     k: usize,
 ) -> Option<Vec<Option<usize>>> {
     let p = project.plan(plan)?;
     let g = &project.layer(p.layer)?.geometry;
-    let n = p.territories.len();
+    let items = p.level_items(level);
+    let n = items.len();
     if k == 0 || n == 0 {
         return None;
+    }
+    // Per territory its item.
+    let mut item_of = vec![None; p.territories.len()];
+    for (i, (_, members)) in items.iter().enumerate() {
+        for &t in members {
+            item_of[t] = Some(i);
+        }
     }
     let index: HashMap<TerritoryId, usize> = p
         .territories
         .iter()
         .enumerate()
-        .map(|(i, t)| (t.id, i))
+        .filter_map(|(t, x)| item_of[t].map(|i| (x.id, i)))
         .collect();
-    // Shared border length between territories, from their units'.
+    // Shared border length between items, from their units'.
     let mut border: Vec<HashMap<u32, f64>> = vec![HashMap::new(); n];
     for (u, t) in p.assignment.iter().enumerate() {
         let Some(&a) = t.and_then(|t| index.get(&t)) else {
@@ -172,27 +183,38 @@ pub fn group_regions(
         .into_iter()
         .map(|m| m.into_iter().collect())
         .collect();
-    // Positions in km around the middle latitude.
+    // Positions in km around the middle latitude: the territories'
+    // centres, weighted by their size within each item.
     let centres = p.centres(g, None);
     let lat0 = centres.iter().flatten().map(|c| c.y).sum::<f64>()
         / centres.iter().flatten().count().max(1) as f64;
-    let positions: Vec<[f64; 2]> = centres
-        .iter()
-        .map(|c| {
-            c.map_or([0.0, 0.0], |c| {
-                [c.x * 111.32 * lat0.to_radians().cos(), c.y * 110.57]
-            })
-        })
-        .collect();
-    let measure_values: Vec<f64> = stats
-        .territories
-        .iter()
-        .map(|s| s.values.first().copied().unwrap_or(s.units as f64))
-        .collect();
+    let km = |c: geo_types::Coord<f64>| [c.x * 111.32 * lat0.to_radians().cos(), c.y * 110.57];
+    let mut positions = Vec::with_capacity(n);
+    let mut areas = Vec::with_capacity(n);
+    let mut measure_values = Vec::with_capacity(n);
+    for (_, members) in &items {
+        let (mut x, mut y, mut w) = (0.0, 0.0, 0.0);
+        let (mut area, mut value) = (0.0, 0.0);
+        for &t in members {
+            let s = &stats.territories[t];
+            area += s.area;
+            value += s.values.first().copied().unwrap_or(s.units as f64);
+            if let Some(c) = centres[t] {
+                let [cx, cy] = km(c);
+                let weight = s.area.max(1e-9);
+                x += cx * weight;
+                y += cy * weight;
+                w += weight;
+            }
+        }
+        positions.push(if w > 0.0 { [x / w, y / w] } else { [0.0, 0.0] });
+        areas.push(area);
+        measure_values.push(value);
+    }
     let problem = Problem {
         neighbors,
         positions,
-        areas: stats.territories.iter().map(|s| s.area).collect(),
+        areas,
         measures: vec![territoria_optimize::Measure {
             values: measure_values,
             importance: 1.0,
@@ -221,6 +243,26 @@ pub fn group_regions(
             .iter()
             .map(|r| r.map(|r| r as usize))
             .collect(),
+    )
+}
+
+/// Replaces the regions of `level` (and above) with `k` groups of what
+/// they hold.
+fn regroup_action(plan: PlanId, level: u8, groups: Vec<Option<usize>>, k: usize) -> Action {
+    Action::Edit(
+        "Group into regions".into(),
+        Box::new(move |p| {
+            if let Some(pl) = p.plan_mut(plan) {
+                let mut members = vec![Vec::new(); k];
+                for (i, g) in groups.iter().enumerate() {
+                    if let Some(m) = g.and_then(|g| members.get_mut(g)) {
+                        m.push(i);
+                    }
+                }
+                pl.regroup(level, members.into_iter().map(|m| (None, m)).collect());
+            }
+            touch(p, plan);
+        }),
     )
 }
 
@@ -1362,14 +1404,14 @@ impl TerritoriesPanel {
         actions: &mut Vec<Action>,
     ) {
         let plan_id = plan.id;
-        let n = plan.territories.len();
-        if self.region_count == 0 {
-            self.region_count = ((n as f64).sqrt().round() as usize).clamp(2, 12);
-        }
-        let header = if plan.regions.is_empty() {
-            tr("Regions").to_owned()
-        } else {
-            format!("{} ({})", tr("Regions"), plan.regions.len())
+        let top = plan.top_level();
+        let header = match top {
+            0 => tr("Regions").to_owned(),
+            1 => format!("{} ({})", tr("Regions"), plan.regions.len()),
+            _ => trf(
+                "Regions ({n}) · {levels} levels",
+                &[("n", &plan.regions_at(1).count()), ("levels", &top)],
+            ),
         };
         egui::CollapsingHeader::new(RichText::new(header).strong())
             .id_salt("regions")
@@ -1379,42 +1421,163 @@ impl TerritoriesPanel {
                     ui.label(RichText::new(tr("Group territories into regions: sales regions above the territories, with their own borders and figures.")).weak());
                 }
                 let region_stats = plan.region_stats(stats);
-                // A territory dropped on a region (or on "No region") moves there.
-                let move_to = |t: TerritoryId, region: Option<territoria_model::RegionId>| {
-                    Action::Edit(
-                        "Move to region".into(),
+                for level in 1..=top.max(1) {
+                    if level > 1 {
+                        ui.separator();
+                    }
+                    self.level_ui(ui, project, plan, stats, &region_stats, level, tolerance, actions);
+                }
+                // Another level on top: the regions grouped in turn.
+                let at_top = plan.regions_at(top).count();
+                if top >= 1 && at_top >= 2 {
+                    ui.separator();
+                    let next = top + 1;
+                    let k = ((at_top as f64).sqrt().round() as usize).clamp(1, at_top - 1);
+                    if ui
+                        .button(trf("➕ Level above: {name}", &[("name", &plan.level_name(next))]))
+                        .on_hover_text(tr("Neighbouring regions of the highest level are grouped in turn, e.g. regions into divisions; any number of levels"))
+                        .clicked()
+                        && let Some(groups) = group_regions(project, stats, plan_id, next, k)
+                    {
+                        actions.push(regroup_action(plan_id, next, groups, k));
+                    }
+                }
+            });
+    }
+
+    /// One level of regions: each with its figures and the chips of what
+    /// it holds, and the ways to build the level.
+    #[allow(clippy::too_many_arguments)]
+    fn level_ui(
+        &mut self,
+        ui: &mut Ui,
+        project: &Project,
+        plan: &territoria_model::Plan,
+        stats: &PlanStats,
+        region_stats: &[territoria_model::RegionStats],
+        level: u8,
+        tolerance: f64,
+        actions: &mut Vec<Action>,
+    ) {
+        use territoria_model::LevelItem;
+        let plan_id = plan.id;
+        let items = plan.level_items(level);
+        let n = items.len();
+        let count = self.region_counts.entry(level).or_insert(0);
+        if *count == 0 {
+            *count = ((n as f64).sqrt().round() as usize)
+                .clamp(2, 12)
+                .min(n.max(1));
+        }
+        let has = plan.regions_at(level).next().is_some();
+        if has {
+            // The level's name, for headings and exports.
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(trf("Level {level}", &[("level", &level)]))
+                        .weak()
+                        .small(),
+                );
+                let mut name = plan.level_name(level);
+                if ui
+                    .add(egui::TextEdit::singleline(&mut name).desired_width(110.0))
+                    .on_hover_text(tr(
+                        "What this level's regions are called, in tables and exports",
+                    ))
+                    .changed()
+                {
+                    actions.push(Action::Edit(
+                        "Rename level".into(),
                         Box::new(move |p| {
-                            if let Some(t) = p.plan_mut(plan_id).and_then(|pl| pl.territory_mut(t)) {
-                                t.region = region;
+                            if let Some(pl) = p.plan_mut(plan_id) {
+                                pl.set_level_name(level, &name);
                             }
                             touch(p, plan_id);
                         }),
-                    )
-                };
-                for (r, rs) in plan.regions.iter().zip(&region_stats) {
-                    let id = r.id;
-                    let (_, dropped) = ui.dnd_drop_zone::<TerritoryDrag, ()>(egui::Frame::default().inner_margin(2.0), |ui| {
+                    ));
+                }
+                if level > 1
+                    && ui
+                        .small_button("✖")
+                        .on_hover_text(tr(
+                            "Remove this level (and any above); the regions below stay",
+                        ))
+                        .clicked()
+                {
+                    actions.push(Action::Edit(
+                        "Remove level".into(),
+                        Box::new(move |p| {
+                            if let Some(pl) = p.plan_mut(plan_id) {
+                                pl.remove_levels_from(level);
+                            }
+                            touch(p, plan_id);
+                        }),
+                    ));
+                }
+            });
+        }
+        // An item dropped on a region (or on "none") moves there.
+        let move_to = |item: LevelItem, region: Option<territoria_model::RegionId>| {
+            Action::Edit(
+                "Move to region".into(),
+                Box::new(move |p| {
+                    if let Some(pl) = p.plan_mut(plan_id) {
+                        pl.set_item_parent(item, region);
+                    }
+                    touch(p, plan_id);
+                }),
+            )
+        };
+        let dropped_here = |d: std::sync::Arc<ItemDrag>| (d.level == level).then_some(d.item);
+        for (r, rs) in plan
+            .regions
+            .iter()
+            .zip(region_stats)
+            .filter(|(r, _)| r.level == level)
+        {
+            let id = r.id;
+            let (_, dropped) =
+                ui.dnd_drop_zone::<ItemDrag, ()>(egui::Frame::default().inner_margin(2.0), |ui| {
                     ui.horizontal(|ui| {
                         let (rect, _) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
-                        ui.painter().rect_stroke(rect, 2.0, egui::Stroke::new(2.0, color(r.color)), egui::StrokeKind::Inside);
+                        ui.painter().rect_stroke(
+                            rect,
+                            2.0,
+                            egui::Stroke::new(1.0 + level as f32, color(r.color)),
+                            egui::StrokeKind::Inside,
+                        );
                         let mut name = r.name.clone();
-                        if ui.add(egui::TextEdit::singleline(&mut name).desired_width(120.0)).changed() {
+                        if ui
+                            .add(egui::TextEdit::singleline(&mut name).desired_width(120.0))
+                            .changed()
+                        {
                             actions.push(Action::Edit(
                                 "Rename region".into(),
                                 Box::new(move |p| {
-                                    if let Some(r) = p.plan_mut(plan_id).and_then(|pl| pl.regions.iter_mut().find(|r| r.id == id)) {
+                                    if let Some(r) = p
+                                        .plan_mut(plan_id)
+                                        .and_then(|pl| pl.regions.iter_mut().find(|r| r.id == id))
+                                    {
                                         r.name = name;
                                     }
                                     touch(p, plan_id);
                                 }),
                             ));
                         }
-                        ui.label(RichText::new(trf("{n} territories", &[("n", &rs.territories)])).weak().small());
+                        ui.label(
+                            RichText::new(trf("{n} territories", &[("n", &rs.territories)]))
+                                .weak()
+                                .small(),
+                        );
                         if let (Some(v), Some(d)) = (rs.values.first(), rs.deviations.first()) {
                             ui.label(RichText::new(format_value(*v)).monospace());
                             deviation_bar(ui, *d, tolerance);
                         }
-                        if ui.small_button("✖").on_hover_text(tr("Remove the region (its territories stay)")).clicked() {
+                        if ui
+                            .small_button("✖")
+                            .on_hover_text(tr("Remove the region (its territories stay)"))
+                            .clicked()
+                        {
                             actions.push(Action::Edit(
                                 "Remove region".into(),
                                 Box::new(move |p| {
@@ -1426,108 +1589,115 @@ impl TerritoriesPanel {
                             ));
                         }
                     });
-                    territory_chips(ui, plan, Some(id));
-                    });
-                    if let Some(d) = dropped {
-                        actions.push(move_to(d.0, Some(id)));
-                    }
-                }
-                let unassigned = plan.territories.iter().filter(|t| t.region.is_none()).count();
-                if !plan.regions.is_empty() && (unassigned > 0 || egui::DragAndDrop::has_payload_of_type::<TerritoryDrag>(ui.ctx())) {
-                    let (_, dropped) = ui.dnd_drop_zone::<TerritoryDrag, ()>(egui::Frame::default().inner_margin(2.0), |ui| {
-                        ui.label(RichText::new(trf("{n} territories in no region", &[("n", &unassigned)])).color(theme::WARN).small());
-                        territory_chips(ui, plan, None);
-                    });
-                    if let Some(d) = dropped {
-                        actions.push(move_to(d.0, None));
-                    }
-                }
-                if !plan.regions.is_empty() {
-                    ui.label(RichText::new(tr("Drag territories between regions.")).weak().small());
-                }
-                ui.horizontal(|ui| {
-                    if ui.button(tr("➕ Region")).clicked() {
-                        actions.push(Action::Edit(
-                            "Add region".into(),
-                            Box::new(move |p| {
-                                if let Some(pl) = p.plan_mut(plan_id) {
-                                    pl.add_region(None);
-                                }
-                                touch(p, plan_id);
-                            }),
-                        ));
-                    }
-                    ui.label(tr("Group into"));
-                    ui.add(egui::DragValue::new(&mut self.region_count).range(1..=n.max(1)));
-                    if ui
-                        .add_enabled(n > 1, egui::Button::new(tr("regions")))
-                        .on_hover_text(tr("Neighbouring territories become regions of about equal size by the measure; existing regions are replaced"))
-                        .clicked()
-                        && let Some(groups) = group_regions(project, stats, plan_id, self.region_count)
-                    {
-                        let k = self.region_count;
-                        actions.push(Action::Edit(
-                            "Group into regions".into(),
-                            Box::new(move |p| {
-                                if let Some(pl) = p.plan_mut(plan_id) {
-                                    pl.regions.clear();
-                                    let ids: Vec<_> = (0..k).map(|_| pl.add_region(None)).collect();
-                                    for (t, g) in pl.territories.iter_mut().zip(&groups) {
-                                        t.region = g.and_then(|g| ids.get(g).copied());
-                                    }
-                                }
-                                touch(p, plan_id);
-                            }),
-                        ));
-                    }
+                    item_chips(ui, plan, level, &items, Some(id));
                 });
-                // Regions like another layer's areas: cantons, districts.
-                let others: Vec<&territoria_model::Layer> = project
-                    .layers
-                    .iter()
-                    .filter(|l| l.id != plan.layer && l.kind() == territoria_io::GeometryKind::Area)
-                    .collect();
-                if !others.is_empty() {
-                    ui.menu_button(tr("Regions like…"), |ui| {
-                        for l in others {
-                            if ui
-                                .button(&l.name)
-                                .on_hover_text(tr("Each territory joins the area of this layer most of its areas lie in; existing regions are replaced"))
-                                .clicked()
-                            {
-                                let other = l.id;
-                                actions.push(Action::Edit(
-                                    "Regions like a layer".into(),
-                                    Box::new(move |p| {
-                                        let (Some(pl), Some(units), Some(o)) = (
-                                            p.plan(plan_id),
-                                            p.plan(plan_id).and_then(|pl| p.layer(pl.layer)),
-                                            p.layer(other),
-                                        ) else {
-                                            return;
-                                        };
-                                        let groups = pl.regions_like(&units.geometry, o);
-                                        if let Some(pl) = p.plan_mut(plan_id) {
-                                            pl.regions.clear();
-                                            for t in &mut pl.territories {
-                                                t.region = None;
-                                            }
-                                            for (name, members) in groups {
-                                                let r = pl.add_region(Some(name));
-                                                for i in members {
-                                                    pl.territories[i].region = Some(r);
-                                                }
-                                            }
-                                        }
-                                        touch(p, plan_id);
-                                    }),
-                                ));
-                                ui.close();
-                            }
+            if let Some(item) = dropped.and_then(dropped_here) {
+                actions.push(move_to(item, Some(id)));
+            }
+        }
+        let loose = items
+            .iter()
+            .filter(|(i, _)| plan.item_parent(*i).is_none())
+            .count();
+        let dragging =
+            egui::DragAndDrop::payload::<ItemDrag>(ui.ctx()).is_some_and(|d| d.level == level);
+        if has && (loose > 0 || dragging) {
+            let (_, dropped) =
+                ui.dnd_drop_zone::<ItemDrag, ()>(egui::Frame::default().inner_margin(2.0), |ui| {
+                    let text = if level == 1 {
+                        trf("{n} territories in no region", &[("n", &loose)])
+                    } else {
+                        trf(
+                            "{n} in no {level}",
+                            &[("n", &loose), ("level", &plan.level_name(level))],
+                        )
+                    };
+                    ui.label(RichText::new(text).color(theme::WARN).small());
+                    item_chips(ui, plan, level, &items, None);
+                });
+            if let Some(item) = dropped.and_then(dropped_here) {
+                actions.push(move_to(item, None));
+            }
+        }
+        if has {
+            ui.label(
+                RichText::new(tr(if level == 1 {
+                    "Drag territories between regions."
+                } else {
+                    "Drag regions between the groups above them."
+                }))
+                .weak()
+                .small(),
+            );
+        }
+        ui.horizontal(|ui| {
+            if ui.button(trf("➕ {name}", &[("name", &plan.level_name(level))])).clicked() {
+                actions.push(Action::Edit(
+                    "Add region".into(),
+                    Box::new(move |p| {
+                        if let Some(pl) = p.plan_mut(plan_id) {
+                            pl.add_region_at(level, None);
                         }
-                    });
+                        touch(p, plan_id);
+                    }),
+                ));
+            }
+            ui.label(tr("Group into"));
+            let count = self.region_counts.entry(level).or_insert(2);
+            ui.add(egui::DragValue::new(count).range(1..=n.max(1)));
+            let k = *count;
+            let hint = if level == 1 {
+                tr("Neighbouring territories become regions of about equal size by the measure; existing regions are replaced")
+            } else {
+                tr("Neighbouring regions of the level below are grouped, of about equal size by the measure; this level is replaced")
+            };
+            let label = if level == 1 { tr("regions").to_owned() } else { plan.level_name(level) };
+            if ui
+                .add_enabled(n > 1, egui::Button::new(label))
+                .on_hover_text(hint)
+                .clicked()
+                && let Some(groups) = group_regions(project, stats, plan_id, level, k)
+            {
+                actions.push(regroup_action(plan_id, level, groups, k));
+            }
+        });
+        // Regions like another layer's areas: cantons, districts.
+        let others: Vec<&territoria_model::Layer> = project
+            .layers
+            .iter()
+            .filter(|l| l.id != plan.layer && l.kind() == territoria_io::GeometryKind::Area)
+            .collect();
+        if !others.is_empty() {
+            ui.menu_button(trf("{name} like…", &[("name", &plan.level_name(level))]), |ui| {
+                for l in others {
+                    if ui
+                        .button(&l.name)
+                        .on_hover_text(tr("Each territory joins the area of this layer most of its areas lie in; existing regions are replaced"))
+                        .clicked()
+                    {
+                        let other = l.id;
+                        actions.push(Action::Edit(
+                            "Regions like a layer".into(),
+                            Box::new(move |p| {
+                                let (Some(pl), Some(units), Some(o)) = (
+                                    p.plan(plan_id),
+                                    p.plan(plan_id).and_then(|pl| p.layer(pl.layer)),
+                                    p.layer(other),
+                                ) else {
+                                    return;
+                                };
+                                let groups = pl.regions_like(&units.geometry, o, level);
+                                if let Some(pl) = p.plan_mut(plan_id) {
+                                    pl.regroup(level, groups.into_iter().map(|(name, m)| (Some(name), m)).collect());
+                                }
+                                touch(p, plan_id);
+                            }),
+                        ));
+                        ui.close();
+                    }
                 }
             });
+        }
     }
 
     fn details_ui(
@@ -1581,12 +1751,12 @@ impl TerritoriesPanel {
                         }
                         ui.end_row();
                         if !plan.regions.is_empty() {
-                            ui.label(tr("Region"));
-                            let current = t.region.and_then(|r| plan.region(r)).map_or("None".to_owned(), |r| r.name.clone());
+                            ui.label(plan.level_name(1));
+                            let current = t.region.and_then(|r| plan.region(r)).map_or(tr("None").to_owned(), |r| r.name.clone());
                             let mut region = t.region;
                             ComboBox::from_id_salt("territory-region").selected_text(current).show_ui(ui, |ui| {
                                 ui.selectable_value(&mut region, None, tr("None"));
-                                for r in &plan.regions {
+                                for r in plan.regions_at(1) {
                                     ui.selectable_value(&mut region, Some(r.id), &r.name);
                                 }
                             });
@@ -1846,26 +2016,50 @@ fn palette_menu(ui: &mut egui::Ui, plan: &territoria_model::Plan, actions: &mut 
     ));
 }
 
-/// A territory being dragged to another region.
+/// A territory or region being dragged to another region of `level`.
 #[derive(Clone, Copy)]
-struct TerritoryDrag(TerritoryId);
+struct ItemDrag {
+    item: territoria_model::LevelItem,
+    level: u8,
+}
 
-/// The territories of `region` (or of none) as small chips to drag.
-fn territory_chips(
+/// The items of `level` in `parent` (or in none) as small chips to drag.
+fn item_chips(
     ui: &mut Ui,
     plan: &territoria_model::Plan,
-    region: Option<territoria_model::RegionId>,
+    level: u8,
+    items: &[(territoria_model::LevelItem, Vec<usize>)],
+    parent: Option<territoria_model::RegionId>,
 ) {
+    use territoria_model::LevelItem;
     ui.horizontal_wrapped(|ui| {
         ui.add_space(16.0);
-        for t in plan.territories.iter().filter(|t| t.region == region) {
-            let id = egui::Id::new(("territory-chip", plan.id, t.id));
-            ui.dnd_drag_source(id, TerritoryDrag(t.id), |ui| {
+        for (item, _) in items.iter().filter(|(i, _)| plan.item_parent(*i) == parent) {
+            let (name, fill, ring) = match *item {
+                LevelItem::Territory(t) => match plan.territory(t) {
+                    Some(t) => (&t.name, color(t.color), None),
+                    None => continue,
+                },
+                LevelItem::Region(r) => match plan.region(r) {
+                    Some(r) => (&r.name, egui::Color32::TRANSPARENT, Some(color(r.color))),
+                    None => continue,
+                },
+            };
+            let id = egui::Id::new(("level-chip", plan.id, *item));
+            ui.dnd_drag_source(id, ItemDrag { item: *item, level }, |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 3.0;
                     let (rect, _) = ui.allocate_exact_size(vec2(8.0, 8.0), Sense::hover());
-                    ui.painter().rect_filled(rect, 2.0, color(t.color));
-                    ui.label(RichText::new(&t.name).small());
+                    ui.painter().rect_filled(rect, 2.0, fill);
+                    if let Some(ring) = ring {
+                        ui.painter().rect_stroke(
+                            rect,
+                            2.0,
+                            egui::Stroke::new(2.0, ring),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
+                    ui.label(RichText::new(name).small());
                 });
             })
             .response

@@ -31,8 +31,8 @@ pub use map::{
     SymbolScaling, SymbolShape, SymbolStyle, ZoomRange,
 };
 pub use plan::{
-    Comparison, Diagnostic, Measure, Move, Plan, PlanStats, Region, RegionStats, RowUnits,
-    Territory, TerritoryChange, TerritoryStats,
+    Comparison, Diagnostic, LevelItem, Measure, Move, Plan, PlanStats, Region, RegionStats,
+    RowUnits, Territory, TerritoryChange, TerritoryStats,
 };
 pub use values::{Cache, Normalize, TextSource, ValueSource};
 
