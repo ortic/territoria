@@ -949,6 +949,7 @@ impl TerritoriesPanel {
             if ui.button("Recolour").on_hover_text("Different colours for neighbouring territories").clicked() {
                 actions.push(Action::Command(crate::commands::Command::Recolor));
             }
+            palette_menu(ui, plan, &mut actions);
             ui.menu_button("Names", |ui| {
                 if ui
                     .button("Name after the largest place")
@@ -1591,4 +1592,64 @@ impl TerritoriesPanel {
             self.compare = None;
         }
     }
+}
+
+/// The colours to choose for territories: the default pastels, or a
+/// qualitative palette.
+pub fn palettes() -> Vec<(&'static str, Vec<territoria_analysis::Rgba>)> {
+    let mut out = vec![("Pastel", territoria_model::plan::TERRITORY_COLORS.to_vec())];
+    for r in territoria_analysis::RAMPS
+        .iter()
+        .filter(|r| r.kind == territoria_analysis::RampKind::Qualitative)
+    {
+        out.push((r.name, r.stop_colors()));
+    }
+    out
+}
+
+/// A row of a palette's colours.
+pub fn palette_swatches(ui: &mut egui::Ui, colors: &[territoria_analysis::Rgba]) -> egui::Response {
+    let (rect, r) = ui.allocate_exact_size(
+        egui::vec2(12.0 * colors.len() as f32, 12.0),
+        egui::Sense::click(),
+    );
+    for (i, c) in colors.iter().enumerate() {
+        let cell = egui::Rect::from_min_size(
+            rect.min + egui::vec2(12.0 * i as f32, 0.0),
+            egui::vec2(11.0, 12.0),
+        );
+        ui.painter().rect_filled(cell, 1.0, color(*c));
+    }
+    r
+}
+
+fn palette_menu(ui: &mut egui::Ui, plan: &territoria_model::Plan, actions: &mut Vec<Action>) {
+    let id = plan.id;
+    ui.menu_button("Colours", |ui| {
+        for (name, colors) in palettes() {
+            let current = plan.colors() == colors.as_slice();
+            let clicked = ui
+                .horizontal(|ui| {
+                    let a = ui.selectable_label(current, name).clicked();
+                    let b = palette_swatches(ui, &colors).clicked();
+                    a || b
+                })
+                .inner;
+            if clicked && !current {
+                actions.push(Action::Edit(
+                    "Territory colours".into(),
+                    Box::new(move |p| {
+                        let rev = p.bump();
+                        if let Some(pl) = p.plan_mut(id) {
+                            pl.set_palette(if name == "Pastel" { Vec::new() } else { colors });
+                            pl.rev = rev;
+                        }
+                    }),
+                ));
+                ui.close();
+            }
+        }
+    })
+    .response
+    .on_hover_text("The colours territories take; Recolour then keeps neighbours apart");
 }

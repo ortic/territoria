@@ -33,6 +33,9 @@ pub struct Plan {
     pub regions: Vec<Region>,
     #[serde(default)]
     next_region: u32,
+    /// Colours for territories (empty: [`TERRITORY_COLORS`]).
+    #[serde(default)]
+    pub palette: Vec<Rgba>,
 }
 
 /// A group of territories.
@@ -118,6 +121,7 @@ impl Plan {
             rev: 0,
             regions: Vec::new(),
             next_region: 0,
+            palette: Vec::new(),
         }
     }
 
@@ -224,7 +228,8 @@ impl Plan {
         self.next_territory += 1;
         let id = TerritoryId(self.next_territory);
         let code = code.unwrap_or_else(|| self.next_code());
-        let color = TERRITORY_COLORS[self.territories.len() % TERRITORY_COLORS.len()];
+        let colors = self.colors();
+        let color = colors[self.territories.len() % colors.len()];
         self.territories.push(Territory {
             id,
             name: name.unwrap_or_else(|| format!("Territory {code}")),
@@ -346,7 +351,7 @@ impl Plan {
     }
 
     /// Gives neighbouring territories different colours (greedy, most
-    /// constrained first), from [`TERRITORY_COLORS`].
+    /// constrained first), from the plan's palette.
     /// Names each territory after its largest unit (by `weights` per unit,
     /// e.g. the measure; by area without). Locked territories keep their
     /// names. Returns how many were renamed.
@@ -454,18 +459,41 @@ impl Plan {
             let Some(i) = next else { break };
             let used: HashSet<usize> = adj[i].iter().filter_map(|&j| color[j]).collect();
             // The least used colour among the free ones keeps the map varied.
-            let mut counts = [0usize; TERRITORY_COLORS.len()];
+            let k = self.colors().len();
+            let mut counts = vec![0usize; k];
             for c in color.iter().flatten() {
                 counts[*c] += 1;
             }
-            let pick = (0..TERRITORY_COLORS.len())
+            let pick = (0..k)
                 .filter(|c| !used.contains(c))
                 .min_by_key(|&c| (counts[c], c))
-                .unwrap_or(i % TERRITORY_COLORS.len());
+                .unwrap_or(i % k);
             color[i] = Some(pick);
         }
+        let colors = self.colors().to_vec();
         for (t, c) in self.territories.iter_mut().zip(color) {
-            t.color = TERRITORY_COLORS[c.unwrap_or(0)];
+            t.color = colors[c.unwrap_or(0)];
+        }
+    }
+
+    /// The colours territories take.
+    pub fn colors(&self) -> &[Rgba] {
+        if self.palette.is_empty() {
+            &TERRITORY_COLORS
+        } else {
+            &self.palette
+        }
+    }
+
+    /// Other colours for the territories: each takes the new colour in the
+    /// place of its old one, so neighbours stay apart.
+    pub fn set_palette(&mut self, palette: Vec<Rgba>) {
+        let old = self.colors().to_vec();
+        self.palette = palette;
+        let new = self.colors().to_vec();
+        for (i, t) in self.territories.iter_mut().enumerate() {
+            let at = old.iter().position(|c| *c == t.color).unwrap_or(i);
+            t.color = new[at % new.len()];
         }
     }
 

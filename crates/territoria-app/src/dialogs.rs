@@ -2877,6 +2877,23 @@ impl SettingsDialog {
                         });
                     });
                     ui.end_row();
+                    ui.label("Territory colours");
+                    ComboBox::from_id_salt("settings-palette")
+                        .selected_text(settings.territory_colors.clone().unwrap_or_else(|| "Pastel".into()))
+                        .show_ui(ui, |ui| {
+                            for (name, colors) in crate::territories::palettes() {
+                                ui.horizontal(|ui| {
+                                    let current = settings.territory_colors.as_deref().unwrap_or("Pastel") == name;
+                                    if ui.selectable_label(current, name).clicked() {
+                                        settings.territory_colors = (name != "Pastel").then(|| name.to_owned());
+                                    }
+                                    crate::territories::palette_swatches(ui, &colors);
+                                });
+                            }
+                        })
+                        .response
+                        .on_hover_text("For new territory plans; a plan's Colours menu changes its own");
+                    ui.end_row();
                     ui.label("Routing");
                     ui.vertical(|ui| {
                         let r = &mut settings.routing;

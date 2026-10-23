@@ -3410,3 +3410,51 @@ fn company_logo_on_exports() {
     assert!(found, "the logo in the PNG");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// New plans take the territory colours chosen in Settings; a plan's
+/// colours can change and Recolour keeps to them.
+#[test]
+fn territory_palettes() {
+    use crate::commands::Command;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    app.settings.territory_colors = Some("Tableau".into());
+    let plan = app.add_balanced_plan_now(layer, 6);
+    settle(&mut h);
+    save(&mut h, "palette-tableau");
+    let tableau = crate::territories::palettes()
+        .into_iter()
+        .find(|(n, _)| *n == "Tableau")
+        .unwrap()
+        .1;
+    let app = h.state_mut();
+    let p = app.project.plan(plan).unwrap();
+    assert_eq!(p.colors(), tableau.as_slice());
+    assert!(p.territories.iter().all(|t| tableau.contains(&t.color)));
+    app.run_command_for_test(Command::Recolor);
+    let p = app.project.plan(plan).unwrap();
+    assert!(
+        p.territories.iter().all(|t| tableau.contains(&t.color)),
+        "recoloured from the palette"
+    );
+    // Back to the pastels.
+    let id = plan;
+    app.apply_action_for_test(crate::app::Action::Edit(
+        "Territory colours".into(),
+        Box::new(move |p| {
+            if let Some(pl) = p.plan_mut(id) {
+                pl.set_palette(Vec::new());
+            }
+        }),
+    ));
+    let p = app.project.plan(plan).unwrap();
+    assert!(
+        p.territories
+            .iter()
+            .all(|t| territoria_model::plan::TERRITORY_COLORS.contains(&t.color))
+    );
+}

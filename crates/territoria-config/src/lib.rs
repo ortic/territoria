@@ -67,6 +67,8 @@ pub struct Settings {
     pub geocoder: territoria_io::geocode::GeocoderSettings,
     /// The service that tells travel times by road.
     pub routing: territoria_io::routing::RoutingSettings,
+    /// Colours of new plans' territories, by palette name (`None`: pastels).
+    pub territory_colors: Option<String>,
     /// Company name on exported maps and reports.
     pub company: String,
     /// Logo image (PNG, JPEG or SVG) on exported maps and reports.
@@ -87,6 +89,7 @@ impl Default for Settings {
             background: None,
             geocoder: Default::default(),
             routing: Default::default(),
+            territory_colors: None,
             company: String::new(),
             logo: None,
             shortcuts: Default::default(),

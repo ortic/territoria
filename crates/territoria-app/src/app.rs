@@ -1534,6 +1534,7 @@ impl TerritoriaApp {
     #[cfg(test)]
     pub fn add_balanced_plan_now(&mut self, layer: LayerId, count: usize) -> PlanId {
         let plan = self.project.add_plan("Sales territories", layer, count);
+        self.apply_default_palette(plan);
         self.show_plan(plan);
         let settings = crate::territories::BalanceSettings {
             start_over: true,
@@ -2868,6 +2869,20 @@ impl TerritoriaApp {
         Some((view.scale, crate::map_view::metres_per_point(&view, crs)?))
     }
 
+    /// New plans take the colours chosen in Settings.
+    fn apply_default_palette(&mut self, plan: PlanId) {
+        let Some(name) = self.settings.territory_colors.clone() else {
+            return;
+        };
+        if let Some((_, colors)) = crate::territories::palettes()
+            .into_iter()
+            .find(|(n, _)| *n == name)
+            && let Some(p) = self.project.plan_mut(plan)
+        {
+            p.set_palette(colors);
+        }
+    }
+
     fn apply_color_by(&mut self, outcome: ColorByOutcome) {
         let (layer, name, what, circles, heat) = match outcome {
             ColorByOutcome::Create {
@@ -2978,7 +2993,9 @@ impl TerritoriaApp {
         let before = self.project.clone();
         let plan = match outcome {
             NewPlanOutcome::Empty { name, layer, count } => {
-                self.project.add_plan(&name, layer, count)
+                let plan = self.project.add_plan(&name, layer, count);
+                self.apply_default_palette(plan);
+                plan
             }
             NewPlanOutcome::FromTable {
                 name,
