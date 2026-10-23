@@ -189,6 +189,8 @@ enum ConfirmAction {
     RemovePlan(PlanId),
     Discard(Box<Command>),
     DiscardThen(PathBuf),
+    /// Start a new project from this template.
+    DiscardThenTemplate(String, PathBuf),
 }
 
 struct Toast {
@@ -265,6 +267,7 @@ pub struct TerritoriaApp {
     summarise: Option<crate::dialogs::SummariseDialog>,
     flows: Option<crate::dialogs::FlowDialog>,
     atlas: Option<crate::dialogs::AtlasDialog>,
+    templates_dialog: Option<crate::dialogs::TemplatesDialog>,
     score: Option<crate::dialogs::ScoreDialog>,
     /// The search box: query and what it found.
     search: String,
@@ -406,6 +409,7 @@ impl TerritoriaApp {
             summarise: None,
             flows: None,
             atlas: None,
+            templates_dialog: None,
             score: None,
             search: String::new(),
             search_hits: Vec::new(),
@@ -1097,6 +1101,65 @@ impl TerritoriaApp {
         self.history.dirty = false;
     }
 
+    /// Where templates are kept.
+    pub(crate) fn templates_dir(&self) -> PathBuf {
+        match &self.paths {
+            Some(p) => p.templates_dir(),
+            None => {
+                std::env::temp_dir().join(format!("territoria-templates-{}", std::process::id()))
+            }
+        }
+    }
+
+    /// The templates there are, by name.
+    pub(crate) fn templates(&self) -> Vec<(String, PathBuf)> {
+        let mut out: Vec<(String, PathBuf)> = std::fs::read_dir(self.templates_dir())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                p.extension()
+                    .is_some_and(|e| e == territoria_model::file::EXTENSION)
+            })
+            .filter_map(|p| Some((p.file_stem()?.to_string_lossy().into_owned(), p)))
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// The project as it is now, kept as a template under `name`.
+    pub(crate) fn save_template(&mut self, name: &str) {
+        let name: String = name
+            .chars()
+            .map(|c| if "/\\:*?\"<>|".contains(c) { '-' } else { c })
+            .collect();
+        let dir = self.templates_dir();
+        self.store_workspace();
+        let project = self.project.clone();
+        let label = format!("Keeping the template {name}");
+        self.jobs.spawn(label, move |_| {
+            let path = dir.join(format!("{name}.{}", territoria_model::file::EXTENSION));
+            let result = std::fs::create_dir_all(&dir)
+                .map_err(|e| e.to_string())
+                .and_then(|_| {
+                    territoria_model::file::save(&project, &path).map_err(|e| e.to_string())
+                });
+            JobResult::TemplateSaved { name, result }
+        });
+    }
+
+    /// A new project from a template (after asking about unsaved changes).
+    pub(crate) fn new_from_template(&mut self, name: String, path: PathBuf) {
+        self.jobs
+            .spawn(format!("Opening the template {name}"), move |_| {
+                JobResult::TemplateLoaded {
+                    result: territoria_model::file::load(&path).map_err(|e| e.to_string()),
+                    name,
+                }
+            });
+    }
+
     /// Autosaves unsaved changes to the recovery folder now and then.
     fn autosave(&mut self) {
         let minutes = self.settings.autosave_minutes;
@@ -1158,6 +1221,19 @@ impl TerritoriaApp {
                 rev,
                 mesh,
             } => self.meshes.finished(layer, crs, kind, rev, mesh),
+            JobResult::TemplateLoaded { name, result } => match result {
+                Ok(mut project) => {
+                    // A new project: untitled and not saved anywhere yet.
+                    project.title = "Untitled".into();
+                    self.set_project(project, None);
+                    self.toast(format!("New project from the template {name}."));
+                }
+                Err(e) => self.error(format!("Couldn't open the template {name}: {e}")),
+            },
+            JobResult::TemplateSaved { name, result } => match result {
+                Ok(()) => self.toast(format!("Kept as the template {name}.")),
+                Err(e) => self.error(format!("Couldn't keep the template {name}: {e}")),
+            },
             JobResult::Loaded { path, result } => match result {
                 Ok(project) => self.set_project(project, Some(path)),
                 Err(e) => self.error(format!("Couldn't open {}: {e}", file_name(&path))),
@@ -1510,6 +1586,11 @@ impl TerritoriaApp {
         self.atlas_pages(layer, Some(column))
             .unwrap()
             .swap_remove(page)
+    }
+
+    #[cfg(test)]
+    pub fn path_for_test(&self) -> Option<&Path> {
+        self.path.as_deref()
     }
 
     #[cfg(test)]
@@ -3596,6 +3677,12 @@ impl TerritoriaApp {
                     self.toast("Show a map first.");
                 }
             }
+            Command::Templates => {
+                self.templates_dialog = Some(crate::dialogs::TemplatesDialog::new(
+                    self.templates(),
+                    &self.project.title,
+                ));
+            }
             Command::ExportAtlas => match self.current_map.and_then(|m| self.project.map(m)) {
                 Some(map) => {
                     let d = crate::dialogs::AtlasDialog::new(&self.project, map);
@@ -4276,7 +4363,7 @@ impl TerritoriaApp {
                     }
                 });
                 ui.separator();
-                for c in [Command::SaveProject, Command::SaveProjectAs] {
+                for c in [Command::SaveProject, Command::SaveProjectAs, Command::Templates] {
                     item(ui, commands, &self.keymap, c);
                 }
                 ui.separator();
@@ -4797,6 +4884,35 @@ impl TerritoriaApp {
                 self.score = Some(d);
             }
         }
+        if let Some(mut d) = self.templates_dialog.take() {
+            let mut open = true;
+            match d.show(ctx, &mut open) {
+                Some(crate::dialogs::TemplatesOutcome::Use(name, path)) => {
+                    open = false;
+                    if self.history.dirty && !self.project.layers.is_empty() {
+                        self.confirm = Some(Confirm {
+                            title: "Unsaved changes".into(),
+                            text: "Start a new project from the template and discard the changes to this one?".into(),
+                            action: ConfirmAction::DiscardThenTemplate(name, path),
+                        });
+                    } else {
+                        self.new_from_template(name, path);
+                    }
+                }
+                Some(crate::dialogs::TemplatesOutcome::Keep(name)) => {
+                    open = false;
+                    self.save_template(&name);
+                }
+                Some(crate::dialogs::TemplatesOutcome::Delete(path)) => {
+                    let _ = std::fs::remove_file(&path);
+                    d.templates = self.templates();
+                }
+                None => {}
+            }
+            if open {
+                self.templates_dialog = Some(d);
+            }
+        }
         if let Some(mut d) = self.atlas.take() {
             let mut open = true;
             if d.show(ctx, &self.project, &mut open) {
@@ -4946,6 +5062,10 @@ impl TerritoriaApp {
                     ConfirmAction::DiscardThen(path) => {
                         self.history.dirty = false;
                         self.open_path(&path);
+                    }
+                    ConfirmAction::DiscardThenTemplate(name, path) => {
+                        self.history.dirty = false;
+                        self.new_from_template(name, path);
                     }
                 },
                 Some(false) => {}
@@ -5310,6 +5430,7 @@ impl eframe::App for TerritoriaApp {
             || self.summarise.is_some()
             || self.flows.is_some()
             || self.atlas.is_some()
+            || self.templates_dialog.is_some()
             || self.score.is_some()
             || self.settings_dialog.is_some()
             || self.select_list.is_some()

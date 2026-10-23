@@ -38,6 +38,11 @@ impl Paths {
     pub fn recovery_dir(&self) -> PathBuf {
         self.data_dir.join("recovery")
     }
+
+    /// Projects kept as templates for new ones.
+    pub fn templates_dir(&self) -> PathBuf {
+        self.data_dir.join("templates")
+    }
 }
 
 /// Classes and colours of a map kept under a name, to use again.

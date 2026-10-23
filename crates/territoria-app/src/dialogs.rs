@@ -4561,3 +4561,95 @@ impl AtlasDialog {
         apply
     }
 }
+
+// ---------------------------------------------------------------------------
+// Templates
+
+/// Projects kept as templates: start a new one from them, or keep this
+/// one as a template.
+pub struct TemplatesDialog {
+    pub templates: Vec<(String, PathBuf)>,
+    pub name: String,
+}
+
+pub enum TemplatesOutcome {
+    Use(String, PathBuf),
+    Keep(String),
+    Delete(PathBuf),
+}
+
+impl TemplatesDialog {
+    pub fn new(templates: Vec<(String, PathBuf)>, title: &str) -> TemplatesDialog {
+        TemplatesDialog {
+            templates,
+            name: if title == "Untitled" {
+                String::new()
+            } else {
+                title.to_owned()
+            },
+        }
+    }
+
+    pub fn show(&mut self, ctx: &egui::Context, open: &mut bool) -> Option<TemplatesOutcome> {
+        let mut outcome = None;
+        let mut cancel = false;
+        *open = modal(ctx, "templates", "Templates", 460.0, |ui| {
+            ui.label(
+                RichText::new(
+                    "A template is a project to start from: its boundaries, tables, maps with their colours and labels, plans and settings.",
+                )
+                .weak(),
+            );
+            ui.add_space(6.0);
+            ui.label(RichText::new("New project from").strong());
+            if self.templates.is_empty() {
+                ui.label(RichText::new("No templates yet: keep this project as one below.").weak());
+            }
+            for (name, path) in &self.templates {
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(name)
+                        .on_hover_text("A new, untitled project like this template")
+                        .clicked()
+                    {
+                        outcome = Some(TemplatesOutcome::Use(name.clone(), path.clone()));
+                    }
+                    if ui
+                        .small_button("🗑")
+                        .on_hover_text("Delete this template")
+                        .clicked()
+                    {
+                        outcome = Some(TemplatesOutcome::Delete(path.clone()));
+                    }
+                });
+            }
+            ui.add_space(8.0);
+            ui.label(RichText::new("Keep this project as a template").strong());
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.name)
+                        .hint_text("Name, e.g. Postcodes with sales map")
+                        .desired_width(260.0),
+                );
+                let exists = self.templates.iter().any(|(n, _)| n == self.name.trim());
+                if ui
+                    .add_enabled(
+                        !self.name.trim().is_empty(),
+                        egui::Button::new(if exists { "Replace" } else { "Keep" }),
+                    )
+                    .clicked()
+                {
+                    outcome = Some(TemplatesOutcome::Keep(self.name.trim().to_owned()));
+                }
+            });
+            ui.add_space(8.0);
+            if ui.button("Close").clicked() {
+                cancel = true;
+            }
+        });
+        if cancel {
+            *open = false;
+        }
+        outcome
+    }
+}

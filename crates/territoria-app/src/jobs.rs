@@ -43,6 +43,16 @@ pub enum JobResult {
         path: PathBuf,
         result: Result<(), String>,
     },
+    /// A template read, to start a new project from.
+    TemplateLoaded {
+        name: String,
+        result: Result<Project, String>,
+    },
+    /// The project kept as a template.
+    TemplateSaved {
+        name: String,
+        result: Result<(), String>,
+    },
     Catalog(Result<Vec<territoria_io::online::BoundarySet>, String>),
     Downloaded {
         set: territoria_io::online::BoundarySet,

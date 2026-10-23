@@ -3849,3 +3849,40 @@ fn drag_territory_to_region() {
     let p = h.state().project.plan(plan).unwrap();
     assert_eq!(p.territories[0].region, Some(second_region));
 }
+
+/// The project kept as a template and a new project started from it.
+#[test]
+fn project_templates() {
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    let app = h.state_mut();
+    app.add_linked_table_now("Sales 2026", table, "Area", layer, None);
+    app.project.title = "Sales 2026".into();
+    let dir = app.templates_dir();
+    let _ = std::fs::remove_dir_all(&dir);
+    app.save_template("Sales map");
+    settle(&mut h);
+    let app = h.state_mut();
+    let templates = app.templates();
+    assert_eq!(templates.len(), 1);
+    assert_eq!(templates[0].0, "Sales map");
+    // A new, untitled project like the template.
+    app.run_command_for_test(crate::commands::Command::Templates);
+    settle(&mut h);
+    save(&mut h, "templates");
+    let app = h.state_mut();
+    app.set_project(territoria_model::Project::new(), None);
+    let (name, path) = templates[0].clone();
+    app.new_from_template(name, path);
+    settle(&mut h);
+    let app = h.state();
+    assert_eq!(app.project.layers.len(), 1);
+    assert_eq!(app.project.tables.len(), 1);
+    assert_eq!(app.project.title, "Untitled");
+    assert!(app.path_for_test().is_none(), "not saved anywhere yet");
+    let _ = std::fs::remove_dir_all(dir);
+}
