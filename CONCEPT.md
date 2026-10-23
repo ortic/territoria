@@ -227,8 +227,8 @@ territoria/
 - [ ] Class editor with a live histogram and draggable breaks; class labels; "no data" and "not classified" styles
 - [x] Colour ramps: sequential, diverging, qualitative (ColorBrewer-like, colour-blind safe marked), custom 2–5 colour ramps, reverse, opacity (no custom ramp editor)
 - [x] Normalization: per area size, per another column (rates), share of total ("Relative to" on area colourings: per km², per another value, % of the total)
-- [ ] Symbols (points): colour, size (by area or radius, sqrt/linear/log), shape — each from a column, or one column for all
-- [ ] Symbols per area (aggregated) or per row
+- [ ] Symbols (points): colour, size (by area or radius, sqrt/linear/log), shape — each from a column, or one column for all (circles sized by a column (area-true), one colour; no shapes, colour by column or linear/log scaling yet)
+- [x] Symbols per area (aggregated) or per row (circles at area centres from attributes, linked tables or points inside; or on each point; relative to area/another value/total; size legend; in exports)
 - [ ] Charts per area or row: pie (and donut), bars, stacked bars, paired bars (population pyramid), with size scaling
 - [ ] Heatmap / density: kernel (Gaussian, linear, uniform), radius in km or pixels, weight column
 - [ ] Hex or square grid aggregation of points

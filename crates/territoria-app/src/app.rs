@@ -1162,6 +1162,29 @@ impl TerritoriaApp {
                         ));
                     }
                 }
+                MapLayerKind::Symbols {
+                    layer,
+                    source,
+                    normalize,
+                    symbol,
+                    ..
+                } => {
+                    let v = rcx
+                        .values
+                        .normalized(rcx.project, *layer, source, normalize);
+                    let max = v.iter().flatten().fold(0.0f64, |a, b| a.max(*b));
+                    legends.push((
+                        ml.name.clone(),
+                        vec![territoria_analysis::LegendEntry {
+                            color: symbol.color,
+                            label: format!(
+                                "Circle areas grow with the value; largest {}",
+                                territoria_analysis::format::format_value(max)
+                            ),
+                            count: v.iter().flatten().count(),
+                        }],
+                    ));
+                }
                 MapLayerKind::Boundaries { .. } => {}
             }
             let source = match &ml.kind {
@@ -1265,6 +1288,9 @@ impl TerritoriaApp {
     fn push_map_layer(&mut self, map: MapId, layer: MapLayer) -> Option<MapLayerId> {
         let project = &self.project;
         let overlay = |kind: &MapLayerKind| {
+            if matches!(kind, MapLayerKind::Symbols { .. }) {
+                return true;
+            }
             let source = match kind {
                 MapLayerKind::Territories { plan, .. } => project.plan(*plan).map(|p| p.layer),
                 k => k.layer(),
@@ -1416,10 +1442,35 @@ impl TerritoriaApp {
     }
 
     fn apply_color_by(&mut self, outcome: ColorByOutcome) {
-        let ColorByOutcome::Create { layer, name, what } = outcome;
+        let ColorByOutcome::Create {
+            layer,
+            name,
+            what,
+            circles,
+        } = outcome;
         let before = self.project.clone();
         let map = self.ensure_map();
         let id = match what {
+            Colorable::Number(source) if circles => {
+                let id = self.project.new_map_layer_id();
+                let n = self.project.layer(layer).map_or(0, |l| l.len());
+                self.push_map_layer(
+                    map,
+                    MapLayer {
+                        id,
+                        name,
+                        visible: true,
+                        opacity: 1.0,
+                        kind: MapLayerKind::Symbols {
+                            layer,
+                            source,
+                            normalize: Default::default(),
+                            symbol: territoria_model::SymbolStyle::for_count(n),
+                            style: BoundaryStyle::default(),
+                        },
+                    },
+                )
+            }
             Colorable::Number(source) => self.add_choropleth(map, layer, name, source),
             Colorable::Category(source) => {
                 let id = self.project.new_map_layer_id();
@@ -1744,7 +1795,7 @@ impl TerritoriaApp {
                     Selection::Data(DataRef::Layer(l)) => Some(l),
                     _ => self.project.layers.first().map(|l| l.id),
                 };
-                self.color_by = Some(ColorByDialog { layer, choice: 0 });
+                self.color_by = Some(ColorByDialog::new(layer));
             }
             Command::NewMap => {
                 let before = self.project.clone();
@@ -1934,7 +1985,7 @@ impl TerritoriaApp {
                 self.history.push(label, before);
             }
             Action::LinkTable(t) => self.link = Some(LinkDialog::new(&self.project, t)),
-            Action::ColorBy(layer) => self.color_by = Some(ColorByDialog { layer, choice: 0 }),
+            Action::ColorBy(layer) => self.color_by = Some(ColorByDialog::new(layer)),
             Action::AddToMap(layer) => {
                 let before = self.project.clone();
                 let map = self.ensure_map();
@@ -2381,7 +2432,7 @@ impl TerritoriaApp {
             ui.separator();
             button(ui, "🗺 Add boundaries", Command::AddBoundaries, "Postcodes, municipalities, regions… from a Shapefile, GeoJSON or zip");
             button(ui, "📊 Add data", Command::AddData, "A table from CSV or Excel, linked to areas by a key");
-            button(ui, "🎨 Colour by value", Command::ColorByValue, "Colour areas by a number or category");
+            button(ui, "🎨 Colour by value", Command::ColorByValue, "Colour areas, or draw circles sized by a number");
             ui.separator();
             button(ui, "⬣ New territories", Command::NewPlan, "Plan sales or service territories");
             ui.separator();

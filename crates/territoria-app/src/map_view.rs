@@ -839,6 +839,25 @@ fn hover_rows(
                 );
                 rows.push((ml.name.clone(), text));
             }
+            MapLayerKind::Symbols {
+                layer: l,
+                source,
+                normalize,
+                ..
+            } if *l == h.layer && custom.is_none() => {
+                let v = values
+                    .normalized(project, *l, source, normalize)
+                    .get(h.feature)
+                    .copied()
+                    .flatten();
+                rows.push((
+                    ml.name.clone(),
+                    v.map_or(
+                        "no data".to_owned(),
+                        territoria_analysis::format::format_value,
+                    ),
+                ));
+            }
             MapLayerKind::Categories {
                 layer: l, source, ..
             } if *l == h.layer => {
@@ -901,6 +920,17 @@ pub fn draw_resolved(shapes: &mut Vec<Shape>, r: &Resolved, view: &View, ppp: f3
                     .flatten()
                     .map(|c| (r.point_radius, c, r.point_stroke))
             });
+        }
+    }
+    // Proportional circles, largest first so small ones stay on top.
+    for &(f, radius) in &r.symbols {
+        let Some(lp) = mesh.label_points.get(f).copied().flatten() else {
+            continue;
+        };
+        let p = view.to_screen(mesh.to_display(lp));
+        if view.rect.expand(radius).contains(p) {
+            shapes.push(Shape::circle_filled(p, radius, r.symbol_fill));
+            shapes.push(Shape::circle_stroke(p, radius, r.symbol_stroke));
         }
     }
 }

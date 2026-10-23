@@ -84,6 +84,55 @@ pub enum MapLayerKind {
     },
     /// Territories of a plan: fills, borders, labels.
     Territories { plan: PlanId, style: TerritoryStyle },
+    /// Circles sized by a number: at each area's centre, or each point.
+    Symbols {
+        layer: LayerId,
+        source: ValueSource,
+        #[serde(default)]
+        normalize: crate::values::Normalize,
+        symbol: SymbolStyle,
+        style: BoundaryStyle,
+    },
+}
+
+/// How proportional circles look.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SymbolStyle {
+    pub color: Rgba,
+    pub outline: Rgba,
+    /// Radius of the largest value, in screen points.
+    pub max_radius: f32,
+}
+
+impl Default for SymbolStyle {
+    fn default() -> Self {
+        SymbolStyle {
+            color: Rgba([0xe0, 0x6c, 0x3c, 190]),
+            outline: Rgba([0xff, 0xff, 0xff, 230]),
+            max_radius: 22.0,
+        }
+    }
+}
+
+impl SymbolStyle {
+    /// A style whose largest circle suits `n` features: big for a few
+    /// regions, small for thousands of postcodes.
+    pub fn for_count(n: usize) -> SymbolStyle {
+        let r = 28.0 * (50.0 / n.max(1) as f32).powf(0.3);
+        SymbolStyle {
+            max_radius: r.clamp(8.0, 28.0).round(),
+            ..Default::default()
+        }
+    }
+
+    /// The radius for `value` when `max` gets the full size: circle areas
+    /// grow with the value.
+    pub fn radius(&self, value: f64, max: f64) -> f32 {
+        if value <= 0.0 || max <= 0.0 {
+            return 0.0;
+        }
+        self.max_radius * (value / max).min(1.0).sqrt() as f32
+    }
 }
 
 impl MapLayerKind {
@@ -91,7 +140,8 @@ impl MapLayerKind {
         match self {
             MapLayerKind::Boundaries { layer, .. }
             | MapLayerKind::Choropleth { layer, .. }
-            | MapLayerKind::Categories { layer, .. } => Some(*layer),
+            | MapLayerKind::Categories { layer, .. }
+            | MapLayerKind::Symbols { layer, .. } => Some(*layer),
             MapLayerKind::Territories { .. } => None,
         }
     }
@@ -105,7 +155,9 @@ impl MapLayerKind {
 
     pub fn uses_links(&self, links: &[LinkId]) -> bool {
         match self {
-            MapLayerKind::Choropleth { source, .. } => source.uses_links(links),
+            MapLayerKind::Choropleth { source, .. } | MapLayerKind::Symbols { source, .. } => {
+                source.uses_links(links)
+            }
             MapLayerKind::Categories {
                 source: TextSource::Linked { link, .. },
                 ..
@@ -118,7 +170,8 @@ impl MapLayerKind {
         match self {
             MapLayerKind::Boundaries { style, .. }
             | MapLayerKind::Choropleth { style, .. }
-            | MapLayerKind::Categories { style, .. } => Some(style),
+            | MapLayerKind::Categories { style, .. }
+            | MapLayerKind::Symbols { style, .. } => Some(style),
             MapLayerKind::Territories { .. } => None,
         }
     }
@@ -127,7 +180,8 @@ impl MapLayerKind {
         match self {
             MapLayerKind::Boundaries { style, .. }
             | MapLayerKind::Choropleth { style, .. }
-            | MapLayerKind::Categories { style, .. } => Some(style),
+            | MapLayerKind::Categories { style, .. }
+            | MapLayerKind::Symbols { style, .. } => Some(style),
             MapLayerKind::Territories { .. } => None,
         }
     }
@@ -138,6 +192,7 @@ impl MapLayerKind {
             MapLayerKind::Choropleth { .. } => "Coloured by value",
             MapLayerKind::Categories { .. } => "Coloured by category",
             MapLayerKind::Territories { .. } => "Territories",
+            MapLayerKind::Symbols { .. } => "Circles sized by value",
         }
     }
 }

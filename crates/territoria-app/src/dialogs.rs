@@ -1018,6 +1018,18 @@ pub fn colorables(project: &Project, layer: LayerId) -> Vec<(String, Colorable)>
 pub struct ColorByDialog {
     pub layer: Option<LayerId>,
     pub choice: usize,
+    /// Circles sized by the value instead of colours (`None`: by layer kind).
+    pub circles: Option<bool>,
+}
+
+impl ColorByDialog {
+    pub fn new(layer: Option<LayerId>) -> ColorByDialog {
+        ColorByDialog {
+            layer,
+            choice: 0,
+            circles: None,
+        }
+    }
 }
 
 pub enum ColorByOutcome {
@@ -1025,6 +1037,7 @@ pub enum ColorByOutcome {
         layer: LayerId,
         name: String,
         what: Colorable,
+        circles: bool,
     },
 }
 
@@ -1037,7 +1050,7 @@ impl ColorByDialog {
     ) -> Option<ColorByOutcome> {
         let mut outcome = None;
         let mut cancel = false;
-        *open = modal(ctx, "color-by", "Colour areas by value", 480.0, |ui| {
+        *open = modal(ctx, "color-by", "Show values on the map", 480.0, |ui| {
             egui::Grid::new("cb")
                 .num_columns(2)
                 .spacing([12.0, 8.0])
@@ -1065,6 +1078,25 @@ impl ColorByDialog {
                             }
                         });
                     ui.end_row();
+                    // Numbers can also be circles; on points that's the default.
+                    let points = self
+                        .layer
+                        .and_then(|l| project.layer(l))
+                        .is_some_and(|l| l.kind() == GeometryKind::Point);
+                    if matches!(options.get(self.choice), Some((_, Colorable::Number(_)))) {
+                        let mut circles = self.circles.unwrap_or(points);
+                        ui.label("Show as");
+                        ui.horizontal(|ui| {
+                            ui.radio_value(&mut circles, false, "Colours")
+                                .on_hover_text("Each area coloured by its class");
+                            ui.radio_value(&mut circles, true, "Circles sized by value")
+                                .on_hover_text(
+                                    "A circle on each area or point; its area grows with the value",
+                                );
+                        });
+                        self.circles = Some(circles);
+                        ui.end_row();
+                    }
                     ui.end_row();
                     ui.label("");
                     ui.horizontal(|ui| {
@@ -1077,10 +1109,14 @@ impl ColorByDialog {
                             && let (Some(layer), Some((label, what))) =
                                 (self.layer, options.get(self.choice))
                         {
+                            let points = project
+                                .layer(layer)
+                                .is_some_and(|l| l.kind() == GeometryKind::Point);
                             outcome = Some(ColorByOutcome::Create {
                                 layer,
                                 name: label.clone(),
                                 what: what.clone(),
+                                circles: self.circles.unwrap_or(points),
                             });
                         }
                         if ui.button("Cancel").clicked() {

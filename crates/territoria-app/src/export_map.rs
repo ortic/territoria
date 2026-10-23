@@ -306,6 +306,23 @@ fn layer(s: &mut String, r: &Resolved, view: &View) {
             }
         }
     }
+    // Proportional circles, largest first.
+    for &(i, radius) in &r.symbols {
+        let Some(lp) = mesh.label_points.get(i).copied().flatten() else {
+            continue;
+        };
+        let (x, y) = f.xy(lp);
+        if !view.rect.expand(radius).contains(pos2(x, y)) {
+            continue;
+        }
+        let (c, a) = hex(r.symbol_fill);
+        let (sc, sa) = hex(r.symbol_stroke.color);
+        let _ = write!(
+            s,
+            r#"<circle cx="{x:.2}" cy="{y:.2}" r="{radius:.2}" fill="{c}" fill-opacity="{a:.3}" stroke="{sc}" stroke-opacity="{sa:.3}" stroke-width="{:.2}"/>"#,
+            r.symbol_stroke.width
+        );
+    }
 }
 
 fn sites(s: &mut String, r: &Resolved, view: &View) {

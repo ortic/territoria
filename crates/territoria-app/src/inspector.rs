@@ -704,124 +704,7 @@ fn map_layer(
             scale,
             style,
         } => {
-            let options = colorables(project, *layer);
-            ui.horizontal(|ui| {
-                ui.label("Value");
-                let current = options
-                    .iter()
-                    .find(|(_, c)| matches!(c, Colorable::Number(s) if same_source(s, source)))
-                    .map_or_else(|| source.label(project), |(l, _)| l.clone());
-                ComboBox::from_id_salt("source")
-                    .width(220.0)
-                    .selected_text(current)
-                    .show_ui(ui, |ui| {
-                        for (label, c) in &options {
-                            if let Colorable::Number(s) = c
-                                && ui.selectable_label(same_source(s, source), label).clicked()
-                            {
-                                let mut s = s.clone();
-                                // Keep the chosen aggregation when switching columns.
-                                if let (
-                                    ValueSource::Linked { agg, .. },
-                                    ValueSource::Linked { agg: old, .. },
-                                ) = (&mut s, source)
-                                {
-                                    *agg = *old;
-                                }
-                                let label = format!("{label}{}", normalize.suffix(project));
-                                actions.push(edit_layer(map, id, "Change value", move |l| {
-                                    if let MapLayerKind::Choropleth { source, .. } = &mut l.kind {
-                                        *source = s;
-                                    }
-                                    l.name = label;
-                                }));
-                            }
-                        }
-                    });
-            });
-            if let ValueSource::Linked { agg, .. }
-            | ValueSource::Points {
-                column: Some(_),
-                agg,
-                ..
-            } = source
-            {
-                ui.horizontal(|ui| {
-                    ui.label("Per area");
-                    let mut a = *agg;
-                    ComboBox::from_id_salt("agg")
-                        .selected_text(a.label())
-                        .show_ui(ui, |ui| {
-                            for x in territoria_data::Aggregate::ALL {
-                                ui.selectable_value(&mut a, x, x.label());
-                            }
-                        });
-                    if a != *agg {
-                        actions.push(edit_layer(map, id, "Change aggregation", move |l| {
-                            if let MapLayerKind::Choropleth {
-                                source: ValueSource::Linked { agg, .. } | ValueSource::Points { agg, .. },
-                                ..
-                            } = &mut l.kind
-                            {
-                                *agg = a;
-                            }
-                        }));
-                    }
-                });
-            }
-            // Relative to: area, another value, the total.
-            ui.horizontal(|ui| {
-                ui.label("Relative to").on_hover_text("Sums grow with the size of areas: per km² or per another value (customers, population) makes areas comparable");
-                let base = options
-                    .iter()
-                    .find(|(_, c)| matches!(c, Colorable::Number(s) if same_source(s, source)))
-                    .map_or_else(|| source.label(project), |(l, _)| l.clone());
-                let text = match normalize {
-                    Normalize::None => "—".to_owned(),
-                    Normalize::PerArea => "per km²".to_owned(),
-                    Normalize::Percent => "% of the total".to_owned(),
-                    Normalize::By(s) => format!("per {}", s.label(project)),
-                };
-                let mut choice: Option<Normalize> = None;
-                ComboBox::from_id_salt("normalize")
-                    .width(200.0)
-                    .selected_text(text)
-                    .show_ui(ui, |ui| {
-                        for (n, label) in [
-                            (Normalize::None, "— (as they are)".to_owned()),
-                            (Normalize::PerArea, "per km²".to_owned()),
-                            (Normalize::Percent, "% of the total".to_owned()),
-                        ] {
-                            if ui.selectable_label(*normalize == n, label).clicked() {
-                                choice = Some(n);
-                            }
-                        }
-                        ui.separator();
-                        for (label, c) in &options {
-                            if let Colorable::Number(s) = c
-                                && !same_source(s, source)
-                                && *s != ValueSource::Area
-                            {
-                                let n = Normalize::By(s.clone());
-                                if ui
-                                    .selectable_label(*normalize == n, format!("per {label}"))
-                                    .clicked()
-                                {
-                                    choice = Some(n);
-                                }
-                            }
-                        }
-                    });
-                if let Some(n) = choice.filter(|n| n != normalize) {
-                    let name = format!("{base}{}", n.suffix(project));
-                    actions.push(edit_layer(map, id, "Change relative to", move |l| {
-                        if let MapLayerKind::Choropleth { normalize, .. } = &mut l.kind {
-                            *normalize = n;
-                        }
-                        l.name = name;
-                    }));
-                }
-            });
+            value_ui(ui, project, *layer, source, normalize, map, id, actions);
             ui.add_space(4.0);
             scale_ui(ui, scale, map, id, actions);
             ui.separator();
@@ -833,6 +716,65 @@ fn map_layer(
                     &scaled.legend,
                 );
             }
+            ui.separator();
+            style_ui(
+                ui,
+                project,
+                values,
+                style,
+                project.layer(*layer),
+                false,
+                map,
+                id,
+                actions,
+            );
+        }
+        MapLayerKind::Symbols {
+            layer,
+            source,
+            normalize,
+            symbol,
+            style,
+        } => {
+            value_ui(ui, project, *layer, source, normalize, map, id, actions);
+            ui.add_space(4.0);
+            egui::Grid::new("symbol")
+                .num_columns(2)
+                .spacing([10.0, 6.0])
+                .show(ui, |ui| {
+                    ui.label("Colour");
+                    if let Some(c) = rgba_button(ui, symbol.color) {
+                        actions.push(edit_layer(map, id, "Change circle colour", move |l| {
+                            if let MapLayerKind::Symbols { symbol, .. } = &mut l.kind {
+                                symbol.color = c;
+                            }
+                        }));
+                    }
+                    ui.end_row();
+                    ui.label("Outline");
+                    if let Some(c) = rgba_button(ui, symbol.outline) {
+                        actions.push(edit_layer(map, id, "Change circle outline", move |l| {
+                            if let MapLayerKind::Symbols { symbol, .. } = &mut l.kind {
+                                symbol.outline = c;
+                            }
+                        }));
+                    }
+                    ui.end_row();
+                    ui.label("Largest")
+                        .on_hover_text("Radius of the circle for the largest value; circle areas grow with the value");
+                    let mut r = symbol.max_radius;
+                    if ui
+                        .add(egui::Slider::new(&mut r, 4.0..=80.0).suffix(" pt"))
+                        .changed()
+                    {
+                        actions.push(edit_layer(map, id, "Change circle size", move |l| {
+                            if let MapLayerKind::Symbols { symbol, .. } = &mut l.kind {
+                                symbol.max_radius = r;
+                            }
+                        }));
+                    }
+                    ui.end_row();
+                });
             ui.separator();
             style_ui(
                 ui,
@@ -1033,4 +975,142 @@ fn histogram(
             ui.label(RichText::new(format!("{} areas", e.count)).weak());
         });
     }
+}
+
+/// The value of an analysis: which number, how per area, relative to what.
+#[allow(clippy::too_many_arguments)]
+fn value_ui(
+    ui: &mut Ui,
+    project: &Project,
+    layer: LayerId,
+    source: &ValueSource,
+    normalize: &Normalize,
+    map: MapId,
+    id: MapLayerId,
+    actions: &mut Vec<Action>,
+) {
+    let options = colorables(project, layer);
+    ui.horizontal(|ui| {
+        ui.label("Value");
+        let current = options
+            .iter()
+            .find(|(_, c)| matches!(c, Colorable::Number(s) if same_source(s, source)))
+            .map_or_else(|| source.label(project), |(l, _)| l.clone());
+        ComboBox::from_id_salt("source")
+            .width(220.0)
+            .selected_text(current)
+            .show_ui(ui, |ui| {
+                for (label, c) in &options {
+                    if let Colorable::Number(s) = c
+                        && ui.selectable_label(same_source(s, source), label).clicked()
+                    {
+                        let mut s = s.clone();
+                        // Keep the chosen aggregation when switching columns.
+                        if let (
+                            ValueSource::Linked { agg, .. },
+                            ValueSource::Linked { agg: old, .. },
+                        ) = (&mut s, source)
+                        {
+                            *agg = *old;
+                        }
+                        let label = format!("{label}{}", normalize.suffix(project));
+                        actions.push(edit_layer(map, id, "Change value", move |l| {
+                            if let MapLayerKind::Choropleth { source, .. }
+                            | MapLayerKind::Symbols { source, .. } = &mut l.kind
+                            {
+                                *source = s;
+                            }
+                            l.name = label;
+                        }));
+                    }
+                }
+            });
+    });
+    if let ValueSource::Linked { agg, .. }
+    | ValueSource::Points {
+        column: Some(_),
+        agg,
+        ..
+    } = source
+    {
+        ui.horizontal(|ui| {
+            ui.label("Per area");
+            let mut a = *agg;
+            ComboBox::from_id_salt("agg")
+                .selected_text(a.label())
+                .show_ui(ui, |ui| {
+                    for x in territoria_data::Aggregate::ALL {
+                        ui.selectable_value(&mut a, x, x.label());
+                    }
+                });
+            if a != *agg {
+                actions.push(edit_layer(map, id, "Change aggregation", move |l| {
+                    if let MapLayerKind::Choropleth {
+                        source: ValueSource::Linked { agg, .. } | ValueSource::Points { agg, .. },
+                        ..
+                    }
+                    | MapLayerKind::Symbols {
+                        source: ValueSource::Linked { agg, .. } | ValueSource::Points { agg, .. },
+                        ..
+                    } = &mut l.kind
+                    {
+                        *agg = a;
+                    }
+                }));
+            }
+        });
+    }
+    // Relative to: area, another value, the total.
+    ui.horizontal(|ui| {
+            ui.label("Relative to").on_hover_text("Sums grow with the size of areas: per km² or per another value (customers, population) makes areas comparable");
+            let base = options
+                .iter()
+                .find(|(_, c)| matches!(c, Colorable::Number(s) if same_source(s, source)))
+                .map_or_else(|| source.label(project), |(l, _)| l.clone());
+            let text = match normalize {
+                Normalize::None => "—".to_owned(),
+                Normalize::PerArea => "per km²".to_owned(),
+                Normalize::Percent => "% of the total".to_owned(),
+                Normalize::By(s) => format!("per {}", s.label(project)),
+            };
+            let mut choice: Option<Normalize> = None;
+            ComboBox::from_id_salt("normalize")
+                .width(200.0)
+                .selected_text(text)
+                .show_ui(ui, |ui| {
+                    for (n, label) in [
+                        (Normalize::None, "— (as they are)".to_owned()),
+                        (Normalize::PerArea, "per km²".to_owned()),
+                        (Normalize::Percent, "% of the total".to_owned()),
+                    ] {
+                        if ui.selectable_label(*normalize == n, label).clicked() {
+                            choice = Some(n);
+                        }
+                    }
+                    ui.separator();
+                    for (label, c) in &options {
+                        if let Colorable::Number(s) = c
+                            && !same_source(s, source)
+                            && *s != ValueSource::Area
+                        {
+                            let n = Normalize::By(s.clone());
+                            if ui
+                                .selectable_label(*normalize == n, format!("per {label}"))
+                                .clicked()
+                            {
+                                choice = Some(n);
+                            }
+                        }
+                    }
+                });
+            if let Some(n) = choice.filter(|n| n != normalize) {
+                let name = format!("{base}{}", n.suffix(project));
+                actions.push(edit_layer(map, id, "Change relative to", move |l| {
+                    if let MapLayerKind::Choropleth { normalize, .. } | MapLayerKind::Symbols { normalize, .. } = &mut l.kind {
+                        *normalize = n;
+                    }
+                    l.name = name;
+                }));
+            }
+        });
 }

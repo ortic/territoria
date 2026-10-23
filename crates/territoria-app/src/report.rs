@@ -207,6 +207,9 @@ fn overview_layer(d: &ReportData) -> Resolved {
         point_stroke: Stroke::new(0.8, border),
         labels: Labels::Territories(labels),
         sites: Vec::new(),
+        symbols: Vec::new(),
+        symbol_fill: Color32::TRANSPARENT,
+        symbol_stroke: Stroke::NONE,
     }
 }
 
@@ -275,6 +278,9 @@ fn territory_layer(d: &ReportData, t: usize) -> Resolved {
         point_stroke: Stroke::new(0.8, border),
         labels,
         sites,
+        symbols: Vec::new(),
+        symbol_fill: Color32::TRANSPARENT,
+        symbol_stroke: Stroke::NONE,
     }
 }
 

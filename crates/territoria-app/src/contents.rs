@@ -78,6 +78,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                             MapLayerKind::Choropleth { .. } => "▦",
                             MapLayerKind::Categories { .. } => "◧",
                             MapLayerKind::Territories { .. } => "⬣",
+                            MapLayerKind::Symbols { .. } => "●",
                         };
                         let text = RichText::new(format!("{icon} {}", ml.name));
                         let text = if ml.visible { text } else { text.weak() };
@@ -184,6 +185,21 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                                                 .weak(),
                                             );
                                         }
+                                    });
+                                }
+                            }
+                            MapLayerKind::Symbols {
+                                layer,
+                                source,
+                                normalize,
+                                symbol,
+                                ..
+                            } => {
+                                let v = cx.values.normalized(project, *layer, source, normalize);
+                                let max = v.iter().flatten().fold(0.0f64, |a, b| a.max(*b));
+                                if max > 0.0 {
+                                    ui.indent(("legend", ml.id.0), |ui| {
+                                        size_legend(ui, symbol, max);
                                     });
                                 }
                             }
@@ -445,6 +461,56 @@ fn background_ui(ui: &mut Ui, map: &territoria_model::Map, actions: &mut Vec<Act
             RichText::new("Background maps need the Web Mercator projection.")
                 .small()
                 .weak(),
+        );
+    }
+}
+
+/// The largest power-of-ten multiple of 1, 2 or 5 not above `x`.
+fn nice_below(x: f64) -> f64 {
+    let p = 10f64.powf(x.log10().floor());
+    [5.0, 2.0, 1.0]
+        .into_iter()
+        .map(|m| m * p)
+        .find(|v| *v <= x)
+        .unwrap_or(p)
+}
+
+/// Nested circles for three values, with their numbers.
+fn size_legend(ui: &mut Ui, symbol: &territoria_model::SymbolStyle, max: f64) {
+    let big = nice_below(max);
+    let steps = [big, nice_below(big / 4.0), nice_below(big / 16.0)];
+    let r_max = symbol.radius(big, max).max(4.0);
+    let (rect, _) =
+        ui.allocate_exact_size(vec2(2.0 * r_max + 80.0, 2.0 * r_max + 20.0), Sense::hover());
+    let p = ui.painter();
+    let cx = rect.left() + r_max + 2.0;
+    let bottom = rect.top() + 2.0 * r_max + 6.0;
+    let mut last_label = f32::NEG_INFINITY;
+    let fill = color(symbol.color);
+    let line = ui.visuals().weak_text_color();
+    for v in steps {
+        let r = symbol.radius(v, max);
+        if r < 1.0 {
+            continue;
+        }
+        let c = egui::pos2(cx, bottom - r);
+        p.circle_filled(c, r, fill.gamma_multiply(0.35));
+        p.circle_stroke(c, r, egui::Stroke::new(1.0, fill));
+        let top = egui::pos2(cx, bottom - 2.0 * r);
+        let label_x = cx + r_max + 8.0;
+        // Labels keep apart even where small circles' tops are close.
+        let y = top.y.max(last_label + 12.0);
+        last_label = y;
+        p.line_segment(
+            [top, egui::pos2(label_x - 2.0, y)],
+            egui::Stroke::new(0.5, line),
+        );
+        p.text(
+            egui::pos2(label_x, y),
+            egui::Align2::LEFT_CENTER,
+            format_value(v),
+            egui::FontId::proportional(10.0),
+            ui.visuals().text_color(),
         );
     }
 }

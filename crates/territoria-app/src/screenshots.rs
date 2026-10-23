@@ -1225,3 +1225,95 @@ fn territory_details() {
     save(&mut h, "territory-details");
     assert!(h.query_by_label("Size").is_some());
 }
+
+/// Circles sized by value: on areas (revenue) and on points (sales), also
+/// in exports.
+#[test]
+fn proportional_circles() {
+    use crate::app::Export;
+    use crate::dialogs::Placement;
+    use crate::export_map::Format;
+    use territoria_model::{MapLayer, MapLayerKind, ValueSource};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    h.state_mut()
+        .add_linked_table_now("Sales 2026", table, "Area", layer, None);
+    let customers = customers(h.state(), layer, 300);
+    let app = h.state_mut();
+    app.add_table(
+        "Customers".into(),
+        customers,
+        PathBuf::from("customers.csv"),
+        Placement::Points {
+            x: "Longitude".into(),
+            y: "Latitude".into(),
+        },
+        None,
+    );
+    let points = app.project.layers.last().unwrap().id;
+    let link = app.project.links[0].id;
+    let map = app.project.maps[0].id;
+    let revenue = ValueSource::Linked {
+        link,
+        column: "Revenue".into(),
+        agg: territoria_data::Aggregate::Sum,
+    };
+    for (id, layer, source) in [
+        (1001, layer, revenue.clone()),
+        (
+            1002,
+            points,
+            ValueSource::Attribute {
+                column: "Sales".into(),
+            },
+        ),
+    ] {
+        let n = app.project.layer(layer).unwrap().len();
+        app.project.map_mut(map).unwrap().layers.push(MapLayer {
+            id: territoria_model::MapLayerId(id),
+            name: format!("Circles {id}"),
+            visible: true,
+            opacity: 1.0,
+            kind: MapLayerKind::Symbols {
+                layer,
+                source,
+                normalize: Default::default(),
+                symbol: territoria_model::SymbolStyle::for_count(n),
+                style: Default::default(),
+            },
+        });
+    }
+    settle(&mut h);
+    save(&mut h, "circles");
+    // The largest revenue gets the full radius.
+    let app = h.state_mut();
+    let mut values = territoria_model::Cache::default();
+    let v = values.values(&app.project, layer, &revenue);
+    let max = v.iter().flatten().fold(0.0f64, |a, b| a.max(*b));
+    let style = territoria_model::SymbolStyle::default();
+    assert_eq!(style.radius(max, max), style.max_radius);
+    assert!((style.radius(max / 4.0, max) - style.max_radius / 2.0).abs() < 1e-4);
+
+    let dir = std::env::temp_dir().join(format!("territoria-circles-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("circles.svg");
+    app.set_map_export_for_test(crate::dialogs::MapExportSettings {
+        format: Format::Svg,
+        scale: 1.0,
+        title: String::new(),
+        legend: true,
+        scale_bar: false,
+    });
+    app.export(Export::Map(Format::Svg), path.clone());
+    settle(&mut h);
+    let svg = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        svg.matches("<circle").count() > 100,
+        "circles in the export"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

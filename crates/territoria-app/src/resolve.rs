@@ -35,6 +35,10 @@ pub struct Resolved {
     pub labels: Labels,
     /// Territory sites in display coordinates with their colour.
     pub sites: Vec<([f64; 2], Color32)>,
+    /// Proportional circles: (feature, radius in points), largest first.
+    pub symbols: Vec<(usize, f32)>,
+    pub symbol_fill: Color32,
+    pub symbol_stroke: Stroke,
 }
 
 pub fn with_opacity(c: Color32, opacity: f32) -> Color32 {
@@ -138,6 +142,9 @@ fn resolve_one(
                 point_stroke: stroke,
                 labels,
                 sites: Vec::new(),
+                symbols: Vec::new(),
+                symbol_fill: Color32::TRANSPARENT,
+                symbol_stroke: Stroke::NONE,
             }])
         }
         MapLayerKind::Territories { plan, style } => {
@@ -230,6 +237,9 @@ fn resolve_one(
                 point_stroke: Stroke::new(1.0, border),
                 labels,
                 sites,
+                symbols: Vec::new(),
+                symbol_fill: Color32::TRANSPARENT,
+                symbol_stroke: Stroke::NONE,
             };
             if !points {
                 return Some(vec![area]);
@@ -258,8 +268,57 @@ fn resolve_one(
                 point_stroke: Stroke::new(0.8, with_opacity(border, 0.7 * opacity)),
                 labels: Labels::None,
                 sites: Vec::new(),
+                symbols: Vec::new(),
+                symbol_fill: Color32::TRANSPARENT,
+                symbol_stroke: Stroke::NONE,
             };
             Some(vec![area, dot_layer])
+        }
+        MapLayerKind::Symbols {
+            layer,
+            source,
+            normalize,
+            symbol,
+            style,
+        } => {
+            let l = project.layer(*layer)?;
+            let mesh = meshes.get(layer)?.clone();
+            let n = l.len();
+            let v = cx.values.normalized(project, *layer, source, normalize);
+            let max = v.iter().flatten().fold(0.0f64, |a, b| a.max(*b));
+            let mut symbols: Vec<(usize, f32)> = v
+                .iter()
+                .enumerate()
+                .filter_map(|(f, x)| {
+                    let r = symbol.radius((*x)?, max);
+                    // Tiny values stay visible as dots.
+                    (r > 0.0).then_some((f, r.max(1.5)))
+                })
+                .collect();
+            symbols.sort_by(|a, b| b.1.total_cmp(&a.1));
+            let labels = match &style.labels {
+                LabelMode::None => Labels::None,
+                LabelMode::Template(t) => cx
+                    .values
+                    .template_texts(project, *layer, t)
+                    .map_or(Labels::None, Labels::Features),
+                mode => {
+                    Labels::Features(Arc::new((0..n).map(|f| label_text(l, mode, f)).collect()))
+                }
+            };
+            Some(vec![Resolved {
+                mesh,
+                fills: vec![None; n],
+                arcs: Vec::new(),
+                line_width: 1.0,
+                point_radius: 0.0,
+                point_stroke: Stroke::NONE,
+                labels,
+                sites: Vec::new(),
+                symbols,
+                symbol_fill: with_opacity(color(symbol.color), opacity),
+                symbol_stroke: Stroke::new(0.8, with_opacity(color(symbol.outline), opacity)),
+            }])
         }
     }
 }
