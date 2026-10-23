@@ -112,6 +112,9 @@ pub enum Export {
     Map(crate::export_map::Format),
     /// What changes from the first plan to the second, as an Excel workbook.
     Changes(PlanId, PlanId),
+    /// A table or a layer's attributes with each row's territories, as
+    /// Excel (`true`) or CSV.
+    Data(DataRef, bool),
 }
 
 struct Confirm {
@@ -388,6 +391,11 @@ impl TerritoriaApp {
                         "xlsx",
                         self.project.plan(b).map(|p| format!("Changes {}", p.name)),
                     ),
+                    Export::Data(d, excel) => (
+                        if excel { "Excel workbook" } else { "CSV" },
+                        if excel { "xlsx" } else { "csv" },
+                        data_name(&self.project, d),
+                    ),
                 };
                 dialog
                     .add_filter(filter, &[ext])
@@ -456,6 +464,18 @@ impl TerritoriaApp {
             });
             return;
         }
+        // Tables with the territory of each row; the lookups need the caches.
+        let data_sheets: Vec<(String, territoria_data::Table)> = match what {
+            Export::PlanExcel(p) => self
+                .project
+                .plan(p)
+                .map(|plan| plan_data_sheets(&self.project, &mut self.values, plan))
+                .unwrap_or_default(),
+            Export::Data(d, _) => with_territories(&self.project, &mut self.values, d, None)
+                .into_iter()
+                .collect(),
+            _ => Vec::new(),
+        };
         let project = self.project.clone();
         let comparison = match what {
             Export::Changes(a, b) => project.compare_plans(a, b, &mut self.values),
@@ -477,11 +497,10 @@ impl TerritoriaApp {
                         let stats = stats.unwrap_or_default();
                         let territories = plan.territory_table(&project, &stats);
                         let assignment = plan.assignment_table(&project);
-                        territoria_io::export::write_xlsx(
-                            &path,
-                            &[("Territories", &territories), ("Assignment", &assignment)],
-                        )
-                        .map_err(err)
+                        let mut sheets =
+                            vec![("Territories", &territories), ("Assignment", &assignment)];
+                        sheets.extend(data_sheets.iter().map(|(n, t)| (n.as_str(), t)));
+                        territoria_io::export::write_xlsx(&path, &sheets).map_err(err)
                     }
                     Export::PlanCsv(p) => {
                         let plan = project.plan(p).ok_or("the plan was removed")?;
@@ -519,6 +538,15 @@ impl TerritoriaApp {
                             .collect();
                         territoria_io::export::write_geojson(&path, &geometries, &layer.attributes)
                             .map_err(err)
+                    }
+                    Export::Data(_, excel) => {
+                        let (name, table) = data_sheets.first().ok_or("the data was removed")?;
+                        if excel {
+                            territoria_io::export::write_xlsx(&path, &[(name.as_str(), table)])
+                        } else {
+                            territoria_io::export::write_csv(&path, table, b',')
+                        }
+                        .map_err(err)
                     }
                     Export::Changes(..) => {
                         let c = comparison.ok_or("the plans can't be compared")?;
@@ -827,6 +855,11 @@ impl TerritoriaApp {
         d.name = name.into();
         d.source = source.into();
         self.formula = Some(d);
+    }
+
+    #[cfg(test)]
+    pub fn open_table_for_test(&mut self, data: DataRef) {
+        self.dock.push_to_focused_leaf(Tab::Table(data));
     }
 
     #[cfg(test)]
@@ -1966,7 +1999,11 @@ impl TerritoriaApp {
                     }
                     for p in &self.project.plans {
                         ui.label(RichText::new(&p.name).strong());
-                        if ui.button("Territories and assignment (Excel)…").clicked() {
+                        if ui
+                            .button("Territories and assignment (Excel)…")
+                            .on_hover_text("Also has a sheet for each linked table and point layer, with each row's territory")
+                            .clicked()
+                        {
                             exports.push(Export::PlanExcel(p.id));
                         }
                         if ui.button("Assignment (CSV)…").clicked() {
@@ -1977,10 +2014,35 @@ impl TerritoriaApp {
                         }
                         ui.separator();
                     }
-                    for l in &self.project.layers {
-                        if ui.button(format!("{} (GeoJSON)…", l.name)).clicked() {
-                            exports.push(Export::LayerGeoJson(l.id));
-                        }
+                    let data: Vec<(DataRef, String)> = self
+                        .project
+                        .tables
+                        .iter()
+                        .map(|t| (DataRef::Table(t.id), t.name.clone()))
+                        .chain(
+                            self.project
+                                .layers
+                                .iter()
+                                .map(|l| (DataRef::Layer(l.id), l.name.clone())),
+                        )
+                        .collect();
+                    if !data.is_empty() {
+                        ui.label(RichText::new("Data").strong());
+                    }
+                    for (d, name) in data {
+                        ui.menu_button(name, |ui| {
+                            if ui.button("Excel…").clicked() {
+                                exports.push(Export::Data(d, true));
+                            }
+                            if ui.button("CSV…").clicked() {
+                                exports.push(Export::Data(d, false));
+                            }
+                            if let DataRef::Layer(l) = d
+                                && ui.button("GeoJSON (with shapes)…").clicked()
+                            {
+                                exports.push(Export::LayerGeoJson(l));
+                            }
+                        });
                     }
                 });
                 ui.separator();
@@ -2618,7 +2680,8 @@ impl TabViewer for Viewer<'_> {
                 self.events.push((id, events));
             }
             Tab::Table(data) => {
-                let actions = crate::table_view::show(ui, &self.app.project, data);
+                let actions =
+                    crate::table_view::show(ui, &self.app.project, &mut self.app.values, data);
                 self.actions.extend(actions);
             }
         }
@@ -2824,4 +2887,79 @@ pub fn data_table_mut(p: &mut Project, data: DataRef) -> Option<&mut territoria_
             std::sync::Arc::make_mut(&mut t.table)
         }),
     }
+}
+
+pub fn data_name(project: &Project, data: DataRef) -> Option<String> {
+    match data {
+        DataRef::Layer(l) => project.layer(l).map(|l| l.name.clone()),
+        DataRef::Table(t) => project.table(t).map(|t| t.name.clone()),
+    }
+}
+
+/// How the rows of `data` belong to the units of `plan`, if they do.
+pub fn plan_rows(
+    project: &Project,
+    values: &mut Cache,
+    data: DataRef,
+    plan: &territoria_model::Plan,
+) -> Option<territoria_model::RowUnits> {
+    match data {
+        DataRef::Layer(l) => project.layer_rows(values, l, plan.layer),
+        DataRef::Table(t) => project.table_rows(values, t, plan.layer),
+    }
+}
+
+/// A copy of a table with each row's territory in every plan it relates
+/// to (or only in `only`).
+pub fn with_territories(
+    project: &Project,
+    values: &mut Cache,
+    data: DataRef,
+    only: Option<PlanId>,
+) -> Option<(String, territoria_data::Table)> {
+    let (table, _) = crate::dialogs::data_table(project, data)?;
+    let mut out = table.clone();
+    for plan in project
+        .plans
+        .iter()
+        .filter(|p| only.is_none_or(|o| o == p.id))
+    {
+        if let Some(rows) = plan_rows(project, values, data, plan) {
+            for mut c in plan.territory_columns(&rows, out.rows()) {
+                c.name = out.unique_name(&c.name);
+                let _ = out.push_column(c);
+            }
+        }
+    }
+    Some((data_name(project, data)?, out))
+}
+
+/// Linked tables and points of a plan with their territories, for the
+/// plan's workbook.
+fn plan_data_sheets(
+    project: &Project,
+    values: &mut Cache,
+    plan: &territoria_model::Plan,
+) -> Vec<(String, territoria_data::Table)> {
+    let data: Vec<DataRef> = project
+        .tables
+        .iter()
+        .map(|t| DataRef::Table(t.id))
+        .chain(
+            project
+                .layers
+                .iter()
+                .filter(|l| l.id != plan.layer)
+                .map(|l| DataRef::Layer(l.id)),
+        )
+        .collect();
+    let mut sheets = Vec::new();
+    for d in data {
+        if plan_rows(project, values, d, plan).is_some()
+            && let Some(sheet) = with_territories(project, values, d, Some(plan.id))
+        {
+            sheets.push(sheet);
+        }
+    }
+    sheets
 }

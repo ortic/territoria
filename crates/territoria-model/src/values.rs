@@ -103,7 +103,7 @@ pub struct Cache {
 }
 
 /// Per point feature, the area it lies in.
-type PointAreas = Arc<Vec<Option<u32>>>;
+pub type PointAreas = Arc<Vec<Option<u32>>>;
 
 impl Cache {
     /// Rows of the link's table matched to the layer's features.

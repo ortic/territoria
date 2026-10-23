@@ -9,7 +9,7 @@ use territoria_analysis::Rgba;
 use territoria_data::{KeyIndex, MatchMode, MatchStats, Table, keys};
 
 use crate::values::{Cache, ValueSource, column_keys, layer_keys};
-use crate::{LayerGeometry, LayerId, PlanId, Project, TerritoryId};
+use crate::{LayerGeometry, LayerId, PlanId, Project, TableId, TerritoryId};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Plan {
@@ -796,6 +796,40 @@ impl Project {
         Some(new)
     }
 
+    /// How rows of a layer's attributes relate to `units`' features: the
+    /// features themselves, or the area each point lies in.
+    pub fn layer_rows(
+        &self,
+        cache: &mut Cache,
+        layer: LayerId,
+        units: LayerId,
+    ) -> Option<RowUnits> {
+        if layer == units {
+            return Some(RowUnits::Same);
+        }
+        let (l, u) = (self.layer(layer)?, self.layer(units)?);
+        if l.kind() == territoria_io::GeometryKind::Point
+            && u.kind() == territoria_io::GeometryKind::Area
+        {
+            return cache.point_areas(self, layer, units).map(RowUnits::Points);
+        }
+        None
+    }
+
+    /// How rows of a table relate to `units`' features: by its link.
+    pub fn table_rows(
+        &self,
+        cache: &mut Cache,
+        table: TableId,
+        units: LayerId,
+    ) -> Option<RowUnits> {
+        let link = self
+            .links
+            .iter()
+            .find(|l| l.table == table && l.layer == units)?;
+        cache.matching(self, link.id).map(RowUnits::Matched)
+    }
+
     /// Takes over a scenario: `into` gets the territories and assignment of
     /// `from` and keeps its own name.
     pub fn adopt_plan(&mut self, from: PlanId, into: PlanId) -> bool {
@@ -901,6 +935,53 @@ impl Project {
             measure: source.label(self),
             territories,
         })
+    }
+}
+
+/// Which unit (feature of a plan's layer) each row of some data belongs to.
+#[derive(Debug, Clone)]
+pub enum RowUnits {
+    /// The rows are the units.
+    Same,
+    /// Rows of a linked table.
+    Matched(Arc<territoria_data::Matching>),
+    /// Points, by the area they lie in.
+    Points(crate::values::PointAreas),
+}
+
+impl RowUnits {
+    pub fn unit(&self, row: usize) -> Option<u32> {
+        match self {
+            RowUnits::Same => Some(row as u32),
+            RowUnits::Matched(m) => m.row_target.get(row).copied().flatten(),
+            RowUnits::Points(p) => p.get(row).copied().flatten(),
+        }
+    }
+}
+
+impl Plan {
+    /// The territory of a row, through `rows`.
+    pub fn row_territory(&self, rows: &RowUnits, row: usize) -> Option<&Territory> {
+        let unit = rows.unit(row)?;
+        self.territory(self.assignment.get(unit as usize).copied().flatten()?)
+    }
+
+    /// Columns with the territory code and name of each row.
+    pub fn territory_columns(&self, rows: &RowUnits, n: usize) -> [territoria_data::Column; 2] {
+        use territoria_data::{Column, ColumnKind};
+        let t: Vec<Option<&Territory>> = (0..n).map(|r| self.row_territory(rows, r)).collect();
+        [
+            Column::text(
+                format!("Territory code ({})", self.name),
+                ColumnKind::Key,
+                t.iter().map(|t| t.map(|t| t.code.clone())).collect(),
+            ),
+            Column::text(
+                format!("Territory ({})", self.name),
+                ColumnKind::Text,
+                t.iter().map(|t| t.map(|t| t.name.clone())).collect(),
+            ),
+        ]
     }
 }
 
@@ -1075,6 +1156,12 @@ mod tests {
         assert_eq!(c.territories[1].units, [2, 3]);
         assert_eq!((c.territories[1].gained, c.territories[1].lost), (1, 0));
         assert_eq!(c.territory_table().rows(), 2);
+        let rows = p.layer_rows(&mut cache, layer, layer).unwrap();
+        let pb = p.plan(b).unwrap();
+        assert_eq!(pb.row_territory(&rows, 1).unwrap().id, t2);
+        let [code, name] = pb.territory_columns(&rows, 4);
+        assert_eq!(code.display(0), "01");
+        assert_eq!(name.name, "Territory (Next year)");
         assert!(p.adopt_plan(b, a));
         assert!(p.compare_plans(a, b, &mut cache).unwrap().moves.is_empty());
         assert_eq!(p.plan(a).unwrap().name, "Now");

@@ -32,16 +32,29 @@ pub fn write_xlsx(path: &Path, sheets: &[(&str, &Table)]) -> Result<(), ImportEr
     let err = |e: rust_xlsxwriter::XlsxError| ImportError::Format(e.to_string());
     let mut book = Workbook::new();
     let bold = Format::new().set_bold();
+    let mut used: Vec<String> = Vec::new();
     for (name, table) in sheets {
         let ws = book.add_worksheet();
-        // Sheet names: at most 31 characters, no []:*?/\.
+        // Sheet names: at most 31 characters, no []:*?/\, unique (ignoring case).
         let clean: String = name
             .chars()
             .filter(|c| !"[]:*?/\\".contains(*c))
             .take(31)
             .collect();
-        ws.set_name(if clean.is_empty() { "Sheet" } else { &clean })
-            .map_err(err)?;
+        let clean = if clean.trim().is_empty() {
+            "Sheet".to_owned()
+        } else {
+            clean
+        };
+        let mut unique = clean.clone();
+        let mut i = 2;
+        while used.iter().any(|u| u.eq_ignore_ascii_case(&unique)) {
+            let suffix = format!(" ({i})");
+            unique = clean.chars().take(31 - suffix.len()).collect::<String>() + &suffix;
+            i += 1;
+        }
+        ws.set_name(&unique).map_err(err)?;
+        used.push(unique);
         for (c, col) in table.columns.iter().enumerate() {
             ws.write_string_with_format(0, c as u16, &col.name, &bold)
                 .map_err(err)?;

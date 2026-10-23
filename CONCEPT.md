@@ -197,7 +197,7 @@ territoria/
 - [ ] Spatial join: points get attributes of the area they lie in (areas get counts and sums of the points inside)
 - [ ] Saved filters (segments) usable by analyses, reports and exports; one clear meaning
 - [ ] Table ↔ map coupling: hover/select rows highlights areas and the other way round
-- [x] Data export: CSV, XLSX (one sheet per table or files), filtered or all (plans; tables not yet)
+- [x] Data export: CSV, XLSX (one sheet per table or files), filtered or all (plans, tables and layer attributes with each row's territories; not filtered yet)
 - [ ] Coordinates in degrees-minutes-seconds and "lat, lon" in one column parsed on import
 
 ### 5.5 Expression language (M2)
@@ -270,7 +270,7 @@ territoria/
 - [x] Change log: what moved since a snapshot ("143 customers change rep") (a scenario copy is the snapshot: moved areas, points in them per point layer, Excel export of the moves and per-territory figures; no automatic snapshots)
 - [x] Rename, delete and export a plan from the Territories panel; one plan shown on the map at a time
 - [ ] Analyses on plans: distance zones (unit to own site), catchment (potential within distance), key units (top units per territory), coverage (sites grab units until capacity)
-- [ ] Point-in-territory column for any table ("which rep owns this customer")
+- [x] Point-in-territory column for any table ("which rep owns this customer") (live column per plan in the table view, for linked tables and points in the plan's areas; in table exports and as extra sheets of the plan workbook)
 
 ### 5.9 Optimization (M5)
 

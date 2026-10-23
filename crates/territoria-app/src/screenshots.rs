@@ -856,3 +856,67 @@ fn calculated_column() {
             .is_none()
     );
 }
+
+/// Customers on an area plan know their territory: as a live column in
+/// their table, in the table export and in the plan's workbook.
+#[test]
+fn customers_know_their_territory() {
+    use crate::app::{DataRef, Export};
+    use crate::dialogs::Placement;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = customers(h.state(), layer, 400);
+    let app = h.state_mut();
+    app.add_table(
+        "Customers".into(),
+        table,
+        PathBuf::from("customers.csv"),
+        Placement::Points {
+            x: "Longitude".into(),
+            y: "Latitude".into(),
+        },
+        None,
+    );
+    let points = app.project.layers.last().unwrap().id;
+    let plan = app.add_balanced_plan_now(layer, 4);
+    app.open_table_for_test(DataRef::Layer(points));
+    settle(&mut h);
+    save(&mut h, "customer-table");
+
+    let dir = std::env::temp_dir().join(format!("territoria-app-rows-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let csv = dir.join("customers.csv");
+    let xlsx = dir.join("plan.xlsx");
+    h.state_mut()
+        .export(Export::Data(DataRef::Layer(points), false), csv.clone());
+    h.state_mut().export(Export::PlanExcel(plan), xlsx.clone());
+    settle(&mut h);
+    let (rows, _) = territoria_io::read_table(&csv, &Default::default()).unwrap();
+    assert_eq!(rows.rows(), 400);
+    let t = rows
+        .column("Territory (Sales territories)")
+        .expect("territory column");
+    // All areas are assigned: only customers outside every area have none.
+    let mut values = territoria_model::Cache::default();
+    let rows_units = h
+        .state()
+        .project
+        .layer_rows(&mut values, points, layer)
+        .unwrap();
+    let outside = (0..400).filter(|&r| rows_units.unit(r).is_none()).count();
+    assert!(outside < 200, "{outside} outside");
+    assert_eq!(t.null_count(), outside);
+    let (_, info) = territoria_io::read_table(&xlsx, &Default::default()).unwrap();
+    assert_eq!(
+        info.sheets,
+        vec![
+            "Territories".to_owned(),
+            "Assignment".to_owned(),
+            "Customers".to_owned()
+        ]
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
