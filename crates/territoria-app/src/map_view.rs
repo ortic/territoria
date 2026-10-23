@@ -896,6 +896,96 @@ fn selection_bar(
 
 /// Title and (label, value) rows for the hover card: the area, then what
 /// each visible map layer says about it.
+/// Each feature's hover text for an exported page: its name, then what the
+/// visible map layers say about it (or the layer's own hover text).
+pub(crate) fn feature_tips(
+    map: &Map,
+    project: &Project,
+    values: &mut Cache,
+    layer: LayerId,
+) -> Vec<String> {
+    let Some(l) = project.layer(layer) else {
+        return Vec::new();
+    };
+    let n = l.len();
+    let fmt = territoria_analysis::format::format_value;
+    let custom = map
+        .layers
+        .iter()
+        .rev()
+        .filter(|ml| ml.visible && ml.kind.layer() == Some(layer))
+        .find_map(|ml| ml.kind.style().and_then(|s| s.tooltip.clone()));
+    if let Some(t) = custom
+        && let Some(texts) = values.template_texts(project, layer, &t)
+    {
+        return (0..n)
+            .map(|f| {
+                texts
+                    .get(f)
+                    .cloned()
+                    .flatten()
+                    .unwrap_or_else(|| l.display_name(f))
+            })
+            .collect();
+    }
+    let mut lines: Vec<String> = (0..n).map(|f| l.display_name(f)).collect();
+    for ml in map.layers.iter().rev().filter(|ml| ml.visible) {
+        match &ml.kind {
+            MapLayerKind::Choropleth {
+                layer: x,
+                source,
+                normalize,
+                ..
+            }
+            | MapLayerKind::Symbols {
+                layer: x,
+                source,
+                normalize,
+                ..
+            } if *x == layer => {
+                let v = values.normalized(project, layer, source, normalize);
+                for (f, line) in lines.iter_mut().enumerate() {
+                    let value = v
+                        .get(f)
+                        .copied()
+                        .flatten()
+                        .map_or("no data".to_owned(), fmt);
+                    line.push_str(&format!("\n{}: {value}", ml.name));
+                }
+            }
+            MapLayerKind::Categories {
+                layer: x, source, ..
+            } if *x == layer => {
+                let t = values.texts(project, layer, source);
+                for (f, line) in lines.iter_mut().enumerate() {
+                    let text = t
+                        .get(f)
+                        .cloned()
+                        .flatten()
+                        .unwrap_or_else(|| "no data".into());
+                    line.push_str(&format!("\n{}: {text}", ml.name));
+                }
+            }
+            MapLayerKind::Territories { plan, .. } => {
+                if let Some(p) = project.plan(*plan).filter(|p| p.layer == layer) {
+                    for (f, line) in lines.iter_mut().enumerate() {
+                        let t = p
+                            .assignment
+                            .get(f)
+                            .copied()
+                            .flatten()
+                            .and_then(|t| p.territory(t))
+                            .map_or("unassigned".to_owned(), |t| t.name.clone());
+                        line.push_str(&format!("\n{}: {t}", p.name));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    lines
+}
+
 fn hover_rows(
     map: &Map,
     project: &Project,

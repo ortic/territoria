@@ -118,6 +118,8 @@ pub enum Export {
     LayerGeoJson(LayerId),
     /// The current map as an image or document.
     Map(crate::export_map::Format),
+    /// The current map as a web page to zoom and hover.
+    Html,
     /// What changes from the first plan to the second, as an Excel workbook.
     Changes(PlanId, PlanId),
     /// A table or a layer's attributes with each row's territories, as
@@ -443,6 +445,13 @@ impl TerritoriaApp {
                         "xlsx",
                         self.project.plan(b).map(|p| format!("Changes {}", p.name)),
                     ),
+                    Export::Html => (
+                        "Web page",
+                        "html",
+                        self.current_map
+                            .and_then(|m| self.project.map(m))
+                            .map(|m| m.name.clone()),
+                    ),
                     Export::Report(p) => (
                         "PDF document",
                         "pdf",
@@ -517,6 +526,34 @@ impl TerritoriaApp {
             self.jobs.spawn(label, move |_| {
                 let result = crate::export_map::encode(&svg, format, settings.scale, &font)
                     .and_then(|bytes| std::fs::write(&path, bytes).map_err(|e| e.to_string()));
+                JobResult::Exported { path, result }
+            });
+            return;
+        }
+        if let Export::Html = what {
+            let settings = crate::dialogs::MapExportSettings {
+                format: crate::export_map::Format::Svg,
+                scale: 1.0,
+                title: if self.project.title == "Untitled" {
+                    self.current_map
+                        .and_then(|m| self.project.map(m))
+                        .map_or_else(String::new, |m| m.name.clone())
+                } else {
+                    self.project.title.clone()
+                },
+                legend: true,
+                scale_bar: false,
+            };
+            let page = match self.map_page(&settings) {
+                Ok(p) => p,
+                Err(e) => {
+                    self.error(e);
+                    return;
+                }
+            };
+            let label = format!("Writing {}", file_name(&path));
+            self.jobs.spawn(label, move |_| {
+                let result = std::fs::write(&path, page).map_err(|e| e.to_string());
                 JobResult::Exported { path, result }
             });
             return;
@@ -637,7 +674,7 @@ impl TerritoriaApp {
                         .map_err(err)
                     }
                     // Written on the UI thread's request above.
-                    Export::Map(_) | Export::Report(_) => Ok(()),
+                    Export::Map(_) | Export::Report(_) | Export::Html => Ok(()),
                 }
             })();
             JobResult::Exported { path, result }
@@ -1303,6 +1340,22 @@ impl TerritoriaApp {
 
     /// The current map as SVG, as it is on screen.
     fn map_svg(&mut self, settings: &crate::dialogs::MapExportSettings) -> Result<String, String> {
+        self.map_render(settings, false)
+    }
+
+    /// The current map as a web page (all of it, with hover texts).
+    pub(crate) fn map_page(
+        &mut self,
+        settings: &crate::dialogs::MapExportSettings,
+    ) -> Result<String, String> {
+        self.map_render(settings, true)
+    }
+
+    fn map_render(
+        &mut self,
+        settings: &crate::dialogs::MapExportSettings,
+        page: bool,
+    ) -> Result<String, String> {
         use territoria_model::map::Background;
         let map_id = self.current_map.ok_or("There's no map to export.")?;
         let map = self
@@ -1367,10 +1420,12 @@ impl TerritoriaApp {
         {
             credits.push(attribution.clone());
         }
+        // Per map layer how many resolved layers it gave (for hover texts).
+        let mut counts: Vec<(MapLayer, usize)> = Vec::new();
         for ml in map.layers.iter().filter(|l| l.visible) {
-            resolved.extend(crate::resolve::resolve(
-                &mut rcx, &meshes, &cells, ml, &map.crs,
-            ));
+            let r = crate::resolve::resolve(&mut rcx, &meshes, &cells, ml, &map.crs);
+            counts.push((ml.clone(), r.len()));
+            resolved.extend(r);
             match &ml.kind {
                 MapLayerKind::Rings {
                     radii_km, color, ..
@@ -1456,6 +1511,82 @@ impl TerritoriaApp {
             credits,
             scale_bar: settings.scale_bar,
         };
+        if page {
+            // The whole map, finer, with each feature's hover text.
+            let mut extent = territoria_render::Bounds::EMPTY;
+            for m in meshes.values().chain(cells.values()) {
+                if !m.extent.is_empty() {
+                    let (a, b) = (m.to_display(m.extent.min), m.to_display(m.extent.max));
+                    extent.add([a[0] as f32, a[1] as f32]);
+                    extent.add([b[0] as f32, b[1] as f32]);
+                }
+            }
+            if extent.is_empty() {
+                return Err("The map is empty.".into());
+            }
+            let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 1000.0));
+            let full = territoria_render::View::fit(
+                [extent.min[0] as f64, extent.min[1] as f64],
+                [extent.max[0] as f64, extent.max[1] as f64],
+                rect,
+            );
+            // Per resolved layer the data layer it shows.
+            let mut data: Vec<Option<LayerId>> = Vec::new();
+            for (ml, n) in &counts {
+                let d = match &ml.kind {
+                    MapLayerKind::Territories { plan, .. } => {
+                        self.project.plan(*plan).map(|p| p.layer)
+                    }
+                    MapLayerKind::Rings { .. } => None,
+                    k => k.layer(),
+                };
+                data.extend(std::iter::repeat_n(d, *n));
+            }
+            // Layers hidden under an opaque one of the same data stay out,
+            // and only the top one of each data layer carries hover texts.
+            let opaque = |r: &crate::resolve::Resolved| {
+                r.mesh.kind == GeometryKind::Area
+                    && !r.fills.is_empty()
+                    && r.fills.iter().all(|f| f.is_some_and(|c| c.a() == 255))
+            };
+            let mut keep = vec![true; resolved.len()];
+            let mut top_seen: std::collections::HashSet<LayerId> = Default::default();
+            let mut tips: Vec<Option<Vec<String>>> = vec![None; resolved.len()];
+            let mut covered: std::collections::HashSet<LayerId> = Default::default();
+            for i in (0..resolved.len()).rev() {
+                let Some(l) = data[i] else { continue };
+                if covered.contains(&l) && resolved[i].mesh.kind == GeometryKind::Area {
+                    keep[i] = false;
+                    continue;
+                }
+                if opaque(&resolved[i]) {
+                    covered.insert(l);
+                }
+                if top_seen.insert(l) {
+                    tips[i] = Some(crate::map_view::feature_tips(
+                        &map,
+                        &self.project,
+                        &mut self.values,
+                        l,
+                    ));
+                }
+            }
+            let (resolved, tips): (Vec<_>, Vec<_>) = resolved
+                .into_iter()
+                .zip(tips)
+                .zip(keep)
+                .filter(|(_, k)| *k)
+                .map(|(rt, _)| rt)
+                .unzip();
+            let mut body = String::new();
+            crate::export_map::map_into_with(&mut body, &resolved, &full, "", &tips, true);
+            return Ok(crate::export_map::html(
+                &body,
+                &full,
+                &settings.title,
+                &deco,
+            ));
+        }
         Ok(crate::export_map::svg(
             &resolved,
             &view,
@@ -2195,6 +2326,13 @@ impl TerritoriaApp {
                 Some(t) => self.link = Some(LinkDialog::new(&self.project, t.id)),
                 None => self.toast("Add a table first: File → Add Data."),
             },
+            Command::ExportHtml => {
+                if self.current_map.and_then(|m| self.project.map(m)).is_some() {
+                    self.ask_file(FileAction::Export(Export::Html));
+                } else {
+                    self.toast("There's no map to export yet.");
+                }
+            }
             Command::CopyMap => {
                 let settings = crate::dialogs::MapExportSettings {
                     format: crate::export_map::Format::Png,
@@ -2897,6 +3035,7 @@ impl TerritoriaApp {
                     Command::Catchment,
                     Command::CalculatedColumn,
                     Command::ExportMap,
+                    Command::ExportHtml,
                     Command::CopyMap,
                     Command::NewMap,
                     Command::ZoomToAll,

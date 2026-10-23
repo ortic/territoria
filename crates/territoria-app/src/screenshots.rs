@@ -2001,3 +2001,41 @@ fn views_focus_presentation() {
     settle(&mut h);
     save(&mut h, "presentation");
 }
+
+/// The map as a web page: every area with its hover text.
+#[test]
+fn map_as_web_page() {
+    use crate::app::Export;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    h.state_mut()
+        .add_linked_table_now("Sales 2026", table, "Area", layer, Some("Revenue"));
+    h.state_mut().add_balanced_plan_now(layer, 3);
+    settle(&mut h);
+    let dir = std::env::temp_dir().join(format!("territoria-html-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("map.html");
+    h.state_mut().export(Export::Html, path.clone());
+    settle(&mut h);
+    let page = std::fs::read_to_string(&path).unwrap();
+    assert!(page.starts_with("<!doctype html>"));
+    let n = h.state().project.layer(layer).unwrap().len();
+    let tips = page.matches("data-tip=").count();
+    assert!(tips >= n, "{tips} hover texts for {n} areas");
+    assert!(
+        page.contains("Revenue (Sales 2026): "),
+        "values in the hover texts"
+    );
+    assert!(
+        page.contains("Sales territories: Territory 0"),
+        "territories in the hover texts"
+    );
+    if let Some(out) = out_dir() {
+        std::fs::copy(&path, out.join("map.html")).unwrap();
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}

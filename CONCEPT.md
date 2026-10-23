@@ -296,7 +296,7 @@ territoria/
 - [ ] Atlas/reports: one page per territory, area, filter value or column, or combinations; merged PDF or files; data tables per page (XLSX) (per territory done: one PDF with an overview and a page per territory with its map, figures and largest areas; not per area or filter value yet)
 - [x] Geodata export: GeoJSON, Shapefile, GeoPackage of layers, territories (dissolved) and points; KML (GeoJSON)
 - [x] Plan export: assignment table (unit → territory per level), territory table with KPIs, assignment intervals (`1000-1099`), XLSX/CSV (no intervals)
-- [ ] Interactive HTML map (single file, offline): layers, tooltips, legends, search, filter
+- [x] Interactive HTML map (single file, offline): layers, tooltips, legends, search, filter (zoom, pan, hover cards with names, values and territories, legend and credits; no search or filter in the page yet)
 - [x] Copy map as image to the clipboard (Ctrl+Shift+C, rendered like the export)
 
 ### 5.11 Geo services (M7)

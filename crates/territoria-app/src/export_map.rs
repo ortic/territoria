@@ -61,17 +61,35 @@ pub fn svg(
 /// Draws the layers, labels and sites into `view.rect` (anywhere on a
 /// page), clipped to it.
 pub fn map_into(s: &mut String, resolved: &[Resolved], view: &View, clip: &str) {
+    map_into_with(s, resolved, view, clip, &[], false);
+}
+
+/// Like [`map_into`], with hover texts per resolved layer and feature (for
+/// interactive pages) and finer detail when `fine`. An empty `clip` draws
+/// without clipping.
+pub fn map_into_with(
+    s: &mut String,
+    resolved: &[Resolved],
+    view: &View,
+    clip: &str,
+    tips: &[Option<Vec<String>>],
+    fine: bool,
+) {
     let r = view.rect;
-    let _ = write!(
-        s,
-        r#"<clipPath id="{clip}"><rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}"/></clipPath><g clip-path="url(#{clip})">"#,
-        r.min.x,
-        r.min.y,
-        r.width(),
-        r.height()
-    );
-    for r in resolved {
-        layer(s, r, view);
+    if clip.is_empty() {
+        s.push_str("<g>");
+    } else {
+        let _ = write!(
+            s,
+            r#"<clipPath id="{clip}"><rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}"/></clipPath><g clip-path="url(#{clip})">"#,
+            r.min.x,
+            r.min.y,
+            r.width(),
+            r.height()
+        );
+    }
+    for (i, r) in resolved.iter().enumerate() {
+        layer(s, r, view, tips.get(i).and_then(|t| t.as_deref()), fine);
     }
     let mut occupied: Vec<Rect> = Vec::new();
     for r in resolved.iter().rev() {
@@ -121,6 +139,60 @@ pub fn rasterize(svg: &str, scale: f32, font: &[u8]) -> Result<egui::ColorImage,
         [pixmap.width() as usize, pixmap.height() as usize],
         pixmap.data(),
     ))
+}
+
+/// A single-file web page with the map: zoom, pan and hover cards, the
+/// title, legend and credits as HTML around it.
+pub fn html(svg_body: &str, view: &View, title: &str, deco: &Decorations) -> String {
+    let (w, h) = (view.rect.width(), view.rect.height());
+    let mut legend = String::new();
+    for (name, entries) in &deco.legends {
+        let _ = write!(legend, "<div class=\"lg\"><b>{}</b>", escape(name));
+        for e in entries {
+            let (c, _) = hex(crate::map_view::color(e.color));
+            let _ = write!(
+                legend,
+                "<div><span style=\"background:{c}\"></span>{}</div>",
+                escape(&e.label)
+            );
+        }
+        legend.push_str("</div>");
+    }
+    let credits = escape(&deco.credits.join(" · "));
+    let title = escape(title);
+    format!(
+        r##"<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{title}</title>
+<style>
+html,body{{margin:0;height:100%;font-family:system-ui,sans-serif;background:#f3f1ec;color:#202328}}
+#map{{position:fixed;inset:0;cursor:grab}}#map svg{{width:100%;height:100%;display:block}}
+#tip{{position:fixed;pointer-events:none;background:#fff;border:1px solid #d0d2d8;border-radius:6px;padding:6px 9px;font-size:13px;white-space:pre-line;box-shadow:0 2px 10px rgba(0,0,0,.15);display:none;max-width:320px}}
+#tip::first-line{{font-weight:600}}
+#side{{position:fixed;top:12px;left:12px;background:rgba(255,255,255,.92);border-radius:8px;padding:10px 12px;font-size:12px;max-height:80vh;overflow:auto;box-shadow:0 1px 6px rgba(0,0,0,.12)}}
+#side h1{{font-size:16px;margin:0 0 6px}}.lg{{margin-top:8px}}.lg span{{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;vertical-align:-1px}}
+#foot{{position:fixed;right:10px;bottom:6px;font-size:11px;color:#666}}
+[data-tip]:hover{{stroke:#101216;stroke-width:1.5;stroke-opacity:1}}
+</style></head><body>
+<div id="map"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" font-family="sans-serif">{svg_body}</svg></div>
+<div id="side"><h1>{title}</h1>{legend}<div style="margin-top:8px;color:#888">Scroll to zoom, drag to move.</div></div>
+<div id="tip"></div><div id="foot">{credits}</div>
+<script>
+const svg=document.querySelector('#map svg'),tip=document.getElementById('tip');
+let v={{x:0,y:0,w:{w},h:{h}}};
+const apply=()=>svg.setAttribute('viewBox',v.x+' '+v.y+' '+v.w+' '+v.h);
+const at=e=>{{const p=svg.createSVGPoint();p.x=e.clientX;p.y=e.clientY;return p.matrixTransform(svg.getScreenCTM().inverse());}};
+svg.addEventListener('wheel',e=>{{e.preventDefault();const p=at(e),k=e.deltaY<0?0.8:1.25;v.x=p.x-(p.x-v.x)*k;v.y=p.y-(p.y-v.y)*k;v.w*=k;v.h*=k;apply();}},{{passive:false}});
+let drag=null;
+svg.addEventListener('mousedown',e=>{{drag=at(e);svg.style.cursor='grabbing';}});
+window.addEventListener('mouseup',()=>{{drag=null;svg.style.cursor='';}});
+window.addEventListener('mousemove',e=>{{
+ if(drag){{const p=at(e);v.x-=p.x-drag.x;v.y-=p.y-drag.y;apply();tip.style.display='none';return;}}
+ const t=e.target.closest&&e.target.closest('[data-tip]');
+ if(t){{tip.textContent=t.dataset.tip;tip.style.display='block';tip.style.left=(e.clientX+14)+'px';tip.style.top=(e.clientY+14)+'px';}}else tip.style.display='none';
+}});
+</script></body></html>
+"##
+    )
 }
 
 /// Several SVG pages as one PDF.
@@ -177,14 +249,24 @@ pub fn hex(c: Color32) -> (String, f32) {
     (format!("#{r:02x}{g:02x}{b:02x}"), a as f32 / 255.0)
 }
 
-fn level<'a>(mesh: &'a LayerMesh, view: &View) -> &'a Level {
-    // Finer than on screen: exports get zoomed into.
-    mesh.level_for(view.scale / 2.0)
+fn level<'a>(mesh: &'a LayerMesh, view: &View, fine: bool) -> &'a Level {
+    // Finer than on screen: exports get zoomed into (pages even more).
+    mesh.level_for(view.scale / 2.0 / if fine { 1.5 } else { 1.0 })
+}
+
+/// ` data-tip="…"` for a feature's hover text, if any.
+fn tip_attr(tips: Option<&[String]>, i: usize) -> String {
+    match tips.and_then(|t| t.get(i)).filter(|t| !t.is_empty()) {
+        Some(t) => format!(r#" data-tip="{}""#, escape(t)),
+        None => String::new(),
+    }
 }
 
 struct Frame {
     origin: [f64; 2],
     k: f64,
+    /// Decimals of coordinates in paths.
+    decimals: usize,
 }
 
 impl Frame {
@@ -197,6 +279,7 @@ impl Frame {
                 c.y as f64 - (mesh.origin[1] - view.center[1]) * k,
             ],
             k,
+            decimals: 2,
         }
     }
 
@@ -222,20 +305,62 @@ fn visible(mesh: &LayerMesh, view: &View) -> territoria_render::Bounds {
     }
 }
 
+/// A number with at most one decimal and no trailing zero: `3`, `-0.4`.
+fn short(v: f32) -> String {
+    let t = (v * 10.0).round() as i64;
+    if t % 10 == 0 {
+        format!("{}", t / 10)
+    } else {
+        format!("{:.1}", t as f32 / 10.0)
+    }
+}
+
 fn path(out: &mut String, f: &Frame, points: &[[f32; 2]], close: bool) {
+    if f.decimals == 1 {
+        // Compact: relative steps between points rounded to tenths.
+        let mut prev = (0i64, 0i64);
+        for (i, p) in points.iter().enumerate() {
+            let (x, y) = f.xy(*p);
+            let at = ((x * 10.0).round() as i64, (y * 10.0).round() as i64);
+            if i == 0 {
+                let _ = write!(out, "M{} {}", short(x), short(y));
+            } else {
+                let (dx, dy) = (at.0 - prev.0, at.1 - prev.1);
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+                let _ = write!(
+                    out,
+                    "l{} {}",
+                    short(dx as f32 / 10.0),
+                    short(dy as f32 / 10.0)
+                );
+            }
+            prev = at;
+        }
+        if close {
+            out.push('z');
+        }
+        return;
+    }
     for (i, p) in points.iter().enumerate() {
         let (x, y) = f.xy(*p);
-        let _ = write!(out, "{}{x:.2} {y:.2}", if i == 0 { "M" } else { "L" });
+        let d = f.decimals;
+        let _ = write!(out, "{}{x:.d$} {y:.d$}", if i == 0 { "M" } else { "L" });
     }
     if close {
         out.push('Z');
     }
 }
 
-fn layer(s: &mut String, r: &Resolved, view: &View) {
+fn layer(s: &mut String, r: &Resolved, view: &View, tips: Option<&[String]>, fine: bool) {
     let mesh = &r.mesh;
-    let lvl = level(mesh, view);
-    let f = Frame::new(mesh, view);
+    let lvl = level(mesh, view, fine);
+    let mut f = Frame::new(mesh, view);
+    if fine {
+        // Pages: one decimal is a tenth of a point, plenty when zoomed.
+        f.decimals = 1;
+    }
     let vis = visible(mesh, view);
     match mesh.kind {
         GeometryKind::Area => {
@@ -252,10 +377,11 @@ fn layer(s: &mut String, r: &Resolved, view: &View) {
                     continue;
                 }
                 let (c, a) = hex(*fill);
+                let tip = tip_attr(tips, i);
                 // A hairline in the fill colour hides seams between neighbours.
                 let _ = write!(
                     s,
-                    r#"<path d="{d}" fill="{c}" fill-opacity="{a:.3}" fill-rule="evenodd" stroke="{c}" stroke-opacity="{a:.3}" stroke-width="0.3"/>"#
+                    r#"<path d="{d}" fill="{c}" fill-opacity="{a:.3}" fill-rule="evenodd" stroke="{c}" stroke-opacity="{a:.3}" stroke-width="0.3"{tip}/>"#
                 );
             }
             // Borders, grouped by stroke.
@@ -314,6 +440,7 @@ fn layer(s: &mut String, r: &Resolved, view: &View) {
                     continue;
                 };
                 let (c, a) = hex(fill);
+                let tip = tip_attr(tips, i);
                 for p in pts {
                     let (x, y) = f.xy(*p);
                     if !view.rect.expand(10.0).contains(pos2(x, y)) {
@@ -321,7 +448,7 @@ fn layer(s: &mut String, r: &Resolved, view: &View) {
                     }
                     let _ = write!(
                         s,
-                        r#"<circle cx="{x:.2}" cy="{y:.2}" r="{:.2}" fill="{c}" fill-opacity="{a:.3}" stroke="{sc}" stroke-opacity="{sa:.3}" stroke-width="{:.2}"/>"#,
+                        r#"<circle cx="{x:.2}" cy="{y:.2}" r="{:.2}" fill="{c}" fill-opacity="{a:.3}" stroke="{sc}" stroke-opacity="{sa:.3}" stroke-width="{:.2}"{tip}/>"#,
                         r.point_radius, r.point_stroke.width
                     );
                 }

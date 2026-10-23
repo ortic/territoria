@@ -45,6 +45,7 @@ commands! {
     NewMap => "Map: New Map",
     ExportMap => "Map: Export Map (PNG, SVG, PDF)…",
     CopyMap => "Map: Copy Map as Image",
+    ExportHtml => "Map: Export as Web Page (zoom, hover)…",
     ZoomToAll => "Map: Zoom to Everything",
     ToolNavigate => "Map: Navigate Tool",
     ToolPaint => "Map: Paint Territories Tool",
