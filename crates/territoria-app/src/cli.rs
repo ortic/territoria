@@ -133,6 +133,7 @@ fn export(path: &Path, a: &Args) -> Result<Vec<String>, String> {
         page: Default::default(),
         footer: String::new(),
         overview: false,
+        figures: false,
     };
     while let Err(e) = app.map_svg_for_cli(&settings) {
         if !e.contains("prepared") || std::time::Instant::now() > deadline {

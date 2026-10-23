@@ -302,6 +302,7 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
         ("Rows of", "Zeilen von"),
         // Panels: properties, territories, contents, tables.
         ("of", "von"),
+        ("Territory figures", "Gebietskennzahlen"),
         ("Regions like…", "Regionen wie…"),
         (
             "Each territory joins the area of this layer most of its areas lie in; existing regions are replaced",

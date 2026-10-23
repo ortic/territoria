@@ -689,6 +689,7 @@ impl TerritoriaApp {
                 page: Default::default(),
                 footer: String::new(),
                 overview: false,
+                figures: false,
             };
             let page = match self.map_page(&settings) {
                 Ok(p) => p,
@@ -2229,9 +2230,55 @@ impl TerritoriaApp {
                 rect,
             ))
         });
+        // A printed page's table of the territories' figures.
+        let figures = (page_size.is_some() && settings.figures)
+            .then(|| {
+                map.layers
+                    .iter()
+                    .rev()
+                    .filter(|l| l.shown_at(view.scale))
+                    .find_map(|l| l.kind.plan())
+            })
+            .flatten()
+            .and_then(|plan_id| {
+                let plan = self.project.plan(plan_id)?;
+                let stats = plan.stats(&self.project, &mut self.values);
+                let measure = plan
+                    .measures
+                    .first()
+                    .map_or("Areas".to_owned(), |m| m.source.label(&self.project));
+                let rows = plan
+                    .territories
+                    .iter()
+                    .zip(&stats.territories)
+                    .map(|(t, s)| {
+                        let d = s.deviations.first().copied().unwrap_or(0.0);
+                        (
+                            crate::map_view::color(t.color),
+                            vec![
+                                t.name.clone(),
+                                s.values.first().map_or("–".into(), |v| {
+                                    territoria_analysis::format::format_value(*v)
+                                }),
+                                format!(
+                                    "{}{}",
+                                    if d > 0.0 { "+" } else { "" },
+                                    territoria_analysis::format::format_percent(d)
+                                ),
+                            ],
+                        )
+                    })
+                    .collect();
+                Some(crate::export_map::FiguresTable {
+                    title: plan.name.clone(),
+                    headers: vec![tr("Territory").to_owned(), measure, "±".to_owned()],
+                    rows,
+                })
+            });
         let deco = crate::export_map::Decorations {
             footer,
             overview,
+            figures,
             title: settings.title.clone(),
             logo: self
                 .settings
@@ -3949,6 +3996,7 @@ impl TerritoriaApp {
                 page: Default::default(),
                 footer: String::new(),
                 overview: false,
+                figures: false,
             };
             pages.push(self.map_render(&settings, false, Some(&page))?);
         }
@@ -4141,6 +4189,7 @@ impl TerritoriaApp {
                     page: Default::default(),
                     footer: String::new(),
                     overview: false,
+                    figures: false,
                 };
                 match self.map_svg(&settings) {
                     Ok(svg) => {

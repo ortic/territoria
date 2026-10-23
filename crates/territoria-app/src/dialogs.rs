@@ -2199,6 +2199,8 @@ pub struct MapExportSettings {
     pub footer: String,
     /// Pages: a small map of everything with the page's part marked.
     pub overview: bool,
+    /// Pages: the territories' figures beside the map.
+    pub figures: bool,
 }
 
 pub struct ExportMapDialog {
@@ -2217,6 +2219,7 @@ impl ExportMapDialog {
                 page: Default::default(),
                 footer: "{map} · {date}".into(),
                 overview: false,
+                figures: false,
             },
         }
     }
@@ -2273,6 +2276,10 @@ impl ExportMapDialog {
                         ui.label("");
                         ui.checkbox(&mut s.overview, tr("Overview map"))
                             .on_hover_text("A small map of everything in the corner, with the page's part marked");
+                        ui.end_row();
+                        ui.label("");
+                        ui.checkbox(&mut s.figures, tr("Territory figures"))
+                            .on_hover_text("A table of the territories on the map with their measure and deviation, beside the legend");
                         ui.end_row();
                         ui.label(tr("Footer"));
                         ui.add(

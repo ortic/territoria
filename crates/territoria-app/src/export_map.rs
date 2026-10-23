@@ -94,8 +94,81 @@ pub struct Decorations {
     pub footer: String,
     /// Printed pages: a small map of everything, in this view.
     pub overview: Option<View>,
+    /// Printed pages: the figures of the map's territories.
+    pub figures: Option<FiguresTable>,
     pub credits: Vec<String>,
     pub scale_bar: bool,
+}
+
+/// A small table for printed pages: a row per territory with its colour.
+pub struct FiguresTable {
+    pub title: String,
+    pub headers: Vec<String>,
+    /// Colour, then the cells.
+    pub rows: Vec<(egui::Color32, Vec<String>)>,
+}
+
+/// The table right-aligned at `right` from `top`.
+fn figures_at(s: &mut String, t: &FiguresTable, right: f32, top: f32) {
+    let size = 9.0;
+    let row_h = 13.0;
+    let rows: Vec<&(egui::Color32, Vec<String>)> = t.rows.iter().take(30).collect();
+    // Column widths from the longest cell.
+    let cols = t.headers.len();
+    let widths: Vec<f32> = (0..cols)
+        .map(|c| {
+            rows.iter()
+                .map(|(_, cells)| cells.get(c).map_or(0.0, |x| text_width(x, size)))
+                .fold(text_width(&t.headers[c], size), f32::max)
+                + 8.0
+        })
+        .collect();
+    let width = 14.0 + widths.iter().sum::<f32>();
+    let x0 = right - width;
+    let _ = write!(
+        s,
+        r##"<text x="{x0:.1}" y="{:.1}" font-size="11" fill="#202328">{}</text>"##,
+        top + 10.0,
+        escape(&t.title)
+    );
+    let mut y = top + 26.0;
+    let mut x = x0 + 14.0;
+    for (c, h) in t.headers.iter().enumerate() {
+        let (anchor, at) = if c == 0 {
+            ("start", x)
+        } else {
+            ("end", x + widths[c] - 4.0)
+        };
+        let _ = write!(
+            s,
+            r##"<text x="{at:.1}" y="{y:.1}" font-size="{size}" font-weight="bold" text-anchor="{anchor}" fill="#202328">{}</text>"##,
+            escape(h)
+        );
+        x += widths[c];
+    }
+    for (color, cells) in rows {
+        y += row_h;
+        let (c, a) = hex(*color);
+        let _ = write!(
+            s,
+            r#"<rect x="{x0:.1}" y="{:.1}" width="9" height="9" rx="2" fill="{c}" fill-opacity="{a:.3}"/>"#,
+            y - 8.0
+        );
+        let mut x = x0 + 14.0;
+        for (k, cell) in cells.iter().enumerate() {
+            let (anchor, at) = if k == 0 {
+                ("start", x)
+            } else {
+                ("end", x + widths[k] - 4.0)
+            };
+            let _ = write!(
+                s,
+                r##"<text x="{at:.1}" y="{y:.1}" font-size="{size}" text-anchor="{anchor}" fill="#303338">{}</text>"##,
+                escape(cell)
+            );
+            x += widths.get(k).copied().unwrap_or(0.0);
+        }
+    }
 }
 
 /// The colour grid of a map coloured by two values.
@@ -1191,11 +1264,20 @@ pub fn page_svg(
         frame.width(),
         frame.height()
     );
-    // The legend beside the map, or below it on portrait pages.
-    if h > w {
-        legends_at(&mut s, deco, w - PAGE_MARGIN, frame.max.y + 12.0);
+    // The legend beside the map, or below it on portrait pages; the
+    // figures under it.
+    let end = if h > w {
+        legends_at(&mut s, deco, w - PAGE_MARGIN, frame.max.y + 12.0)
     } else {
-        legends_at(&mut s, deco, w - PAGE_MARGIN, frame.min.y);
+        legends_at(&mut s, deco, w - PAGE_MARGIN, frame.min.y)
+    };
+    if let Some(t) = &deco.figures {
+        if h > w {
+            // Portrait: beside the legend, at the left margin's side.
+            figures_at(&mut s, t, w / 2.0, frame.max.y + 12.0);
+        } else {
+            figures_at(&mut s, t, w - PAGE_MARGIN, end + 6.0);
+        }
     }
     // Footer: the text on the left, credits on the right.
     let y = h - PAGE_MARGIN;
