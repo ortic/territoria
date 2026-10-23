@@ -104,6 +104,13 @@ pub fn show(
             .response
             .on_hover_text("This table with each row's territories");
             if ui
+                .button("⊕ Columns from…")
+                .on_hover_text("Values from the map (the area a point lies in, points in an area, the nearest point) or another table by key")
+                .clicked()
+            {
+                actions.push(Action::Join(data));
+            }
+            if ui
                 .button("ƒ Calculated column…")
                 .on_hover_text("A new column computed from the others with a formula")
                 .clicked()

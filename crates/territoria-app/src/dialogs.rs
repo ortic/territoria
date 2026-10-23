@@ -3066,3 +3066,267 @@ impl CatchmentDialog {
         outcome
     }
 }
+
+/// Where new columns come from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JoinMode {
+    /// Points: the area each lies in.
+    AreaOf,
+    /// Areas: the points inside.
+    PointsIn,
+    /// Points: the nearest point of another layer.
+    Nearest,
+    /// Any table: another table's rows by key.
+    Lookup,
+}
+
+/// New columns for a table from the map or another table.
+pub struct JoinDialog {
+    pub target: crate::app::DataRef,
+    pub mode: JoinMode,
+    pub layer: Option<LayerId>,
+    pub table: Option<TableId>,
+    pub target_key: Option<String>,
+    pub source_key: Option<String>,
+    pub columns: Vec<String>,
+    pub agg: Aggregate,
+}
+
+impl JoinDialog {
+    pub fn new(project: &Project, target: crate::app::DataRef) -> JoinDialog {
+        let kind = match target {
+            crate::app::DataRef::Layer(l) => project.layer(l).map(|l| l.kind()),
+            crate::app::DataRef::Table(_) => None,
+        };
+        let mode = match kind {
+            Some(GeometryKind::Point) => JoinMode::AreaOf,
+            Some(GeometryKind::Area) => JoinMode::PointsIn,
+            _ => JoinMode::Lookup,
+        };
+        let mut d = JoinDialog {
+            target,
+            mode,
+            layer: None,
+            table: None,
+            target_key: None,
+            source_key: None,
+            columns: Vec::new(),
+            agg: Aggregate::Sum,
+        };
+        d.default_source(project);
+        d
+    }
+
+    fn default_source(&mut self, project: &Project) {
+        let want = match self.mode {
+            JoinMode::AreaOf => Some(GeometryKind::Area),
+            JoinMode::PointsIn | JoinMode::Nearest => Some(GeometryKind::Point),
+            JoinMode::Lookup => None,
+        };
+        let own = match self.target {
+            crate::app::DataRef::Layer(l) => Some(l),
+            crate::app::DataRef::Table(_) => None,
+        };
+        self.layer = want.and_then(|k| {
+            project
+                .layers
+                .iter()
+                .find(|l| l.kind() == k && Some(l.id) != own)
+                .map(|l| l.id)
+        });
+        if self.mode == JoinMode::Lookup {
+            let own_table = match self.target {
+                crate::app::DataRef::Table(t) => Some(t),
+                crate::app::DataRef::Layer(_) => None,
+            };
+            self.table = project
+                .tables
+                .iter()
+                .find(|t| Some(t.id) != own_table)
+                .map(|t| t.id);
+            if let Some((t, _)) = data_table(project, self.target) {
+                self.target_key =
+                    territoria_data::suggest::key_column(t).map(|c| t.columns[c].name.clone());
+            }
+            if let Some(t) = self.table.and_then(|t| project.table(t)) {
+                self.source_key = territoria_data::suggest::key_column(&t.table)
+                    .map(|c| t.table.columns[c].name.clone());
+            }
+        }
+        self.columns.clear();
+    }
+
+    /// The new columns, if the choices are complete.
+    pub fn columns_for(
+        &self,
+        project: &Project,
+        cache: &mut territoria_model::Cache,
+    ) -> Option<Vec<territoria_data::Column>> {
+        use territoria_model::join;
+        let own = match self.target {
+            crate::app::DataRef::Layer(l) => Some(l),
+            crate::app::DataRef::Table(_) => None,
+        };
+        Some(match self.mode {
+            JoinMode::AreaOf => join::from_areas(project, cache, own?, self.layer?, &self.columns),
+            JoinMode::PointsIn => join::from_points(project, cache, own?, self.layer?),
+            JoinMode::Nearest => join::nearest(project, own?, self.layer?),
+            JoinMode::Lookup => {
+                let (target, _) = data_table(project, self.target)?;
+                let source = &project.table(self.table?)?.table;
+                join::lookup(
+                    target,
+                    self.target_key.as_deref()?,
+                    source,
+                    self.source_key.as_deref()?,
+                    &self.columns,
+                    self.agg,
+                )
+            }
+        })
+    }
+
+    pub fn show(&mut self, ctx: &egui::Context, project: &Project, open: &mut bool) -> bool {
+        let mut apply = false;
+        let mut cancel = false;
+        let kind = match self.target {
+            crate::app::DataRef::Layer(l) => project.layer(l).map(|l| l.kind()),
+            crate::app::DataRef::Table(_) => None,
+        };
+        *open = modal(ctx, "join", "Add columns from…", 520.0, |ui| {
+            ui.label(RichText::new("New columns with values from the map or another table, as they are now (add them again after changes).").weak());
+            ui.add_space(6.0);
+            let before = self.mode;
+            if kind == Some(GeometryKind::Point) {
+                ui.radio_value(
+                    &mut self.mode,
+                    JoinMode::AreaOf,
+                    "The area each point lies in (postcode, region, territory figures…)",
+                );
+                ui.radio_value(
+                    &mut self.mode,
+                    JoinMode::Nearest,
+                    "The nearest point of another layer (branch, rep) and the distance",
+                );
+            }
+            if kind == Some(GeometryKind::Area) {
+                ui.radio_value(
+                    &mut self.mode,
+                    JoinMode::PointsIn,
+                    "The points in each area: how many, and their numbers summed",
+                );
+            }
+            ui.radio_value(&mut self.mode, JoinMode::Lookup, "Another table, by key");
+            if self.mode != before {
+                self.default_source(project);
+            }
+            ui.add_space(6.0);
+            egui::Grid::new("join-grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                match self.mode {
+                    JoinMode::AreaOf | JoinMode::PointsIn | JoinMode::Nearest => {
+                        let want = if self.mode == JoinMode::AreaOf { GeometryKind::Area } else { GeometryKind::Point };
+                        ui.label("From");
+                        if layer_combo(ui, "join-layer", project, &mut self.layer, Some(want)) {
+                            self.columns.clear();
+                        }
+                        ui.end_row();
+                        if self.mode == JoinMode::AreaOf
+                            && let Some(l) = self.layer.and_then(|l| project.layer(l))
+                        {
+                            ui.label("Columns");
+                            ui.vertical(|ui| {
+                                ui.label(RichText::new("The area's key always; tick more:").weak().small());
+                                egui::ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
+                                    for c in &l.attributes.columns {
+                                        let mut on = self.columns.contains(&c.name);
+                                        if ui.checkbox(&mut on, &c.name).changed() {
+                                            if on {
+                                                self.columns.push(c.name.clone());
+                                            } else {
+                                                self.columns.retain(|x| x != &c.name);
+                                            }
+                                        }
+                                    }
+                                });
+                            });
+                            ui.end_row();
+                        }
+                    }
+                    JoinMode::Lookup => {
+                        ui.label("Table");
+                        let text = self.table.and_then(|t| project.table(t)).map_or("Choose…".to_owned(), |t| t.name.clone());
+                        ComboBox::from_id_salt("join-table").selected_text(text).show_ui(ui, |ui| {
+                            for t in &project.tables {
+                                if ui.selectable_label(self.table == Some(t.id), &t.name).clicked() {
+                                    self.table = Some(t.id);
+                                    self.source_key = territoria_data::suggest::key_column(&t.table).map(|c| t.table.columns[c].name.clone());
+                                    self.columns.clear();
+                                }
+                            }
+                        });
+                        ui.end_row();
+                        if let (Some((target, _)), Some(source)) = (data_table(project, self.target), self.table.and_then(|t| project.table(t))) {
+                            ui.label("Key here");
+                            column_combo(ui, "join-tk", target, &mut self.target_key, |k| k != ColumnKind::Number, None);
+                            ui.end_row();
+                            ui.label("Key there");
+                            column_combo(ui, "join-sk", &source.table, &mut self.source_key, |k| k != ColumnKind::Number, None);
+                            ui.end_row();
+                            ui.label("Columns");
+                            egui::ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
+                                for c in source.table.columns.iter().filter(|c| Some(&c.name) != self.source_key.as_ref()) {
+                                    let mut on = self.columns.contains(&c.name);
+                                    if ui.checkbox(&mut on, &c.name).changed() {
+                                        if on {
+                                            self.columns.push(c.name.clone());
+                                        } else {
+                                            self.columns.retain(|x| x != &c.name);
+                                        }
+                                    }
+                                }
+                            });
+                            ui.end_row();
+                            ui.label("Several rows");
+                            ComboBox::from_id_salt("join-agg").selected_text(self.agg.label()).show_ui(ui, |ui| {
+                                for a in Aggregate::ALL {
+                                    ui.selectable_value(&mut self.agg, a, a.label());
+                                }
+                            })
+                            .response
+                            .on_hover_text("When several rows have the same key: numbers are combined this way, texts come from the first");
+                            ui.end_row();
+                        }
+                    }
+                }
+            });
+            let ready = match self.mode {
+                JoinMode::Lookup => {
+                    self.table.is_some()
+                        && self.target_key.is_some()
+                        && self.source_key.is_some()
+                        && !self.columns.is_empty()
+                }
+                _ => self.layer.is_some(),
+            };
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(
+                        ready,
+                        egui::Button::new(RichText::new("Add columns").strong()),
+                    )
+                    .clicked()
+                {
+                    apply = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    cancel = true;
+                }
+            });
+        });
+        if cancel || apply {
+            *open = false;
+        }
+        apply
+    }
+}

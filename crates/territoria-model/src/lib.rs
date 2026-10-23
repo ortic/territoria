@@ -8,6 +8,7 @@ pub mod catchment;
 pub mod file;
 pub mod grid;
 pub mod history;
+pub mod join;
 pub mod layer;
 pub mod location;
 pub mod map;

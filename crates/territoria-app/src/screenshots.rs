@@ -2262,3 +2262,106 @@ fn map_projection() {
         .run_command_for_test(crate::commands::Command::Undo);
     assert!(h.state().project.maps[0].crs.is_web_mercator());
 }
+
+/// Columns from the map: the area a customer lies in, the nearest rep,
+/// customers per area.
+#[test]
+fn columns_from_the_map() {
+    use crate::app::DataRef;
+    use crate::dialogs::{JoinDialog, JoinMode, Placement};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let customers = customers(h.state(), layer, 300);
+    let app = h.state_mut();
+    app.add_table(
+        "Customers".into(),
+        customers,
+        PathBuf::from("customers.csv"),
+        Placement::Points {
+            x: "Longitude".into(),
+            y: "Latitude".into(),
+        },
+        None,
+    );
+    let points = app.project.layers.last().unwrap().id;
+    let reps = Table::new(vec![
+        Column::text(
+            "Rep",
+            ColumnKind::Key,
+            vec![Some("North".into()), Some("South".into())],
+        ),
+        Column::number(
+            "Lon",
+            vec![
+                Some(
+                    app.project
+                        .layer(layer)
+                        .unwrap()
+                        .geometry
+                        .bbox
+                        .unwrap()
+                        .center()
+                        .x
+                );
+                2
+            ],
+        ),
+        Column::number("Lat", {
+            let b = app.project.layer(layer).unwrap().geometry.bbox.unwrap();
+            vec![Some(b.max().y), Some(b.min().y)]
+        }),
+    ])
+    .unwrap();
+    app.add_table(
+        "Reps".into(),
+        reps,
+        PathBuf::from("reps.csv"),
+        Placement::Points {
+            x: "Lon".into(),
+            y: "Lat".into(),
+        },
+        None,
+    );
+    let reps = app.project.layers.last().unwrap().id;
+    // The area each customer lies in.
+    let mut d = JoinDialog::new(&app.project, DataRef::Layer(points));
+    assert_eq!(d.mode, JoinMode::AreaOf);
+    d.layer = Some(layer);
+    app.apply_join(&d);
+    // The nearest rep.
+    d.mode = JoinMode::Nearest;
+    d.layer = Some(reps);
+    app.apply_join(&d);
+    let c = &app.project.layer(points).unwrap().attributes;
+    let area_key = c
+        .columns
+        .iter()
+        .find(|c| {
+            c.name
+                .ends_with(&format!("({})", app.project.layer(layer).unwrap().name))
+        })
+        .expect("area key");
+    let inside = (0..c.rows())
+        .filter(|&r| !area_key.display(r).is_empty())
+        .count();
+    assert!(inside > 150, "{inside} customers in an area");
+    let rep = c.column("Nearest Reps").unwrap();
+    assert!((0..c.rows()).all(|r| rep.display(r) == "North" || rep.display(r) == "South"));
+    assert!(c.column("km to the nearest Reps").unwrap().f64(0).unwrap() > 0.0);
+    // Customers per area.
+    let d = JoinDialog::new(&app.project, DataRef::Layer(layer));
+    assert_eq!(d.mode, JoinMode::PointsIn);
+    app.apply_join(&d);
+    let a = &app.project.layer(layer).unwrap().attributes;
+    let counted: f64 = (0..a.rows())
+        .filter_map(|r| a.column("Number of Customers").unwrap().f64(r))
+        .sum();
+    assert_eq!(
+        counted as usize, inside,
+        "every customer inside counted once"
+    );
+    assert!(a.column("Sales (Customers)").is_some());
+}

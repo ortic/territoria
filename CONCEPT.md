@@ -190,11 +190,11 @@ territoria/
 - [x] Data grid: virtualized, sort, filter, column statistics, sum row, search, copy (sort and search)
 - [ ] Edit cells of imported tables; add/delete rows
 - [x] Calculated columns with one expression language (see 5.5) (on tables and layer attributes; the formula is kept and dependent columns recalculate)
-- [ ] Lookup columns (value from another table by key, with aggregation for several matches)
-- [ ] Spatial columns: "lies in" (area key/territory of a point), "count of points in", distance between coordinates or to nearest site
+- [x] Lookup columns (value from another table by key, with aggregation for several matches) (Columns from… → Another table by key; the best key matching is chosen)
+- [x] Spatial columns: "lies in" (area key/territory of a point), "count of points in", distance between coordinates or to nearest site (Columns from…: area a point lies in, points in an area, nearest point of a layer with distance; distance between coordinates by formula)
 - [ ] Score column: weighted combination of columns (absolute or as share of total)
 - [ ] Queries: join, union, group by with aggregations (sum, mean, min, max, median, mode, first, last, list, count rows, count values), filter before and after grouping
-- [ ] Spatial join: points get attributes of the area they lie in (areas get counts and sums of the points inside)
+- [x] Spatial join: points get attributes of the area they lie in (areas get counts and sums of the points inside)
 - [ ] Saved filters (segments) usable by analyses, reports and exports; one clear meaning
 - [x] Table ↔ map coupling: hover/select rows highlights areas and the other way round (clicking rows selects their areas, Shift toggles; rows of the map's selection are highlighted and can be filtered; not on hover)
 - [x] Data export: CSV, XLSX (one sheet per table or files), filtered or all (plans, tables and layer attributes with each row's territories; not filtered yet)

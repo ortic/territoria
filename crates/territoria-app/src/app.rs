@@ -87,6 +87,8 @@ pub enum Action {
     GoToView(MapId, [f64; 2], f64),
     /// Read a table again from its file.
     ReloadTable(TableId),
+    /// Open the dialog for columns from the map or another table.
+    Join(DataRef),
     /// Draw a map in another projection.
     SetMapCrs(MapId, territoria_geo::Crs),
     /// Show a message.
@@ -223,6 +225,7 @@ pub struct TerritoriaApp {
     hex_grid: Option<crate::dialogs::HexGridDialog>,
     sites: Option<crate::dialogs::SitesDialog>,
     catchment: Option<crate::dialogs::CatchmentDialog>,
+    join: Option<crate::dialogs::JoinDialog>,
     /// The search box: query and what it found.
     search: String,
     search_hits: Vec<crate::search::Hit>,
@@ -358,6 +361,7 @@ impl TerritoriaApp {
             hex_grid: None,
             sites: None,
             catchment: None,
+            join: None,
             search: String::new(),
             search_hits: Vec::new(),
             search_focus: false,
@@ -1855,6 +1859,28 @@ impl TerritoriaApp {
         self.selection = Selection::Data(DataRef::Layer(id));
     }
 
+    /// Adds the columns a join dialog gives.
+    pub(crate) fn apply_join(&mut self, d: &crate::dialogs::JoinDialog) {
+        let Some(columns) = d.columns_for(&self.project, &mut self.values) else {
+            return;
+        };
+        if columns.is_empty() {
+            self.toast("Nothing to add.");
+            return;
+        }
+        let n = columns.len();
+        let target = d.target;
+        self.edit("Add columns", |p| {
+            if let Some(t) = data_table_mut(p, target) {
+                for mut c in columns {
+                    c.name = t.unique_name(&c.name);
+                    let _ = t.push_column(c);
+                }
+            }
+        });
+        self.toast(format!("{n} columns added."));
+    }
+
     /// Rings on the map and a table of what lies within them.
     pub(crate) fn create_catchment(&mut self, spec: &territoria_model::catchment::CatchmentSpec) {
         let table =
@@ -2959,6 +2985,9 @@ impl TerritoriaApp {
                 }
             }
             Action::ReloadTable(id) => self.reload_table(id),
+            Action::Join(data) => {
+                self.join = Some(crate::dialogs::JoinDialog::new(&self.project, data))
+            }
             Action::Notify(text) => self.toast(text),
             Action::SetMapCrs(map, crs) => {
                 self.edit("Change projection", |p| {
@@ -3704,6 +3733,14 @@ impl TerritoriaApp {
                 None => {}
             }
         }
+        if let Some(mut d) = self.join.take() {
+            let mut open = true;
+            if d.show(ctx, &self.project, &mut open) {
+                self.apply_join(&d);
+            } else if open {
+                self.join = Some(d);
+            }
+        }
         if let Some(mut d) = self.catchment.take() {
             let mut open = true;
             match d.show(ctx, &self.project, &mut open) {
@@ -4166,6 +4203,7 @@ impl eframe::App for TerritoriaApp {
             || self.hex_grid.is_some()
             || self.sites.is_some()
             || self.catchment.is_some()
+            || self.join.is_some()
             || self.settings_dialog.is_some()
             || self.select_list.is_some()
             || self.download.is_some()
