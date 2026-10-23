@@ -654,6 +654,7 @@ fn exports_map_files() {
             scale_bar: true,
             page: Default::default(),
             footer: String::new(),
+            overview: false,
         });
         app.export(Export::Map(format), path.clone());
         settle(&mut h);
@@ -1029,6 +1030,7 @@ fn label_templates() {
         scale_bar: true,
         page: Default::default(),
         footer: String::new(),
+        overview: false,
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -1337,6 +1339,7 @@ fn proportional_circles() {
         scale_bar: false,
         page: Default::default(),
         footer: String::new(),
+        overview: false,
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -2638,6 +2641,7 @@ fn heat_map() {
         scale_bar: false,
         page: Default::default(),
         footer: String::new(),
+        overview: false,
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -2737,6 +2741,7 @@ fn charts_per_area() {
         scale_bar: false,
         page: Default::default(),
         footer: String::new(),
+        overview: false,
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -2801,6 +2806,7 @@ fn two_values_at_once() {
         scale_bar: false,
         page: Default::default(),
         footer: String::new(),
+        overview: false,
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -2848,6 +2854,7 @@ fn zoom_dependent_layer() {
         scale_bar: false,
         page: Default::default(),
         footer: String::new(),
+        overview: false,
     };
     app.set_map_export_for_test(settings());
     settle(&mut h);
@@ -3052,6 +3059,7 @@ fn flow_lines() {
         scale_bar: false,
         page: Default::default(),
         footer: String::new(),
+        overview: false,
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -3140,6 +3148,7 @@ fn circles_by_category() {
         scale_bar: false,
         page: Default::default(),
         footer: String::new(),
+        overview: false,
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -3428,6 +3437,7 @@ fn company_logo_on_exports() {
         scale_bar: false,
         page: Default::default(),
         footer: String::new(),
+        overview: false,
     };
     let svg_path = dir.join("map.svg");
     h.state_mut().set_map_export_for_test(settings());
@@ -3723,6 +3733,7 @@ fn labels_sized_by_value() {
         scale_bar: false,
         page: Default::default(),
         footer: String::new(),
+        overview: false,
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -3762,6 +3773,11 @@ fn printed_page_layout() {
         },
     );
     settle(&mut h);
+    // Zoomed in: the overview shows where the page is.
+    let (center, scale) = h.state().view_for_test().unwrap();
+    h.state_mut()
+        .apply_action_for_test(crate::app::Action::GoToView(map, center, scale / 2.0));
+    settle(&mut h);
     let dir = std::env::temp_dir().join(format!("territoria-page-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     for (page, name) in [
@@ -3776,6 +3792,7 @@ fn printed_page_layout() {
             scale_bar: true,
             page,
             footer: "{project} · {map} · {date}".into(),
+            overview: true,
         };
         let svg_path = dir.join(format!("{name}.svg"));
         h.state_mut().set_map_export_for_test(settings());
@@ -3789,6 +3806,10 @@ fn printed_page_layout() {
             size.x, size.y
         )));
         assert!(svg.contains(">N</text>"), "north arrow");
+        assert!(
+            svg.contains(r##"stroke="#d62728""##),
+            "the page's part on the overview"
+        );
         assert!(svg.contains("Sales 2026 · Map · 20"), "footer filled in");
         let png_path = dir.join(format!("{name}.png"));
         h.state_mut().set_map_export_for_test(settings());
@@ -3971,6 +3992,7 @@ fn symbol_shapes() {
         scale_bar: false,
         page: Default::default(),
         footer: String::new(),
+        overview: false,
     });
     app.export(Export::Map(Format::Svg), path.clone());
     settle(&mut h);
@@ -4041,6 +4063,7 @@ fn line_widths_by_value() {
         scale_bar: false,
         page: Default::default(),
         footer: String::new(),
+        overview: false,
     });
     app.export(Export::Map(Format::Svg), svg_path.clone());
     settle(&mut h);

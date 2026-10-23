@@ -2197,6 +2197,8 @@ pub struct MapExportSettings {
     pub page: crate::export_map::PageSize,
     /// Text at the foot of pages: `{project}`, `{map}`, `{date}` filled in.
     pub footer: String,
+    /// Pages: a small map of everything with the page's part marked.
+    pub overview: bool,
 }
 
 pub struct ExportMapDialog {
@@ -2214,6 +2216,7 @@ impl ExportMapDialog {
                 scale_bar: true,
                 page: Default::default(),
                 footer: "{map} · {date}".into(),
+                overview: false,
             },
         }
     }
@@ -2267,6 +2270,10 @@ impl ExportMapDialog {
                     ui.add(egui::TextEdit::singleline(&mut s.title).desired_width(260.0));
                     ui.end_row();
                     if s.page != crate::export_map::PageSize::Screen {
+                        ui.label("");
+                        ui.checkbox(&mut s.overview, tr("Overview map"))
+                            .on_hover_text("A small map of everything in the corner, with the page's part marked");
+                        ui.end_row();
                         ui.label(tr("Footer"));
                         ui.add(
                             egui::TextEdit::singleline(&mut s.footer)

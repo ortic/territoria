@@ -302,6 +302,7 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
         ("Rows of", "Zeilen von"),
         // Panels: properties, territories, contents, tables.
         ("of", "von"),
+        ("Overview map", "Übersichtskarte"),
         ("Coverage from the sites", "Abdeckung von den Standorten"),
         ("outside", "ausserhalb"),
         ("areas", "Gebiete"),

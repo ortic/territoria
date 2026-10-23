@@ -291,7 +291,7 @@ territoria/
 ### 5.10 Output (M6)
 
 - [x] Export the map view as PNG (any DPI), SVG, PDF (with title, legends, scale bar, credits; no background tiles yet)
-- [ ] Print layouts: page size/orientation, map frame(s) with scale, legend, title, text, image, scale bar, north arrow, inset map, table (A4/A3 landscape or portrait: title, logo, one map frame showing what the screen shows, legend beside or below, scale bar, north arrow, footer and credits; no free placement, inset maps or tables yet)
+- [ ] Print layouts: page size/orientation, map frame(s) with scale, legend, title, text, image, scale bar, north arrow, inset map, table (A4/A3 landscape or portrait: title, logo, one map frame showing what the screen shows, legend beside or below, scale bar, north arrow, an overview inset with the page's part marked, footer and credits; no free placement or tables yet)
 - [x] Text templates in layouts (`{project.title}`, `{date}`, `{territory.name}`) (page footers with {project}, {map} and {date}; territory names on report pages)
 - [ ] Atlas/reports: one page per territory, area, filter value or column, or combinations; merged PDF or files; data tables per page (XLSX) (per territory: one PDF with an overview and a page per territory with its map, figures and largest areas; map atlas: the current map with a page per value of a column or per area, zoomed, others veiled, with legend and scale bar; data tables per territory as an Excel workbook with a sheet each)
 - [x] Geodata export: GeoJSON, Shapefile, GeoPackage of layers, territories (dissolved) and points; KML (GeoJSON)

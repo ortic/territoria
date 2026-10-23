@@ -686,6 +686,7 @@ impl TerritoriaApp {
                 scale_bar: false,
                 page: Default::default(),
                 footer: String::new(),
+                overview: false,
             };
             let page = match self.map_page(&settings) {
                 Ok(p) => p,
@@ -2194,8 +2195,36 @@ impl TerritoriaApp {
             .replace("{project}", &self.project.title)
             .replace("{map}", &map.name)
             .replace("{date}", &territoria_data::date::format(today));
+        // A printed page's overview: all the map's layers in a corner.
+        let overview = frame.filter(|_| settings.overview).and_then(|frame| {
+            let mut extent = territoria_render::Bounds::EMPTY;
+            for m in meshes.values().chain(cells.values()) {
+                if !m.extent.is_empty() {
+                    let (a, b) = (m.to_display(m.extent.min), m.to_display(m.extent.max));
+                    extent.add([a[0] as f32, a[1] as f32]);
+                    extent.add([b[0] as f32, b[1] as f32]);
+                }
+            }
+            if extent.is_empty() {
+                return None;
+            }
+            let (ew, eh) = (extent.width().max(1e-9), extent.height().max(1e-9));
+            let w = frame.width() * 0.24;
+            let h = (w * eh / ew).min(frame.height() * 0.3);
+            let w = h * ew / eh;
+            let rect = egui::Rect::from_min_size(
+                egui::pos2(frame.min.x + 10.0, frame.max.y - 10.0 - h),
+                egui::vec2(w, h),
+            );
+            Some(territoria_render::View::fit(
+                [extent.min[0] as f64, extent.min[1] as f64],
+                [extent.max[0] as f64, extent.max[1] as f64],
+                rect,
+            ))
+        });
         let deco = crate::export_map::Decorations {
             footer,
+            overview,
             title: settings.title.clone(),
             logo: self
                 .settings
@@ -3882,6 +3911,7 @@ impl TerritoriaApp {
                 scale_bar: true,
                 page: Default::default(),
                 footer: String::new(),
+                overview: false,
             };
             pages.push(self.map_render(&settings, false, Some(&page))?);
         }
@@ -4073,6 +4103,7 @@ impl TerritoriaApp {
                     scale_bar: true,
                     page: Default::default(),
                     footer: String::new(),
+                    overview: false,
                 };
                 match self.map_svg(&settings) {
                     Ok(svg) => {

@@ -92,6 +92,8 @@ pub struct Decorations {
     pub grids: Vec<GridLegend>,
     /// Text at the foot of printed pages.
     pub footer: String,
+    /// Printed pages: a small map of everything, in this view.
+    pub overview: Option<View>,
     pub credits: Vec<String>,
     pub scale_bar: bool,
 }
@@ -1132,6 +1134,40 @@ pub fn page_svg(
     );
     map_into(&mut s, resolved, view, "frame");
     s.push_str(overlays);
+    // The overview: everything small, the page's part marked.
+    if let Some(ov) = &deco.overview {
+        let r = ov.rect;
+        let _ = write!(
+            s,
+            r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="#ffffff"/>"##,
+            r.min.x,
+            r.min.y,
+            r.width(),
+            r.height()
+        );
+        map_into(&mut s, resolved, ov, "overview");
+        let a = ov.to_screen(view.to_display(frame.min));
+        let b = ov.to_screen(view.to_display(frame.max));
+        let part = Rect::from_two_pos(a, b).intersect(r);
+        if part.width() > 0.0 && part.height() > 0.0 {
+            let _ = write!(
+                s,
+                r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="none" stroke="#d62728" stroke-width="1.5"/>"##,
+                part.min.x,
+                part.min.y,
+                part.width(),
+                part.height()
+            );
+        }
+        let _ = write!(
+            s,
+            r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="none" stroke="#8a8d96" stroke-width="0.75"/>"##,
+            r.min.x,
+            r.min.y,
+            r.width(),
+            r.height()
+        );
+    }
     // North arrow, top right in the frame.
     let (nx, ny) = (frame.max.x - 20.0, frame.min.y + 12.0);
     let _ = write!(
