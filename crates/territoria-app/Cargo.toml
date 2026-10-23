@@ -20,6 +20,7 @@ geo-types.workspace = true
 rfd.workspace = true
 territoria-optimize.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 territoria-analysis.workspace = true
 territoria-config.workspace = true
 territoria-data.workspace = true

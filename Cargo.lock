@@ -4337,6 +4337,7 @@ dependencies = [
  "resvg",
  "rfd",
  "serde",
+ "serde_json",
  "svg2pdf",
  "territoria-analysis",
  "territoria-config",

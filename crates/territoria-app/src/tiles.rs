@@ -77,6 +77,10 @@ pub struct Tiles {
 }
 
 impl Tiles {
+    pub fn cache_dir(&self) -> &std::path::Path {
+        &self.cache_dir
+    }
+
     pub fn new(cache_dir: PathBuf) -> Tiles {
         let (tx, rx) = channel();
         Tiles {

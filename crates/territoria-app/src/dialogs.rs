@@ -2277,3 +2277,133 @@ impl SelectListDialog {
         outcome
     }
 }
+
+/// Preferences: look, saving, new maps, stored data.
+pub struct SettingsDialog {
+    /// Size of the tile cache in bytes, measured on opening.
+    tile_bytes: u64,
+}
+
+pub enum SettingsOutcome {
+    ClearTiles,
+}
+
+fn folder_size(dir: &std::path::Path) -> u64 {
+    std::fs::read_dir(dir).map_or(0, |entries| {
+        entries
+            .flatten()
+            .map(|e| match e.metadata() {
+                Ok(m) if m.is_dir() => folder_size(&e.path()),
+                Ok(m) => m.len(),
+                Err(_) => 0,
+            })
+            .sum()
+    })
+}
+
+impl SettingsDialog {
+    pub fn new(tile_dir: &std::path::Path) -> SettingsDialog {
+        let mut d = SettingsDialog { tile_bytes: 0 };
+        d.measure_cache(tile_dir);
+        d
+    }
+
+    pub fn measure_cache(&mut self, tile_dir: &std::path::Path) {
+        self.tile_bytes = folder_size(tile_dir);
+    }
+
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        settings: &mut territoria_config::Settings,
+        open: &mut bool,
+    ) -> Option<SettingsOutcome> {
+        use territoria_config::ThemeChoice;
+        let mut outcome = None;
+        let mut close = false;
+        *open = modal(ctx, "settings", "Settings", 460.0, |ui| {
+            egui::Grid::new("settings-grid")
+                .num_columns(2)
+                .spacing([14.0, 10.0])
+                .show(ui, |ui| {
+                    ui.label("Theme");
+                    ui.horizontal(|ui| {
+                        ui.radio_value(&mut settings.theme, ThemeChoice::System, "Like the system");
+                        ui.radio_value(&mut settings.theme, ThemeChoice::Light, "Light");
+                        ui.radio_value(&mut settings.theme, ThemeChoice::Dark, "Dark");
+                    });
+                    ui.end_row();
+                    ui.label("Size");
+                    let mut pct = (settings.ui_scale * 100.0).round();
+                    if ui
+                        .add(egui::Slider::new(&mut pct, 60.0..=250.0).step_by(10.0).suffix(" %"))
+                        .on_hover_text("Ctrl + and Ctrl − change it too")
+                        .changed()
+                    {
+                        settings.ui_scale = pct / 100.0;
+                    }
+                    ui.end_row();
+                    ui.label("Autosave");
+                    ui.horizontal(|ui| {
+                        ui.label("every");
+                        ui.add(egui::DragValue::new(&mut settings.autosave_minutes).range(0..=60));
+                        ui.label(if settings.autosave_minutes == 0 { "minutes (off)" } else { "minutes" });
+                    })
+                    .response
+                    .on_hover_text("Unsaved changes are kept in a recovery copy, in case something goes wrong");
+                    ui.end_row();
+                    ui.label("New maps");
+                    let current = settings.background.clone().unwrap_or_else(|| "No background".into());
+                    ComboBox::from_id_salt("settings-background")
+                        .width(240.0)
+                        .selected_text(current)
+                        .show_ui(ui, |ui| {
+                            if ui.selectable_label(settings.background.is_none(), "No background").clicked() {
+                                settings.background = None;
+                            }
+                            for p in crate::tiles::PRESETS {
+                                if ui
+                                    .selectable_label(settings.background.as_deref() == Some(p.name), p.name)
+                                    .on_hover_text(p.note)
+                                    .clicked()
+                                {
+                                    settings.background = Some(p.name.to_owned());
+                                }
+                            }
+                        });
+                    ui.end_row();
+                    ui.label("Recent projects");
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{}", settings.recent_projects.len()));
+                        if ui
+                            .add_enabled(!settings.recent_projects.is_empty(), egui::Button::new("Forget"))
+                            .clicked()
+                        {
+                            settings.recent_projects.clear();
+                        }
+                    });
+                    ui.end_row();
+                    ui.label("Map tiles");
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{:.1} MB stored", self.tile_bytes as f64 / 1_048_576.0));
+                        if ui
+                            .add_enabled(self.tile_bytes > 0, egui::Button::new("Clear"))
+                            .on_hover_text("Background map tiles are kept on disk: maps load fast and also show offline")
+                            .clicked()
+                        {
+                            outcome = Some(SettingsOutcome::ClearTiles);
+                        }
+                    });
+                    ui.end_row();
+                });
+            ui.add_space(8.0);
+            if ui.button("Close").clicked() {
+                close = true;
+            }
+        });
+        if close {
+            *open = false;
+        }
+        outcome
+    }
+}

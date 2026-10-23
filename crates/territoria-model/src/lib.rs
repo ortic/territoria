@@ -76,6 +76,10 @@ pub struct Project {
     pub maps: Vec<Map>,
     next_id: u32,
     rev: u64,
+    /// Where the user was (open tabs, active plan): kept for the app, not
+    /// read here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<serde_json::Value>,
 }
 
 impl Project {

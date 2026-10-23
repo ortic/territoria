@@ -1331,3 +1331,54 @@ fn geopackage_import_dialog() {
     settle(&mut h);
     save(&mut h, "gpkg-import");
 }
+
+/// A project reopens with the tabs, plan and territory it was saved with.
+#[test]
+fn project_remembers_workspace() {
+    use crate::app::{DataRef, Tab};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    h.state_mut()
+        .add_linked_table_now("Sales 2026", table, "Area", layer, Some("Revenue"));
+    let app = h.state_mut();
+    let plan = app.add_balanced_plan_now(layer, 3);
+    let t = app.project.plan(plan).unwrap().territories[2].id;
+    app.active_territory = Some(t);
+    let table = app.project.tables[0].id;
+    app.open_table_for_test(DataRef::Table(table));
+    settle(&mut h);
+    let dir = std::env::temp_dir().join(format!("territoria-ws-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("ws.territoria");
+    h.state_mut().save_to_for_test(path.clone());
+    settle(&mut h);
+
+    drop(h);
+    drop(_lock);
+    let (mut h2, _lock2) = harness(false);
+    h2.state_mut().open_path(&path);
+    settle(&mut h2);
+    let app = h2.state();
+    assert!(
+        app.open_tabs_for_test()
+            .contains(&Tab::Table(DataRef::Table(table))),
+        "{:?}",
+        app.open_tabs_for_test()
+    );
+    assert_eq!(app.active_plan, Some(plan));
+    assert_eq!(app.active_territory, Some(t));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// The settings dialog.
+#[test]
+fn settings_dialog() {
+    let (mut h, _lock) = harness(false);
+    h.state_mut().open_settings_for_test();
+    h.run_steps(3);
+    save(&mut h, "settings");
+}

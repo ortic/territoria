@@ -126,18 +126,18 @@ territoria/
 - [x] Cargo workspace with the crates above
 - [x] `eframe` app with the `wgpu` backend, GL fallback, crash log
 - [x] Dockable layout (`egui_dock`): contents panel, map tabs, table tabs, inspector, territory panel (map and table tabs dock; Contents and Properties/Territories are side panels)
-- [ ] Save/restore layout and open tabs
+- [x] Save/restore layout and open tabs (tabs and their layout are saved with the project; panels with the app)
 - [x] Main menu, toolbar, status bar (cursor coordinates, scale, selection, background tasks)
 - [x] Command palette (Ctrl+Shift+P) with fuzzy search over all commands (word search)
 - [ ] Keyboard shortcuts for all commands, configurable
 - [x] Light/dark themes (Pythia's palette)
-- [ ] Settings dialog
+- [x] Settings dialog (theme, size, autosave, background of new maps, recent projects, tile cache)
 - [x] Welcome screen: recent projects, new project, open sample, getting started (no sample project yet)
 - [x] Project: new, open, save, save as; recent projects
 - [x] Autosave and crash recovery (autosave to the data folder; no restore prompt yet)
 - [x] Undo/redo for every project change
 - [ ] Context help (F1) and tooltips that explain, not just name
-- [ ] Remember where the user left off (map view, selected layer, open tables)
+- [x] Remember where the user left off (map view, selected layer, open tables) (also the current map, active plan and territory)
 
 ### 5.2 Boundaries and base geometry (M1)
 

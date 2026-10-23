@@ -61,6 +61,8 @@ pub struct Settings {
     pub last_dir: Option<PathBuf>,
     /// Minutes between autosaves of unsaved changes (0 = off).
     pub autosave_minutes: u32,
+    /// Background map of new maps, by preset name (`None`: plain).
+    pub background: Option<String>,
 }
 
 impl Default for Settings {
@@ -71,6 +73,7 @@ impl Default for Settings {
             recent_projects: Vec::new(),
             last_dir: None,
             autosave_minutes: 3,
+            background: None,
         }
     }
 }

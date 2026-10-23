@@ -40,7 +40,7 @@ pub enum Tab {
     Table(DataRef),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Selection {
     #[default]
     None,
@@ -48,7 +48,7 @@ pub enum Selection {
     Data(DataRef),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum RightTab {
     #[default]
     Properties,
@@ -152,6 +152,19 @@ struct Workspace {
 
 const WORKSPACE_KEY: &str = "territoria-workspace-v1";
 
+/// Where the user was in a project: saved with it, restored on opening.
+#[derive(Serialize, Deserialize)]
+struct ProjectWorkspace {
+    dock: DockState<Tab>,
+    current_map: Option<MapId>,
+    active_plan: Option<PlanId>,
+    active_territory: Option<TerritoryId>,
+    #[serde(default)]
+    selection: Selection,
+    #[serde(default)]
+    right_tab: RightTab,
+}
+
 pub struct TerritoriaApp {
     paths: Option<Paths>,
     pub settings: Settings,
@@ -191,6 +204,7 @@ pub struct TerritoriaApp {
     new_plan: Option<NewPlanDialog>,
     merge: Option<MergeDialog>,
     formula: Option<crate::dialogs::FormulaDialog>,
+    settings_dialog: Option<crate::dialogs::SettingsDialog>,
     download: Option<DownloadDialog>,
     export_map: Option<crate::dialogs::ExportMapDialog>,
     /// Settings of the map export waiting for its file name.
@@ -275,6 +289,7 @@ impl TerritoriaApp {
             new_plan: None,
             merge: None,
             formula: None,
+            settings_dialog: None,
             download: None,
             export_map: None,
             map_export: None,
@@ -674,12 +689,68 @@ impl TerritoriaApp {
         }
     }
 
+    /// Keeps the open tabs and the active plan with the project.
+    fn store_workspace(&mut self) {
+        let w = ProjectWorkspace {
+            dock: self.dock.clone(),
+            current_map: self.current_map,
+            active_plan: self.active_plan,
+            active_territory: self.active_territory,
+            selection: self.selection,
+            right_tab: self.right_tab,
+        };
+        self.project.workspace = serde_json::to_value(w).ok();
+    }
+
+    /// Reopens what was open when the project was saved, as far as it
+    /// still exists.
+    fn restore_workspace(&mut self) {
+        let Some(w) = self
+            .project
+            .workspace
+            .clone()
+            .and_then(|v| serde_json::from_value::<ProjectWorkspace>(v).ok())
+        else {
+            return;
+        };
+        let p = &self.project;
+        let exists = |tab: &Tab| match tab {
+            Tab::Map(m) => p.map(*m).is_some(),
+            Tab::Table(DataRef::Layer(l)) => p.layer(*l).is_some(),
+            Tab::Table(DataRef::Table(t)) => p.table(*t).is_some(),
+        };
+        let mut dock = w.dock;
+        dock.retain_tabs(|t| exists(t));
+        if dock.iter_all_tabs().next().is_some() {
+            self.dock = dock;
+        }
+        if let Some(m) = w.current_map.filter(|m| p.map(*m).is_some()) {
+            self.current_map = Some(m);
+        }
+        if let Some(plan) = w.active_plan.and_then(|id| p.plan(id)) {
+            self.active_plan = Some(plan.id);
+            self.active_territory = w.active_territory.filter(|t| plan.territory(*t).is_some());
+        }
+        self.selection = match w.selection {
+            Selection::MapLayer(m, l)
+                if p.map(m).is_some_and(|m| m.layers.iter().any(|x| x.id == l)) =>
+            {
+                w.selection
+            }
+            Selection::Data(DataRef::Layer(l)) if p.layer(l).is_some() => w.selection,
+            Selection::Data(DataRef::Table(t)) if p.table(t).is_some() => w.selection,
+            _ => Selection::None,
+        };
+        self.right_tab = w.right_tab;
+    }
+
     fn save_to(&mut self, path: PathBuf) {
         if self.project.title == "Untitled"
             && let Some(stem) = path.file_stem()
         {
             self.project.title = stem.to_string_lossy().into_owned();
         }
+        self.store_workspace();
         let project = self.project.clone();
         let label = format!("Saving {}", file_name(&path));
         self.jobs.spawn(label, move |_| JobResult::Saved {
@@ -703,6 +774,7 @@ impl TerritoriaApp {
         let Some(dir) = self.paths.as_ref().map(Paths::recovery_dir) else {
             return;
         };
+        self.store_workspace();
         let project = self.project.clone();
         self.jobs.spawn("", move |_| {
             let _ = std::fs::create_dir_all(&dir);
@@ -810,6 +882,7 @@ impl TerritoriaApp {
         self.tool = Tool::Navigate;
         self.dock = DockState::new(self.project.maps.iter().map(|m| Tab::Map(m.id)).collect());
         self.current_map = self.project.maps.first().map(|m| m.id);
+        self.restore_workspace();
         if let Some(p) = &path {
             self.settings.add_recent(p);
             self.save_settings();
@@ -908,6 +981,21 @@ impl TerritoriaApp {
     pub fn map_events_for_test(&mut self, events: Vec<MapEvent>) {
         let map = self.ensure_map();
         self.handle_map_events(events, map);
+    }
+
+    #[cfg(test)]
+    pub fn save_to_for_test(&mut self, path: PathBuf) {
+        self.save_to(path);
+    }
+
+    #[cfg(test)]
+    pub fn open_tabs_for_test(&self) -> Vec<Tab> {
+        self.dock.iter_all_tabs().map(|(_, t)| *t).collect()
+    }
+
+    #[cfg(test)]
+    pub fn open_settings_for_test(&mut self) {
+        self.settings_dialog = Some(crate::dialogs::SettingsDialog::new(self.tiles.cache_dir()));
     }
 
     #[cfg(test)]
@@ -1248,6 +1336,19 @@ impl TerritoriaApp {
             return m;
         }
         let id = self.project.add_map("Map");
+        // The background chosen in the settings.
+        if let Some(preset) = self
+            .settings
+            .background
+            .as_deref()
+            .and_then(|name| crate::tiles::PRESETS.iter().find(|p| p.name == name))
+            && let Some(m) = self.project.map_mut(id)
+        {
+            m.background = territoria_model::map::Background::Tiles {
+                url: preset.url.to_owned(),
+                attribution: preset.attribution.to_owned(),
+            };
+        }
         self.dock.push_to_focused_leaf(Tab::Map(id));
         self.current_map = Some(id);
         id
@@ -1931,6 +2032,10 @@ impl TerritoriaApp {
                 self.save_settings();
             }
             Command::About => self.about = true,
+            Command::Settings => {
+                self.settings_dialog =
+                    Some(crate::dialogs::SettingsDialog::new(self.tiles.cache_dir()));
+            }
         }
     }
 
@@ -2331,6 +2436,7 @@ impl TerritoriaApp {
                     }
                 });
                 ui.separator();
+                item(ui, commands, &self.keymap, Command::Settings);
                 item(ui, commands, &self.keymap, Command::Quit);
             });
             ui.menu_button("Edit", |ui| {
@@ -2767,6 +2873,28 @@ impl TerritoriaApp {
                 None => self.confirm = Some(c),
             }
         }
+        if let Some(mut d) = self.settings_dialog.take() {
+            let before = self.settings.clone();
+            let mut open = true;
+            let outcome = d.show(ctx, &mut self.settings, &mut open);
+            if self.settings != before {
+                self.apply_theme(ctx);
+            }
+            match outcome {
+                Some(crate::dialogs::SettingsOutcome::ClearTiles) => {
+                    let dir = self.tiles.cache_dir().to_owned();
+                    let _ = std::fs::remove_dir_all(&dir);
+                    self.tiles = crate::tiles::Tiles::new(dir);
+                    d.measure_cache(self.tiles.cache_dir());
+                }
+                None => {}
+            }
+            if open {
+                self.settings_dialog = Some(d);
+            } else {
+                self.save_settings();
+            }
+        }
         if self.about {
             egui::Modal::new(egui::Id::new("about")).show(ctx, |ui| {
                 ui.set_width(380.0);
@@ -3020,6 +3148,7 @@ impl eframe::App for TerritoriaApp {
             || self.new_plan.is_some()
             || self.merge.is_some()
             || self.formula.is_some()
+            || self.settings_dialog.is_some()
             || self.select_list.is_some()
             || self.download.is_some()
             || self.export_map.is_some()
