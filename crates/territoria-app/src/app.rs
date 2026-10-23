@@ -110,6 +110,9 @@ pub enum Action {
     SetMapCrs(MapId, territoria_geo::Crs),
     /// Show a message.
     Notify(String),
+    /// Choose a file for a map's vector background: tiles, or (`true`)
+    /// its style.
+    ChooseVectorFile(MapId, bool),
     /// Open the dialog for sites from a point layer.
     SitesFromPoints(PlanId),
     /// Select the features of table rows (adding to the selection: `true`).
@@ -142,6 +145,8 @@ enum FileAction {
     Logo,
     /// An image for the arranged page being exported.
     PageImage,
+    /// Tiles (or, `true`, a style) for a map's vector background.
+    VectorFile(MapId, bool),
 }
 
 /// What a map atlas makes pages of, and how it is written.
@@ -585,6 +590,12 @@ impl TerritoriaApp {
             FileAction::Logo | FileAction::PageImage => {
                 dialog.add_filter("Images (PNG, JPEG, SVG)", &["png", "jpg", "jpeg", "svg"])
             }
+            FileAction::VectorFile(_, false) => {
+                dialog.add_filter("Vector tiles (PMTiles, MBTiles)", &["pmtiles", "mbtiles"])
+            }
+            FileAction::VectorFile(_, true) => {
+                dialog.add_filter("MapLibre style (JSON)", &["json"])
+            }
             FileAction::Export(e) => {
                 let (filter, ext, name) = match e.clone() {
                     Export::PlanSheets(p) => (
@@ -698,6 +709,17 @@ impl TerritoriaApp {
             FileAction::ReplaceLayer(layer) => self.read_replacement(layer, path),
             FileAction::AddData => self.import_table_file(path, TableOptions::default()),
             FileAction::Export(e) => self.export(e, path),
+            FileAction::VectorFile(map, is_style) => {
+                let file = path.to_string_lossy().into_owned();
+                self.edit("Change background map", move |p| {
+                    if let Some(m) = p.map_mut(map)
+                        && let territoria_model::map::Background::Vector { source, style, .. } =
+                            &mut m.background
+                    {
+                        *(if is_style { style } else { source }) = file;
+                    }
+                });
+            }
             FileAction::PageImage => {
                 const MAX_BYTES: u64 = 8 << 20;
                 let too_big = std::fs::metadata(&path).is_ok_and(|m| m.len() > MAX_BYTES);
@@ -2029,7 +2051,6 @@ impl TerritoriaApp {
         page: bool,
         at: Option<&AtlasPage>,
     ) -> Result<String, String> {
-        use territoria_model::map::Background;
         let map_id = self.current_map.ok_or("There's no map to export.")?;
         let map = self
             .project
@@ -2140,10 +2161,8 @@ impl TerritoriaApp {
         let mut legends = Vec::new();
         let mut grids = Vec::new();
         let mut credits: Vec<String> = Vec::new();
-        if let Background::Tiles { attribution, .. } = &map.background
-            && !attribution.is_empty()
-        {
-            credits.push(attribution.clone());
+        if let Some(attribution) = map.background.attribution() {
+            credits.push(attribution.to_owned());
         }
         // Per map layer how many resolved layers it gave (for hover texts).
         let mut counts: Vec<(MapLayer, usize)> = Vec::new();
@@ -4939,6 +4958,9 @@ impl TerritoriaApp {
                 }
             }),
             Action::Notify(text) => self.toast(text),
+            Action::ChooseVectorFile(map, style) => {
+                self.ask_file(FileAction::VectorFile(map, style))
+            }
             Action::SetMapCrs(map, crs) => {
                 self.edit("Change projection", |p| {
                     if let Some(m) = p.map_mut(map) {
@@ -6444,6 +6466,15 @@ impl eframe::App for TerritoriaApp {
                         current_map: self.current_map,
                         selection: self.selection,
                         active_plan: self.active_plan,
+                        vector_problem: self
+                            .current_map
+                            .and_then(|m| self.project.map(m))
+                            .and_then(|m| match &m.background {
+                                territoria_model::map::Background::Vector {
+                                    source, style, ..
+                                } => self.tiles.vector_problem(source, style),
+                                _ => None,
+                            }),
                     };
                     actions.extend(crate::contents::show(ui, cx));
                 });

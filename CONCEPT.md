@@ -172,7 +172,7 @@ territoria/
 - [x] Labels with collision avoidance, placed at a pole of inaccessibility
 - [x] Layer list with visibility, order (drag), opacity, zoom range (order by context menu; no zoom range)
 - [x] Background maps: XYZ raster tiles (OSM-style, configurable URL and attribution), cached
-- [ ] Vector background (MapLibre styles, PMTiles/MBTiles offline) (optional)
+- [x] Vector background (MapLibre styles, PMTiles/MBTiles offline) (optional) (vector tiles from .pmtiles or .mbtiles files or a tile address, or a style's own source (OpenFreeMap Positron and Liberty as presets), drawn by a MapLibre style or a built-in light one: background, fills, lines with dashes, circles, filters and zoom and data expressions; no labels, patterns or extrusions yet; in Web Mercator, not in exports yet)
 - [x] Scale bar, north arrow, coordinates in the status bar (decimal or DMS, any EPSG) (scale bar and decimal degrees)
 - [x] Measure distance and area (distance along clicked points; no area yet)
 - [x] Search box: areas by key or name, table rows, addresses (when a geocoder is set up) (areas, points and territories by key or name, Ctrl+F; no addresses yet)

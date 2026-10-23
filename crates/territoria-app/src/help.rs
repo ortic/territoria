@@ -116,7 +116,7 @@ Everything can be undone (Ctrl+Z). The command palette (Ctrl+Shift+P) finds ever
         title: "Views, projection and presenting",
         body: "- Keep a view (Map → Keep This View) to come back to it; views are kept with the project.
 - Projection: Web Mercator (like web maps) or an equal-area or national projection by EPSG code.
-- Background: map tiles from OpenStreetMap or another provider.
+- Background: map tiles from OpenStreetMap or another provider; or a vector map, drawn by a MapLibre style (Positron, Liberty, or your own) from tiles online or from a .pmtiles or .mbtiles file, which works offline. Vector maps draw fills and lines, no labels yet.
 - Presentation (F11) shows the map alone, full screen.",
     },
     Topic {
@@ -241,7 +241,7 @@ Alles lässt sich rückgängig machen (Ctrl+Z). Die Befehlspalette (Ctrl+Shift+P
         "Ansichten, Projektion und Präsentation",
         "- Eine Ansicht behalten (Karte → Diese Ansicht behalten), um darauf zurückzukommen; Ansichten werden mit dem Projekt gespeichert.
 - Projektion: Web Mercator (wie Webkarten) oder eine flächentreue oder nationale Projektion über ihren EPSG-Code.
-- Hintergrund: Kartenkacheln von OpenStreetMap oder einem anderen Anbieter.
+- Hintergrund: Kartenkacheln von OpenStreetMap oder einem anderen Anbieter; oder eine Vektorkarte, gezeichnet nach einem MapLibre-Stil (Positron, Liberty oder ein eigener) aus Kacheln online oder aus einer .pmtiles- oder .mbtiles-Datei, die auch offline funktioniert. Vektorkarten zeichnen Flächen und Linien, noch keine Beschriftungen.
 - Präsentation (F11) zeigt nur die Karte im Vollbild.",
     ),
     (

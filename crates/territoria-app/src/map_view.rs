@@ -410,15 +410,22 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
     state.view = Some(view);
 
     // The background map, under everything.
-    if let territoria_model::map::Background::Tiles { url, .. } = &map.background
-        && map.crs.is_web_mercator()
-    {
+    if map.crs.is_web_mercator() {
         let tint = if cx.dark {
             Color32::from_gray(200)
         } else {
             Color32::WHITE
         };
-        cx.tiles.paint(&painter, &view, url, ppp, tint);
+        match &map.background {
+            territoria_model::map::Background::Tiles { url, .. } => {
+                cx.tiles.paint(&painter, &view, url, ppp, tint);
+            }
+            territoria_model::map::Background::Vector { source, style, .. } => {
+                cx.tiles
+                    .paint_vector(&painter, &view, source, style, ppp, tint);
+            }
+            territoria_model::map::Background::None => {}
+        }
     }
 
     // Draw the layers bottom to top.
@@ -1685,10 +1692,8 @@ fn extent<'a>(meshes: impl Iterator<Item = &'a Arc<LayerMesh>>) -> Option<([f64;
 /// Credits of the visible layers' data, bottom left.
 fn attribution(painter: &egui::Painter, view: &View, map: &Map, project: &Project, dark: bool) {
     let mut credits: Vec<String> = Vec::new();
-    if let territoria_model::map::Background::Tiles { attribution, .. } = &map.background
-        && !attribution.is_empty()
-    {
-        credits.push(attribution.clone());
+    if let Some(attribution) = map.background.attribution() {
+        credits.push(attribution.to_owned());
     }
     for ml in map.layers.iter().filter(|l| l.shown_at(view.scale)) {
         let layer = match &ml.kind {

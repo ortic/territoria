@@ -9,6 +9,7 @@ pub mod online;
 pub mod routing;
 pub mod table;
 pub mod vector;
+pub mod vectortiles;
 
 pub use table::{TABLE_EXTENSIONS, TableInfo, TableOptions, read_table};
 pub use vector::{

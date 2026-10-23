@@ -20,6 +20,8 @@ pub struct ContentsContext<'a> {
     pub current_map: Option<MapId>,
     pub selection: Selection,
     pub active_plan: Option<PlanId>,
+    /// Why the current map's vector background can't be drawn.
+    pub vector_problem: Option<String>,
 }
 
 fn section(ui: &mut Ui, title: &str) {
@@ -47,7 +49,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
             // The map.
             if let Some(map) = cx.current_map.and_then(|m| project.map(m)) {
                 section(ui, &format!("{} · {}", tr("MAP"), map.name.to_uppercase()));
-                background_ui(ui, map, &mut actions);
+                background_ui(ui, map, cx.vector_problem.as_deref(), &mut actions);
                 projection_ui(ui, project, map, &mut actions);
                 views_ui(ui, map, &mut actions);
                 let count = map.layers.len();
@@ -547,8 +549,14 @@ fn move_layer(map: MapId, from: usize, to: usize) -> Action {
     )
 }
 
-/// The background map picker: none, a preset tile server or a custom URL.
-fn background_ui(ui: &mut Ui, map: &territoria_model::Map, actions: &mut Vec<Action>) {
+/// The background map picker: none, a preset tile server, a custom URL,
+/// or a vector map (preset, or from a file with a style).
+fn background_ui(
+    ui: &mut Ui,
+    map: &territoria_model::Map,
+    vector_problem: Option<&str>,
+    actions: &mut Vec<Action>,
+) {
     use territoria_model::map::Background;
     let map_id = map.id;
     let set = |bg: Background| {
@@ -567,6 +575,10 @@ fn background_ui(ui: &mut Ui, map: &territoria_model::Map, actions: &mut Vec<Act
             .iter()
             .find(|p| p.url == url)
             .map_or("Custom".to_owned(), |p| p.name.to_owned()),
+        Background::Vector { source, style, .. } => crate::tiles::VECTOR_PRESETS
+            .iter()
+            .find(|p| source.is_empty() && p.style == style)
+            .map_or(tr("Vector map").to_owned(), |p| p.name.to_owned()),
     };
     ui.horizontal(|ui| {
         ui.label(RichText::new(tr("Background")).small());
@@ -605,8 +617,100 @@ fn background_ui(ui: &mut Ui, map: &territoria_model::Map, actions: &mut Vec<Act
                         attribution: String::new(),
                     }));
                 }
+                ui.separator();
+                for p in crate::tiles::VECTOR_PRESETS {
+                    if ui
+                        .selectable_label(current == p.name, p.name)
+                        .on_hover_text(p.note)
+                        .clicked()
+                    {
+                        actions.push(set(Background::Vector {
+                            source: String::new(),
+                            style: p.style.to_owned(),
+                            attribution: p.attribution.to_owned(),
+                        }));
+                    }
+                }
+                if ui
+                    .selectable_label(current == tr("Vector map"), tr("Vector map…"))
+                    .on_hover_text(tr("Vector tiles from a .pmtiles or .mbtiles file (offline) or a tile address, drawn by a MapLibre style or a built-in light one"))
+                    .clicked()
+                    && current != tr("Vector map")
+                {
+                    actions.push(set(Background::Vector {
+                        source: String::new(),
+                        style: String::new(),
+                        attribution: "© OpenStreetMap contributors".into(),
+                    }));
+                }
             });
     });
+    if let Background::Vector {
+        source,
+        style,
+        attribution,
+    } = &map.background
+        && current == tr("Vector map")
+    {
+        let (mut s, mut st, mut a) = (source.clone(), style.clone(), attribution.clone());
+        let mut changed = false;
+        ui.horizontal(|ui| {
+            changed |= ui
+                .add(
+                    egui::TextEdit::singleline(&mut s)
+                        .hint_text(tr("Tiles: .pmtiles, .mbtiles or https://…/{z}/{x}/{y}.pbf"))
+                        .desired_width((ui.available_width() - 30.0).min(240.0)),
+                )
+                .changed();
+            if ui
+                .small_button("📂")
+                .on_hover_text(tr("Choose a .pmtiles or .mbtiles file"))
+                .clicked()
+            {
+                actions.push(Action::ChooseVectorFile(map_id, false));
+            }
+        });
+        ui.horizontal(|ui| {
+            changed |= ui
+                .add(
+                    egui::TextEdit::singleline(&mut st)
+                        .hint_text(tr(
+                            "Style: a MapLibre style file or address (empty: built-in)",
+                        ))
+                        .desired_width((ui.available_width() - 30.0).min(240.0)),
+                )
+                .changed();
+            if ui
+                .small_button("📂")
+                .on_hover_text(tr("Choose a MapLibre style (.json)"))
+                .clicked()
+            {
+                actions.push(Action::ChooseVectorFile(map_id, true));
+            }
+        });
+        changed |= ui
+            .add(
+                egui::TextEdit::singleline(&mut a)
+                    .hint_text("Credit, e.g. © OpenStreetMap contributors")
+                    .desired_width(f32::INFINITY),
+            )
+            .changed();
+        if changed {
+            actions.push(set(Background::Vector {
+                source: s,
+                style: st,
+                attribution: a,
+            }));
+        }
+        ui.label(
+            RichText::new(tr("Fills and lines are drawn; labels not yet."))
+                .small()
+                .weak(),
+        );
+    }
+    if let Some(problem) = vector_problem {
+        ui.label(RichText::new(problem).small().color(crate::theme::WARN));
+    }
     if current == "Custom"
         && let Background::Tiles { url, attribution } = &map.background
     {
@@ -904,10 +1008,7 @@ fn projection_ui(
         ui.data_mut(|d| d.insert_temp(id, text));
     });
     if !map.crs.is_web_mercator()
-        && matches!(
-            map.background,
-            territoria_model::map::Background::Tiles { .. }
-        )
+        && !matches!(map.background, territoria_model::map::Background::None)
     {
         ui.label(
             RichText::new(tr("Background maps show in Web Mercator only."))

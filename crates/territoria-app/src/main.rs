@@ -28,6 +28,7 @@ mod table_view;
 mod territories;
 mod theme;
 mod tiles;
+mod vector_style;
 
 use std::fs::{self, File};
 use std::sync::Mutex;

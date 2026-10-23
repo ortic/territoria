@@ -918,6 +918,33 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
         ("Like the system", "Wie das System"),
         ("Light", "Hell"),
         ("Dark", "Dunkel"),
+        ("Change background map", "Hintergrundkarte ändern"),
+        ("Vector map", "Vektorkarte"),
+        ("Vector map…", "Vektorkarte…"),
+        (
+            "Vector tiles from a .pmtiles or .mbtiles file (offline) or a tile address, drawn by a MapLibre style or a built-in light one",
+            "Vektorkacheln aus einer .pmtiles- oder .mbtiles-Datei (offline) oder einer Kacheladresse, gezeichnet nach einem MapLibre-Stil oder einem eingebauten hellen",
+        ),
+        (
+            "Tiles: .pmtiles, .mbtiles or https://…/{z}/{x}/{y}.pbf",
+            "Kacheln: .pmtiles, .mbtiles oder https://…/{z}/{x}/{y}.pbf",
+        ),
+        (
+            "Choose a .pmtiles or .mbtiles file",
+            "Eine .pmtiles- oder .mbtiles-Datei wählen",
+        ),
+        (
+            "Style: a MapLibre style file or address (empty: built-in)",
+            "Stil: MapLibre-Stildatei oder -adresse (leer: eingebaut)",
+        ),
+        (
+            "Choose a MapLibre style (.json)",
+            "Einen MapLibre-Stil wählen (.json)",
+        ),
+        (
+            "Fills and lines are drawn; labels not yet.",
+            "Flächen und Linien werden gezeichnet; Beschriftungen noch nicht.",
+        ),
         (
             "{file} is too big for a page (at most 8 MB).",
             "{file} ist zu gross für eine Seite (höchstens 8 MB).",

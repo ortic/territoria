@@ -44,6 +44,29 @@ pub const PRESETS: &[Preset] = &[
     },
 ];
 
+/// Vector maps people can pick: a style with its own tiles.
+pub struct VectorPreset {
+    pub name: &'static str,
+    pub style: &'static str,
+    pub attribution: &'static str,
+    pub note: &'static str,
+}
+
+pub const VECTOR_PRESETS: &[VectorPreset] = &[
+    VectorPreset {
+        name: "Positron (OpenFreeMap, vector)",
+        style: "https://tiles.openfreemap.org/styles/positron",
+        attribution: "OpenFreeMap © OpenMapTiles · Data from OpenStreetMap",
+        note: "Light and calm, drawn from vector tiles; free, no key.",
+    },
+    VectorPreset {
+        name: "Liberty (OpenFreeMap, vector)",
+        style: "https://tiles.openfreemap.org/styles/liberty",
+        attribution: "OpenFreeMap © OpenMapTiles · Data from OpenStreetMap",
+        note: "A colourful street map, drawn from vector tiles; free, no key.",
+    },
+];
+
 const HALF_WORLD: f64 = 20_037_508.342_789_244;
 const USER_AGENT: &str = concat!(
     "Territoria/",
@@ -61,8 +84,25 @@ enum Slot {
     Failed,
 }
 
+/// A vector map being opened, ready, or what went wrong.
+enum VectorState {
+    Opening,
+    Ready(
+        Arc<crate::vector_style::VectorMap>,
+        Arc<crate::vector_style::Cache>,
+    ),
+    Failed(String),
+}
+
+/// The tile key of a vector map.
+fn vector_id(source: &str, style: &str) -> String {
+    format!("vector:{source}|{style}")
+}
+
 struct Shared {
     queue: Mutex<VecDeque<(Key, PathBuf)>>,
+    /// Vector maps by their tile key.
+    vectors: Mutex<HashMap<String, VectorState>>,
     /// For servers that need one, in place of `{key}` in the address.
     api_key: Mutex<territoria_io::ApiKey>,
 }
@@ -89,6 +129,7 @@ impl Tiles {
             slots: HashMap::new(),
             shared: Arc::new(Shared {
                 queue: Mutex::new(VecDeque::new()),
+                vectors: Mutex::new(HashMap::new()),
                 api_key: Mutex::new(Default::default()),
             }),
             rx,
@@ -134,7 +175,11 @@ impl Tiles {
                             continue;
                         };
                         let api_key = shared.api_key.lock().unwrap().clone();
-                        let image = load(&agent, &key, &file, &api_key);
+                        let image = if key.0.starts_with("vector:") {
+                            draw_vector(&shared, &agent, &key, &api_key)
+                        } else {
+                            load(&agent, &key, &file, &api_key)
+                        };
                         if tx.send((key, image)).is_err() {
                             return;
                         }
@@ -143,6 +188,81 @@ impl Tiles {
                 })
                 .expect("spawning a tile worker");
         }
+    }
+
+    /// Draws a vector map, once it is open (opening starts in the
+    /// background on first use).
+    pub fn paint_vector(
+        &mut self,
+        painter: &egui::Painter,
+        view: &View,
+        source: &str,
+        style: &str,
+        pixels_per_point: f32,
+        tint: Color32,
+    ) {
+        let id = vector_id(source, style);
+        let ready = {
+            let mut vectors = self.shared.vectors.lock().unwrap();
+            match vectors.get(&id) {
+                Some(VectorState::Ready(..)) => true,
+                Some(_) => false,
+                None => {
+                    vectors.insert(id.clone(), VectorState::Opening);
+                    let shared = self.shared.clone();
+                    let ctx = painter.ctx().clone();
+                    let (source, style, id) = (source.to_owned(), style.to_owned(), id.clone());
+                    let _ = std::thread::Builder::new()
+                        .name("territoria-vector-map".into())
+                        .spawn(move || {
+                            let agent = ureq::Agent::config_builder()
+                                .timeout_global(Some(std::time::Duration::from_secs(30)))
+                                .user_agent(USER_AGENT)
+                                .build()
+                                .new_agent();
+                            let key = shared.api_key.lock().unwrap().clone();
+                            let state = match crate::vector_style::VectorMap::open(
+                                &source, &style, &agent, &key,
+                            ) {
+                                Ok(m) => VectorState::Ready(Arc::new(m), Default::default()),
+                                Err(e) => {
+                                    tracing::warn!("vector map: {e}");
+                                    VectorState::Failed(e)
+                                }
+                            };
+                            shared.vectors.lock().unwrap().insert(id, state);
+                            ctx.request_repaint();
+                        });
+                    false
+                }
+            }
+        };
+        if ready {
+            self.paint(painter, view, &id, pixels_per_point, tint);
+        }
+    }
+
+    /// Why a vector map can't be drawn, if it can't.
+    pub fn vector_problem(&self, source: &str, style: &str) -> Option<String> {
+        match self
+            .shared
+            .vectors
+            .lock()
+            .unwrap()
+            .get(&vector_id(source, style))
+        {
+            Some(VectorState::Failed(e)) => Some(e.clone()),
+            _ => None,
+        }
+    }
+
+    /// Tiles drawn and ready.
+    #[cfg(test)]
+    pub fn ready(&self) -> usize {
+        self.slots
+            .values()
+            .filter(|(s, _)| matches!(s, Slot::Ready(_)))
+            .count()
     }
 
     /// Tiles still loading.
@@ -254,9 +374,12 @@ impl Tiles {
         }
     }
 
-    /// Forgets the least recently used textures beyond the limit.
+    /// Forgets the least recently used textures beyond the limit; drawn
+    /// vector tiles have four times the pixels of raster ones.
     fn evict(&mut self, _ctx: &egui::Context) {
-        if self.slots.len() <= MAX_TEXTURES {
+        let weight = |k: &Key| if k.0.starts_with("vector:") { 4 } else { 1 };
+        let mut total: usize = self.slots.keys().map(weight).sum();
+        if total <= MAX_TEXTURES {
             return;
         }
         let mut ages: Vec<(Key, u64)> = self
@@ -265,8 +388,12 @@ impl Tiles {
             .map(|(k, (_, used))| (k.clone(), *used))
             .collect();
         ages.sort_by_key(|(_, used)| *used);
-        for (k, _) in ages.into_iter().take(self.slots.len() - MAX_TEXTURES) {
+        for (k, _) in ages {
+            if total <= MAX_TEXTURES {
+                break;
+            }
             if !matches!(self.slots.get(&k), Some((Slot::Loading, _))) {
+                total -= weight(&k);
                 self.slots.remove(&k);
             }
         }
@@ -278,6 +405,29 @@ fn hash(s: &str) -> u64 {
     let mut h = DefaultHasher::new();
     s.hash(&mut h);
     h.finish()
+}
+
+/// A tile of an open vector map, drawn.
+fn draw_vector(
+    shared: &Shared,
+    agent: &ureq::Agent,
+    key: &Key,
+    api_key: &territoria_io::ApiKey,
+) -> Option<ColorImage> {
+    let (map, cache) = match shared.vectors.lock().unwrap().get(&key.0) {
+        Some(VectorState::Ready(m, c)) => (m.clone(), c.clone()),
+        _ => return None,
+    };
+    let fetch = |url: &str| -> Option<Vec<u8>> {
+        let mut response = agent.get(api_key.apply(url, false)).call().ok()?;
+        response
+            .body_mut()
+            .with_config()
+            .limit(16 << 20)
+            .read_to_vec()
+            .ok()
+    };
+    map.tile_image(key.1, key.2, key.3, &fetch, &cache)
 }
 
 /// From the disk cache, else from the server (and cached).

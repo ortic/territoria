@@ -9,6 +9,8 @@ calamine.workspace = true
 csv.workspace = true
 dbase = { workspace = true, features = ["encoding_rs"] }
 encoding_rs.workspace = true
+# Gzipped vector tiles and PMTiles directories.
+flate2 = "1"
 geo.workspace = true
 geo-types.workspace = true
 geojson.workspace = true

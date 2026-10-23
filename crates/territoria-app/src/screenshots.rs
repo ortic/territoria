@@ -623,6 +623,133 @@ fn background_map_online() {
     save(&mut h, "background");
 }
 
+/// A vector background from a PMTiles file on disk, drawn by the
+/// built-in style: a lake and a road under the areas, no network.
+#[test]
+fn vector_background_offline() {
+    let dir = std::env::temp_dir().join(format!("territoria-vector-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let pmtiles = dir.join("tiny.pmtiles");
+    std::fs::write(&pmtiles, tiny_pmtiles()).unwrap();
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    let map = app.project.maps[0].id;
+    let m = app.project.map_mut(map).unwrap();
+    m.background = territoria_model::map::Background::Vector {
+        source: pmtiles.to_string_lossy().into_owned(),
+        style: String::new(),
+        attribution: "Test data".into(),
+    };
+    m.layers.iter_mut().for_each(|l| l.opacity = 0.35);
+    let _ = layer;
+    settle(&mut h);
+    let start = Instant::now();
+    while (h.state().tiles.ready() == 0 || h.state().tiles.pending() > 0)
+        && start.elapsed() < Duration::from_secs(30)
+    {
+        h.step();
+        std::thread::sleep(Duration::from_millis(30));
+    }
+    h.run_steps(3);
+    save(&mut h, "vector-background");
+    assert!(h.state().tiles.ready() > 0, "vector tiles drawn");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A PMTiles archive with one tile for the whole world: a lake and a
+/// road around 6–8° E, 46–47° N, where the test areas are.
+fn tiny_pmtiles() -> Vec<u8> {
+    fn varint(mut v: u64, out: &mut Vec<u8>) {
+        loop {
+            let b = (v & 0x7f) as u8;
+            v >>= 7;
+            if v == 0 {
+                out.push(b);
+                return;
+            }
+            out.push(b | 0x80);
+        }
+    }
+    fn field(n: u64, bytes: &[u8], out: &mut Vec<u8>) {
+        varint(n << 3 | 2, out);
+        varint(bytes.len() as u64, out);
+        out.extend_from_slice(bytes);
+    }
+    // Web Mercator tile units of the single zoom-0 tile.
+    let at = |lon: f64, lat: f64| {
+        let x = (lon + 180.0) / 360.0 * 4096.0;
+        let y = (1.0
+            - (lat.to_radians().tan() + 1.0 / lat.to_radians().cos()).ln() / std::f64::consts::PI)
+            / 2.0
+            * 4096.0;
+        (x.round() as i64, y.round() as i64)
+    };
+    let zz = |v: i64| ((v << 1) ^ (v >> 63)) as u64;
+    let geometry = |points: &[(f64, f64)], close: bool| {
+        let mut g = Vec::new();
+        let mut last = (0, 0);
+        for (i, &(lon, lat)) in points.iter().enumerate() {
+            if i == 0 {
+                varint(1 << 3 | 1, &mut g);
+            } else if i == 1 {
+                varint(((points.len() - 1) as u64) << 3 | 2, &mut g);
+            }
+            let p = at(lon, lat);
+            varint(zz(p.0 - last.0), &mut g);
+            varint(zz(p.1 - last.1), &mut g);
+            last = p;
+        }
+        if close {
+            varint(1 << 3 | 7, &mut g);
+        }
+        g
+    };
+    let layer = |name: &[u8], kind: u64, geom: Vec<u8>, class: &[u8]| {
+        let mut feature = Vec::new();
+        field(2, &[0, 0], &mut feature);
+        feature.extend([3 << 3, kind as u8]);
+        field(4, &geom, &mut feature);
+        let mut value = Vec::new();
+        field(1, class, &mut value);
+        let mut l = Vec::new();
+        field(1, name, &mut l);
+        field(2, &feature, &mut l);
+        field(3, b"class", &mut l);
+        field(4, &value, &mut l);
+        l
+    };
+    let mut tile = Vec::new();
+    let lake = geometry(&[(6.3, 46.4), (7.4, 46.3), (7.6, 46.7), (6.6, 46.8)], true);
+    field(3, &layer(b"water", 3, lake, b"lake"), &mut tile);
+    let road = geometry(&[(5.5, 46.1), (7.0, 46.6), (8.8, 47.3)], false);
+    field(
+        3,
+        &layer(b"transportation", 2, road, b"motorway"),
+        &mut tile,
+    );
+    // One root directory entry: tile 0, the whole data.
+    let mut dir = Vec::new();
+    for v in [1, 0, 1, tile.len() as u64, 1] {
+        varint(v, &mut dir);
+    }
+    let mut h = vec![0u8; 127];
+    h[..7].copy_from_slice(b"PMTiles");
+    h[7] = 3;
+    let put = |h: &mut Vec<u8>, at: usize, v: u64| h[at..at + 8].copy_from_slice(&v.to_le_bytes());
+    put(&mut h, 8, 127);
+    put(&mut h, 16, dir.len() as u64);
+    put(&mut h, 56, 127 + dir.len() as u64);
+    h[97] = 1;
+    h[101] = 0;
+    h.extend(dir);
+    h.extend(tile);
+    h
+}
+
 /// The map exports as PNG, SVG and PDF with title and legends.
 #[test]
 fn exports_map_files() {

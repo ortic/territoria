@@ -107,6 +107,26 @@ pub enum Background {
     None,
     /// XYZ raster tiles (`{z}/{x}/{y}` in the URL).
     Tiles { url: String, attribution: String },
+    /// Vector tiles drawn by a MapLibre style: `source` is a .pmtiles or
+    /// .mbtiles file or a tile address (empty: the style's own source),
+    /// `style` a style file or address (empty: a built-in light style).
+    Vector {
+        source: String,
+        style: String,
+        attribution: String,
+    },
+}
+
+impl Background {
+    /// Its credit line, if it has one.
+    pub fn attribution(&self) -> Option<&str> {
+        match self {
+            Background::None => None,
+            Background::Tiles { attribution, .. } | Background::Vector { attribution, .. } => {
+                Some(attribution.as_str()).filter(|a| !a.is_empty())
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
