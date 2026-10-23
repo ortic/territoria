@@ -25,7 +25,7 @@ pub use plan::{
     Comparison, Diagnostic, Measure, Move, Plan, PlanStats, RowUnits, Territory, TerritoryChange,
     TerritoryStats,
 };
-pub use values::{Cache, TextSource, ValueSource};
+pub use values::{Cache, Normalize, TextSource, ValueSource};
 
 macro_rules! ids {
     ($($name:ident),*) => {$(

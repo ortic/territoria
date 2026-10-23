@@ -1394,6 +1394,7 @@ impl TerritoriaApp {
         let kind = MapLayerKind::Choropleth {
             layer,
             source,
+            normalize: Default::default(),
             scale: ColorScale::default(),
             style: BoundaryStyle {
                 stroke: territoria_analysis::Rgba([0xff, 0xff, 0xff, 140]),

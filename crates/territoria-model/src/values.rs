@@ -81,6 +81,32 @@ impl ValueSource {
     }
 }
 
+/// What values are put in relation to before colouring.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub enum Normalize {
+    /// As they are.
+    #[default]
+    None,
+    /// Per km² of the area (a density).
+    PerArea,
+    /// Divided by another value (a rate, e.g. revenue per customer).
+    By(ValueSource),
+    /// Percent of the total over all areas.
+    Percent,
+}
+
+impl Normalize {
+    /// Added to the name of what is shown: ` per km²`.
+    pub fn suffix(&self, project: &Project) -> String {
+        match self {
+            Normalize::None => String::new(),
+            Normalize::PerArea => " per km²".into(),
+            Normalize::By(s) => format!(" per {}", s.label(project)),
+            Normalize::Percent => " (% of total)".into(),
+        }
+    }
+}
+
 /// Where a text per feature comes from (categories, labels).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TextSource {
@@ -409,6 +435,43 @@ impl Cache {
     }
 
     /// One text per feature of `layer`.
+    /// Values put in relation as `normalize` says.
+    pub fn normalized(
+        &mut self,
+        project: &Project,
+        layer: LayerId,
+        source: &ValueSource,
+        normalize: &Normalize,
+    ) -> Vec<Option<f64>> {
+        let v = self.values(project, layer, source);
+        let ratio = |a: Option<f64>, b: Option<f64>| match (a, b) {
+            (Some(a), Some(b)) if b != 0.0 => Some(a / b).filter(|x| x.is_finite()),
+            _ => None,
+        };
+        match normalize {
+            Normalize::None => v,
+            Normalize::PerArea => {
+                let Some(l) = project.layer(layer) else {
+                    return v;
+                };
+                v.iter()
+                    .zip(&l.geometry.areas)
+                    .map(|(x, a)| ratio(*x, Some(*a)))
+                    .collect()
+            }
+            Normalize::By(other) => {
+                let d = self.values(project, layer, other);
+                v.iter().zip(&d).map(|(x, y)| ratio(*x, *y)).collect()
+            }
+            Normalize::Percent => {
+                let total: f64 = v.iter().flatten().sum();
+                v.iter()
+                    .map(|x| ratio(*x, Some(total)).map(|s| s * 100.0))
+                    .collect()
+            }
+        }
+    }
+
     pub fn texts(
         &mut self,
         project: &Project,

@@ -226,7 +226,7 @@ territoria/
 - [x] Classification: quantiles, equal interval, natural breaks (Jenks), standard deviation, mean split, equal sum, unique values, manual; rounded breaks; class count; range limits (no manual-break editor or range limits yet)
 - [ ] Class editor with a live histogram and draggable breaks; class labels; "no data" and "not classified" styles
 - [x] Colour ramps: sequential, diverging, qualitative (ColorBrewer-like, colour-blind safe marked), custom 2–5 colour ramps, reverse, opacity (no custom ramp editor)
-- [ ] Normalization: per area size, per another column (rates), share of total
+- [x] Normalization: per area size, per another column (rates), share of total ("Relative to" on area colourings: per km², per another value, % of the total)
 - [ ] Symbols (points): colour, size (by area or radius, sqrt/linear/log), shape — each from a column, or one column for all
 - [ ] Symbols per area (aggregated) or per row
 - [ ] Charts per area or row: pie (and donut), bars, stacked bars, paired bars (population pyramid), with size scaling
@@ -250,7 +250,7 @@ territoria/
 - [x] Create a plan: empty, from an assignment table (unit key → territory code/name), from a customer list (customer → rep, rolled up to units), from site locations (empty or from an assignment table)
 - [x] Assignment lists with ranges, enumerations, prefixes and wildcards (`10-19; 2*; 3301`)
 - [x] Match report for assignment tables like 5.6
-- [x] Territories: stable internal id, code, name, colour, weight/capacity, manager/site, notes (no UI for weight, site or notes yet)
+- [x] Territories: stable internal id, code, name, colour, weight/capacity, manager/site, notes (details of the active territory in the panel: name, code, size, lock, site, notes)
 - [ ] Hierarchy: any number of levels (e.g. territory → region → area); levels built from the level below or from other boundaries ("borders like layer X")
 - [x] Paint tool: click or drag over units to assign them to the active territory; Shift to pick a territory from the map; Alt to unassign
 - [x] Assign by rectangle, lasso, radius, list, table selection (a bar over the map assigns or unassigns the selection, shows its measure total, zooms to it; no radius or table selection yet)

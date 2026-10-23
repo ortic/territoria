@@ -69,6 +69,9 @@ pub enum MapLayerKind {
     Choropleth {
         layer: LayerId,
         source: ValueSource,
+        /// Per km², per another value, or as a share.
+        #[serde(default)]
+        normalize: crate::values::Normalize,
         scale: ColorScale,
         style: BoundaryStyle,
     },

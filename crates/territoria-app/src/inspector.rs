@@ -5,8 +5,8 @@ use territoria_analysis::format::format_value;
 use territoria_analysis::{ColorScale, Method, RAMPS, RampKind, RampSpec, ScaleMode};
 use territoria_data::{ColumnKind, MatchMode};
 use territoria_model::{
-    BoundaryStyle, Cache, LabelMode, LayerId, MapId, MapLayer, MapLayerId, MapLayerKind, Project,
-    ValueSource,
+    BoundaryStyle, Cache, LabelMode, LayerId, MapId, MapLayer, MapLayerId, MapLayerKind, Normalize,
+    Project, ValueSource,
 };
 
 use crate::app::{Action, DataRef, Selection, Tab};
@@ -700,6 +700,7 @@ fn map_layer(
         MapLayerKind::Choropleth {
             layer,
             source,
+            normalize,
             scale,
             style,
         } => {
@@ -727,7 +728,7 @@ fn map_layer(
                                 {
                                     *agg = *old;
                                 }
-                                let label = label.clone();
+                                let label = format!("{label}{}", normalize.suffix(project));
                                 actions.push(edit_layer(map, id, "Change value", move |l| {
                                     if let MapLayerKind::Choropleth { source, .. } = &mut l.kind {
                                         *source = s;
@@ -768,16 +769,66 @@ fn map_layer(
                     }
                 });
             }
+            // Relative to: area, another value, the total.
+            ui.horizontal(|ui| {
+                ui.label("Relative to").on_hover_text("Sums grow with the size of areas: per km² or per another value (customers, population) makes areas comparable");
+                let base = options
+                    .iter()
+                    .find(|(_, c)| matches!(c, Colorable::Number(s) if same_source(s, source)))
+                    .map_or_else(|| source.label(project), |(l, _)| l.clone());
+                let text = match normalize {
+                    Normalize::None => "—".to_owned(),
+                    Normalize::PerArea => "per km²".to_owned(),
+                    Normalize::Percent => "% of the total".to_owned(),
+                    Normalize::By(s) => format!("per {}", s.label(project)),
+                };
+                let mut choice: Option<Normalize> = None;
+                ComboBox::from_id_salt("normalize")
+                    .width(200.0)
+                    .selected_text(text)
+                    .show_ui(ui, |ui| {
+                        for (n, label) in [
+                            (Normalize::None, "— (as they are)".to_owned()),
+                            (Normalize::PerArea, "per km²".to_owned()),
+                            (Normalize::Percent, "% of the total".to_owned()),
+                        ] {
+                            if ui.selectable_label(*normalize == n, label).clicked() {
+                                choice = Some(n);
+                            }
+                        }
+                        ui.separator();
+                        for (label, c) in &options {
+                            if let Colorable::Number(s) = c
+                                && !same_source(s, source)
+                                && *s != ValueSource::Area
+                            {
+                                let n = Normalize::By(s.clone());
+                                if ui
+                                    .selectable_label(*normalize == n, format!("per {label}"))
+                                    .clicked()
+                                {
+                                    choice = Some(n);
+                                }
+                            }
+                        }
+                    });
+                if let Some(n) = choice.filter(|n| n != normalize) {
+                    let name = format!("{base}{}", n.suffix(project));
+                    actions.push(edit_layer(map, id, "Change relative to", move |l| {
+                        if let MapLayerKind::Choropleth { normalize, .. } = &mut l.kind {
+                            *normalize = n;
+                        }
+                        l.name = name;
+                    }));
+                }
+            });
             ui.add_space(4.0);
             scale_ui(ui, scale, map, id, actions);
             ui.separator();
             if let Some(scaled) = analyses.get(project, values, id, &ml.kind) {
                 histogram(
                     ui,
-                    project,
-                    values,
-                    *layer,
-                    source,
+                    values.normalized(project, *layer, source, normalize),
                     &scaled.edges,
                     &scaled.legend,
                 );
@@ -923,15 +974,11 @@ fn same_source(a: &ValueSource, b: &ValueSource) -> bool {
 /// Distribution of the values with the class limits.
 fn histogram(
     ui: &mut Ui,
-    project: &Project,
-    values: &mut Cache,
-    layer: LayerId,
-    source: &ValueSource,
+    values: Vec<Option<f64>>,
     edges: &[f64],
     legend: &[territoria_analysis::LegendEntry],
 ) {
     let v: Vec<f64> = values
-        .values(project, layer, source)
         .into_iter()
         .flatten()
         .filter(|x| x.is_finite())

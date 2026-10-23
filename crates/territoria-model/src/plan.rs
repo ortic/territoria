@@ -1460,6 +1460,47 @@ mod tests {
     }
 
     #[test]
+    fn normalized_values() {
+        use crate::layer::LayerGeometry;
+        use crate::values::Normalize;
+        use geo_types::{MultiPolygon, polygon};
+        let areas: Vec<MultiPolygon<f64>> = (0..3)
+            .map(|i| {
+                let x = i as f64;
+                MultiPolygon(vec![polygon![(x: x, y: 0.0), (x: x + 1.0, y: 0.0), (x: x + 1.0, y: 1.0), (x: x, y: 1.0), (x: x, y: 0.0)]])
+            })
+            .collect();
+        let table = Table::new(vec![
+            territoria_data::Column::number("Sales", vec![Some(10.0), Some(30.0), Some(60.0)]),
+            territoria_data::Column::number("Customers", vec![Some(2.0), Some(0.0), Some(3.0)]),
+        ])
+        .unwrap();
+        let mut p = Project::new();
+        let g = LayerGeometry::from_imported(territoria_io::Geometries::Areas(areas), true);
+        let layer = p.add_layer("A", g, table, Default::default());
+        let mut cache = Cache::default();
+        let sales = ValueSource::Attribute {
+            column: "Sales".into(),
+        };
+        let customers = ValueSource::Attribute {
+            column: "Customers".into(),
+        };
+        assert_eq!(
+            cache.normalized(&p, layer, &sales, &Normalize::Percent),
+            vec![Some(10.0), Some(30.0), Some(60.0)]
+        );
+        assert_eq!(
+            cache.normalized(&p, layer, &sales, &Normalize::By(customers)),
+            vec![Some(5.0), None, Some(20.0)],
+            "no rate where there are no customers"
+        );
+        let area = p.layer(layer).unwrap().geometry.areas[0];
+        let density = cache.normalized(&p, layer, &sales, &Normalize::PerArea);
+        assert!((density[0].unwrap() - 10.0 / area).abs() < 1e-12);
+        assert_eq!(Normalize::PerArea.suffix(&p), " per km²");
+    }
+
+    #[test]
     fn names_and_numbers() {
         use crate::layer::LayerGeometry;
         use geo_types::{MultiPolygon, polygon};

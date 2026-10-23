@@ -823,10 +823,13 @@ fn hover_rows(
             MapLayerKind::Choropleth { .. } | MapLayerKind::Categories { .. }
                 if custom.is_some() => {}
             MapLayerKind::Choropleth {
-                layer: l, source, ..
+                layer: l,
+                source,
+                normalize,
+                ..
             } if *l == h.layer => {
                 let v = values
-                    .values(project, *l, source)
+                    .normalized(project, *l, source, normalize)
                     .get(h.feature)
                     .copied()
                     .flatten();

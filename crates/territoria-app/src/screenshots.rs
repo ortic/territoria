@@ -1154,3 +1154,74 @@ fn table_rows_select_areas() {
     settle(&mut h);
     save(&mut h, "table-selection");
 }
+
+/// Revenue per customer: a choropleth relative to another value.
+#[test]
+fn choropleth_relative_to() {
+    use territoria_model::{MapLayerKind, Normalize, ValueSource};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    h.state_mut()
+        .add_linked_table_now("Sales 2026", table, "Area", layer, Some("Revenue"));
+    let app = h.state_mut();
+    let link = app.project.links[0].id;
+    let customers = ValueSource::Linked {
+        link,
+        column: "Customers".into(),
+        agg: territoria_data::Aggregate::Sum,
+    };
+    let map = app.project.maps[0].id;
+    let mut ml_id = None;
+    for ml in &mut app.project.map_mut(map).unwrap().layers {
+        if let MapLayerKind::Choropleth { normalize, .. } = &mut ml.kind {
+            *normalize = Normalize::By(customers.clone());
+            ml.name = "Revenue per customer".into();
+            ml_id = Some(ml.id);
+        }
+    }
+    let ml_id = ml_id.unwrap();
+    app.selection = crate::app::Selection::MapLayer(map, ml_id);
+    let mut values = territoria_model::Cache::default();
+    let revenue = ValueSource::Linked {
+        link,
+        column: "Revenue".into(),
+        agg: territoria_data::Aggregate::Sum,
+    };
+    let rates = values.normalized(
+        &app.project,
+        layer,
+        &revenue,
+        &Normalize::By(customers.clone()),
+    );
+    let r = values.values(&app.project, layer, &revenue);
+    let c = values.values(&app.project, layer, &customers);
+    let f = (0..r.len()).find(|&f| r[f].is_some()).unwrap();
+    assert_eq!(rates[f], Some(r[f].unwrap() / c[f].unwrap()));
+    // Revenue per customer lies between 900 and 1,300 in the test data.
+    assert!(rates.iter().flatten().all(|x| (850.0..1350.0).contains(x)));
+    settle(&mut h);
+    save(&mut h, "relative-to");
+}
+
+/// The active territory's details: size, code, notes.
+#[test]
+fn territory_details() {
+    use egui_kittest::kittest::Queryable;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let plan = h.state_mut().add_balanced_plan_now(layer, 4);
+    let t = h.state().project.plan(plan).unwrap().territories[1].id;
+    h.state_mut().active_territory = Some(t);
+    settle(&mut h);
+    h.get_by_label_contains("Details of Territory 02").click();
+    settle(&mut h);
+    save(&mut h, "territory-details");
+    assert!(h.query_by_label("Size").is_some());
+}

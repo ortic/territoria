@@ -152,10 +152,11 @@ impl AnalysisCache {
             MapLayerKind::Choropleth {
                 layer,
                 source,
+                normalize,
                 scale,
                 ..
             } => {
-                let v = values.values(project, *layer, source);
+                let v = values.normalized(project, *layer, source, normalize);
                 scale.apply(&v)
             }
             MapLayerKind::Categories {

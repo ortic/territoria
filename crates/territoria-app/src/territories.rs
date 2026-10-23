@@ -757,6 +757,11 @@ impl TerritoriesPanel {
             }
         });
 
+        // The active territory's details.
+        if let Some(t) = cx.active_territory.and_then(|t| plan.territory(t)) {
+            self.details_ui(ui, plan_id, t, &mut actions);
+        }
+
         // Summary.
         ui.separator();
         let outside = stats
@@ -936,6 +941,99 @@ impl TerritoriesPanel {
                 }
             });
         actions
+    }
+
+    fn details_ui(
+        &mut self,
+        ui: &mut Ui,
+        plan_id: PlanId,
+        t: &territoria_model::Territory,
+        actions: &mut Vec<Action>,
+    ) {
+        let id = t.id;
+        let edit = |label: &str, change: Box<dyn FnOnce(&mut territoria_model::Territory)>| {
+            Action::Edit(
+                label.to_owned(),
+                Box::new(move |p| {
+                    if let Some(t) = p.plan_mut(plan_id).and_then(|pl| pl.territory_mut(id)) {
+                        change(t);
+                    }
+                    touch(p, plan_id);
+                }),
+            )
+        };
+        egui::CollapsingHeader::new(RichText::new(format!("Details of {}", t.name)).strong())
+            .id_salt("territory-details")
+            .show(ui, |ui| {
+                egui::Grid::new("territory-details-grid")
+                    .num_columns(2)
+                    .spacing([10.0, 6.0])
+                    .show(ui, |ui| {
+                        ui.label("Name");
+                        let mut name = t.name.clone();
+                        if ui.add(egui::TextEdit::singleline(&mut name).desired_width(200.0)).changed()
+                            && !name.trim().is_empty()
+                        {
+                            actions.push(edit("Rename territory", Box::new(move |t| t.name = name)));
+                        }
+                        ui.end_row();
+                        ui.label("Code").on_hover_text("What people call it: T01, a rep number, a region code");
+                        let mut code = t.code.clone();
+                        if ui.add(egui::TextEdit::singleline(&mut code).desired_width(120.0)).changed() {
+                            actions.push(edit("Change code", Box::new(move |t| t.code = code)));
+                        }
+                        ui.end_row();
+                        ui.label("Size").on_hover_text("Its share of the total: 1 is a normal territory, 0.5 one for a part-time rep, 2 a double one");
+                        let mut weight = t.weight;
+                        if ui
+                            .add(egui::DragValue::new(&mut weight).range(0.0..=10.0).speed(0.05).fixed_decimals(2))
+                            .changed()
+                        {
+                            actions.push(edit("Change size", Box::new(move |t| t.weight = weight)));
+                        }
+                        ui.end_row();
+                        ui.label("Locked");
+                        let mut locked = t.locked;
+                        if ui
+                            .checkbox(&mut locked, "keeps its areas")
+                            .on_hover_text("Painting and balancing leave it as it is")
+                            .changed()
+                        {
+                            actions.push(edit(
+                                if locked { "Lock territory" } else { "Unlock territory" },
+                                Box::new(move |t| t.locked = locked),
+                            ));
+                        }
+                        ui.end_row();
+                        ui.label("Site");
+                        ui.horizontal(|ui| {
+                            match t.site {
+                                Some([lon, lat]) => {
+                                    ui.label(RichText::new(format!("{lat:.5}°, {lon:.5}°")).monospace());
+                                    if ui.small_button("Remove").clicked() {
+                                        actions.push(edit("Remove site", Box::new(|t| t.site = None)));
+                                    }
+                                }
+                                None => {
+                                    ui.label(RichText::new("none").weak());
+                                }
+                            }
+                            if ui.small_button("📍 Place on the map").clicked() {
+                                actions.push(Action::SetTool(Tool::Site));
+                            }
+                        });
+                        ui.end_row();
+                        ui.label("Notes");
+                        let mut notes = t.notes.clone();
+                        if ui
+                            .add(egui::TextEdit::multiline(&mut notes).desired_rows(2).desired_width(f32::INFINITY))
+                            .changed()
+                        {
+                            actions.push(edit("Change notes", Box::new(move |t| t.notes = notes)));
+                        }
+                        ui.end_row();
+                    });
+            });
     }
 
     fn compare_ui(
