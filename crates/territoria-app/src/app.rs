@@ -70,6 +70,8 @@ pub enum Action {
     ColorBy(Option<LayerId>),
     /// Classes kept by name in the settings.
     SaveClassSet(String, territoria_analysis::ColorScale),
+    /// A round by road per territory of a plan on points.
+    PlanRounds(PlanId),
     /// A table column dropped on the map: show it.
     ShowColumn(DataRef, String),
     /// Show a data layer's boundaries on the current map.
@@ -1268,6 +1270,7 @@ impl TerritoriaApp {
                     set.country, set.level
                 )),
             },
+            JobResult::Rounds { plan, rounds } => self.add_plan_rounds(plan, rounds),
             JobResult::Round {
                 layer,
                 units,
@@ -2353,6 +2356,194 @@ impl TerritoriaApp {
             units,
             result: territoria_io::routing::trip(&settings, &stops).map_err(|e| e.to_string()),
         });
+    }
+
+    /// A round by road for each territory of `plan` (on points), from its
+    /// site if it has one, asked one after the other.
+    fn plan_rounds(&mut self, plan_id: PlanId) {
+        let Some(plan) = self.project.plan(plan_id) else {
+            return;
+        };
+        let Some(layer) = self.project.layer(plan.layer) else {
+            return;
+        };
+        if layer.kind() != GeometryKind::Point {
+            self.toast("Rounds need a plan on points, e.g. customers.");
+            return;
+        }
+        let members = plan.members();
+        let mut work = Vec::new();
+        let mut too_many = 0;
+        for (i, t) in plan.territories.iter().enumerate() {
+            let units = members.get(i).cloned().unwrap_or_default();
+            let site = t.site.map(|[x, y]| geo_types::Coord { x, y });
+            let mut stops: Vec<geo_types::Coord<f64>> = site.into_iter().collect();
+            stops.extend(units.iter().filter_map(|&u| {
+                layer
+                    .geometry
+                    .points
+                    .get(u as usize)?
+                    .0
+                    .first()
+                    .map(|p| p.0)
+            }));
+            if stops.len() < 2 {
+                continue;
+            }
+            if stops.len() > 100 {
+                too_many += 1;
+                continue;
+            }
+            work.push((i, units, site.is_some(), stops));
+        }
+        if too_many > 0 {
+            self.toast(format!(
+                "{too_many} territories have more than 100 stops and get no round."
+            ));
+        }
+        if work.is_empty() {
+            return;
+        }
+        let settings = self.settings.routing.clone();
+        let label = format!("Planning rounds for {} territories", work.len());
+        self.jobs.spawn_cancellable(label, move |job| {
+            let total = work.len();
+            let mut rounds = Vec::new();
+            for (k, (i, units, from_site, stops)) in work.into_iter().enumerate() {
+                if job.cancelled() {
+                    break;
+                }
+                job.progress(k as f32 / total as f32);
+                if k > 0 {
+                    std::thread::sleep(std::time::Duration::from_millis(settings.interval_ms));
+                }
+                let trip =
+                    territoria_io::routing::trip(&settings, &stops).map_err(|e| e.to_string());
+                rounds.push((i, units, from_site, trip));
+            }
+            JobResult::Rounds {
+                plan: plan_id,
+                rounds,
+            }
+        });
+    }
+
+    /// The plan's rounds as one line layer (a line per territory, in its
+    /// colour, with stops, km and hours) and each customer's visit order.
+    fn add_plan_rounds(&mut self, plan_id: PlanId, rounds: crate::jobs::TerritoryRounds) {
+        use territoria_data::{Column, ColumnKind, Table};
+        let Some(plan) = self.project.plan(plan_id).cloned() else {
+            return;
+        };
+        let n = self.project.layer(plan.layer).map_or(0, |l| l.len());
+        let before = self.project.clone();
+        let mut order = vec![None; n];
+        let (mut names, mut stops, mut km, mut minutes, mut paths, mut colors) = (
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+        let mut failed = 0;
+        for (i, units, from_site, trip) in rounds {
+            let Ok(trip) = trip else {
+                failed += 1;
+                continue;
+            };
+            let Some(t) = plan.territories.get(i) else {
+                continue;
+            };
+            // With a site first, the customers' places start at 1.
+            let shift = usize::from(!from_site);
+            let offset = usize::from(from_site);
+            for (k, &u) in units.iter().enumerate() {
+                if let (Some(o), Some(rank)) =
+                    (order.get_mut(u as usize), trip.order.get(k + offset))
+                {
+                    *o = Some((rank + shift) as f64);
+                }
+            }
+            names.push(Some(t.name.clone()));
+            stops.push(Some(units.len() as f64));
+            km.push(Some((trip.km * 10.0).round() / 10.0));
+            minutes.push(Some(trip.minutes.round()));
+            colors.push((t.name.clone(), t.color.lighten(-0.25)));
+            paths.push(geo_types::MultiLineString(vec![geo_types::LineString(
+                trip.path,
+            )]));
+        }
+        if paths.is_empty() {
+            self.error("No round could be planned: is the routing service in Settings reachable?");
+            return;
+        }
+        if let Some(t) = data_table_mut(&mut self.project, DataRef::Layer(plan.layer)) {
+            let mut c = Column::number(t.unique_name("Visit order"), order);
+            c.kind = ColumnKind::Integer;
+            let _ = t.push_column(c);
+        }
+        let total_km: f64 = km.iter().flatten().sum();
+        let total_minutes: f64 = minutes.iter().flatten().sum();
+        let hours: Vec<Option<f64>> = minutes
+            .iter()
+            .map(|m| m.map(|m| (m / 6.0).round() / 10.0))
+            .collect();
+        let table = Table::new(vec![
+            Column::text("Territory", ColumnKind::Key, names),
+            Column::number("Stops", stops),
+            Column::number("Km", km),
+            Column::number("Minutes", minutes),
+            Column::number("Hours", hours),
+        ])
+        .expect("one row per round");
+        let geometry = territoria_model::LayerGeometry::from_imported(
+            territoria_io::Geometries::Lines(paths),
+            true,
+        );
+        let title = format!("Rounds of {}", plan.name);
+        let id = self
+            .project
+            .add_layer(&title, geometry, table, SourceInfo::default());
+        let map = self.ensure_map();
+        let ml = self.project.new_map_layer_id();
+        self.push_map_layer(
+            map,
+            MapLayer {
+                id: ml,
+                name: title,
+                visible: true,
+                opacity: 1.0,
+                zoom: Default::default(),
+                kind: MapLayerKind::Categories {
+                    layer: id,
+                    source: territoria_model::TextSource::Attribute {
+                        column: "Territory".into(),
+                    },
+                    scale: CategoryScale {
+                        fixed: colors,
+                        ..Default::default()
+                    },
+                    style: BoundaryStyle {
+                        stroke_width: 3.0,
+                        ..Default::default()
+                    },
+                },
+            },
+        );
+        self.history.push("Plan rounds", before);
+        let h = (total_minutes / 60.0).floor();
+        self.toast(format!(
+            "Rounds planned: {} km, {} h {:02} min in all{}",
+            territoria_analysis::format::format_value(total_km.round()),
+            h,
+            (total_minutes - h * 60.0).round() as u32,
+            if failed > 0 {
+                format!("; {failed} territories failed")
+            } else {
+                String::new()
+            }
+        ));
     }
 
     /// The round as a line layer on the map, and the visiting order as a
@@ -3971,6 +4162,7 @@ impl TerritoriaApp {
             Action::LinkTable(t) => self.link = Some(LinkDialog::new(&self.project, t)),
             Action::ColorBy(layer) => self.color_by = Some(ColorByDialog::new(layer)),
             Action::ShowColumn(data, column) => self.show_column(data, &column),
+            Action::PlanRounds(plan) => self.plan_rounds(plan),
             Action::SaveClassSet(name, scale) => {
                 self.settings.class_sets.retain(|s| s.name != name);
                 self.toast(format!("Kept the classes as {name}."));

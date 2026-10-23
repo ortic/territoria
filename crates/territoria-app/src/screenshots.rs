@@ -4037,3 +4037,64 @@ fn line_widths_by_value() {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A round per territory of customers, from each territory's site.
+#[test]
+fn rounds_for_all_territories() {
+    use crate::dialogs::Placement;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = customers(h.state(), layer, 90);
+    let app = h.state_mut();
+    app.settings.routing.url = territoria_io::routing::mock_server();
+    app.settings.routing.interval_ms = 0;
+    app.add_table(
+        "Customers".into(),
+        table,
+        PathBuf::from("customers.csv"),
+        Placement::Points {
+            x: "Longitude".into(),
+            y: "Latitude".into(),
+        },
+        None,
+    );
+    let points = app.project.layers.last().unwrap().id;
+    let plan = app.add_balanced_plan_now(points, 3);
+    // Each territory's site at its centre.
+    let g = app.project.layer(points).unwrap().geometry.clone();
+    let centres = app.project.plan(plan).unwrap().centres(&g, None);
+    {
+        let p = app.project.plan_mut(plan).unwrap();
+        for (t, c) in p.territories.iter_mut().zip(&centres) {
+            t.site = c.map(|c| [c.x, c.y]);
+        }
+    }
+    app.apply_action_for_test(crate::app::Action::PlanRounds(plan));
+    settle(&mut h);
+    save(&mut h, "plan-rounds");
+    let app = h.state();
+    let rounds = app.project.layers.last().unwrap();
+    assert_eq!(rounds.name, "Rounds of Sales territories");
+    assert_eq!(rounds.len(), 3, "a round per territory");
+    assert!(rounds.attributes.column("Km").unwrap().f64(0).unwrap() > 0.0);
+    // Each territory's customers are visited 1, 2, … in some order.
+    let p = app.project.plan(plan).unwrap();
+    let order = app
+        .project
+        .layer(points)
+        .unwrap()
+        .attributes
+        .column("Visit order")
+        .expect("visit order");
+    for members in p.members() {
+        let mut ranks: Vec<usize> = members
+            .iter()
+            .map(|&u| order.f64(u as usize).unwrap() as usize)
+            .collect();
+        ranks.sort_unstable();
+        assert_eq!(ranks, (1..=members.len()).collect::<Vec<_>>());
+    }
+}

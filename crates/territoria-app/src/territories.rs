@@ -581,6 +581,18 @@ impl TerritoriesPanel {
                 {
                     actions.push(Action::DuplicatePlan(plan_id));
                 }
+                let on_points = project
+                    .layer(plan.layer)
+                    .is_some_and(|l| l.kind() == territoria_io::GeometryKind::Point);
+                if on_points
+                    && ui
+                        .button("🚗 Rounds for all territories")
+                        .on_hover_text("Each territory's quickest round by road through its customers, from its site: km and hours per territory and each customer's visit order")
+                        .clicked()
+                {
+                    actions.push(Action::PlanRounds(plan_id));
+                    ui.close();
+                }
                 let others: Vec<_> = project
                     .plans
                     .iter()

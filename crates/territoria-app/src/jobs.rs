@@ -79,6 +79,11 @@ pub enum JobResult {
     },
     /// The map as an image for the clipboard.
     Copied(Result<egui::ColorImage, String>),
+    /// A round per territory of a plan on points.
+    Rounds {
+        plan: territoria_model::PlanId,
+        rounds: TerritoryRounds,
+    },
     /// A visiting round through points of a layer.
     Round {
         layer: LayerId,
@@ -98,6 +103,15 @@ pub enum JobResult {
         result: Result<territoria_io::geocode::Geocoded, String>,
     },
 }
+
+/// Per territory (index): its customers, whether the round starts at its
+/// site, and the round (or why there is none).
+pub type TerritoryRounds = Vec<(
+    usize,
+    Vec<u32>,
+    bool,
+    Result<territoria_io::routing::Trip, String>,
+)>;
 
 pub struct Running {
     pub id: u64,
