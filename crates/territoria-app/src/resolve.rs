@@ -41,8 +41,20 @@ pub struct Resolved {
     pub symbol_stroke: Stroke,
     /// Charts per feature, largest first.
     pub charts: Vec<Chart>,
+    /// Flow lines, widest last.
+    pub flows: Vec<Flow>,
     /// Closed lines in display coordinates (catchment rings) with a label.
     pub rings: Vec<Ring>,
+}
+
+/// A line from one place to another (display coordinates).
+pub struct Flow {
+    pub from: [f64; 2],
+    pub to: [f64; 2],
+    pub width: f32,
+    pub color: Color32,
+    pub curved: bool,
+    pub arrow: bool,
 }
 
 /// A chart on a feature's label point.
@@ -109,6 +121,42 @@ fn resolve_one(
     match &ml.kind {
         // Drawn as an image of its own (see `heat`).
         MapLayerKind::Heatmap { .. } => Some(Vec::new()),
+        MapLayerKind::Flows { style, .. } => {
+            let to_display = Transformer::new(&Crs::wgs84(), crs).ok()?;
+            let lines = cx.analyses.flows(project, ml.id, &ml.kind)?;
+            let max = lines.iter().map(|l| l.value).fold(0.0f64, f64::max);
+            let c = with_opacity(color(style.color), opacity);
+            let flows = lines
+                .iter()
+                .filter_map(|l| {
+                    let (a, b) = (to_display.convert(l.from)?, to_display.convert(l.to)?);
+                    Some(Flow {
+                        from: [a.x, a.y],
+                        to: [b.x, b.y],
+                        width: (style.max_width * (l.value / max) as f32).max(0.6),
+                        color: c,
+                        curved: style.curved,
+                        arrow: style.arrows,
+                    })
+                })
+                .collect();
+            Some(vec![Resolved {
+                mesh: Arc::new(LayerMesh::empty()),
+                fills: Vec::new(),
+                arcs: Vec::new(),
+                line_width: 1.0,
+                point_radius: 0.0,
+                point_stroke: Stroke::NONE,
+                labels: Labels::None,
+                sites: Vec::new(),
+                symbols: Vec::new(),
+                symbol_fill: Color32::TRANSPARENT,
+                symbol_stroke: Stroke::NONE,
+                charts: Vec::new(),
+                flows,
+                rings: Vec::new(),
+            }])
+        }
         MapLayerKind::Rings {
             centres,
             radii_km,
@@ -151,6 +199,7 @@ fn resolve_one(
                 symbol_fill: Color32::TRANSPARENT,
                 symbol_stroke: Stroke::NONE,
                 charts: Vec::new(),
+                flows: Vec::new(),
                 rings,
             }])
         }
@@ -216,6 +265,7 @@ fn resolve_one(
                 symbol_fill: Color32::TRANSPARENT,
                 symbol_stroke: Stroke::NONE,
                 charts: Vec::new(),
+                flows: Vec::new(),
                 rings: Vec::new(),
             }])
         }
@@ -322,6 +372,7 @@ fn resolve_one(
                 symbol_fill: Color32::TRANSPARENT,
                 symbol_stroke: Stroke::NONE,
                 charts: Vec::new(),
+                flows: Vec::new(),
                 rings: Vec::new(),
             };
             if !points {
@@ -355,6 +406,7 @@ fn resolve_one(
                 symbol_fill: Color32::TRANSPARENT,
                 symbol_stroke: Stroke::NONE,
                 charts: Vec::new(),
+                flows: Vec::new(),
                 rings: Vec::new(),
             };
             Some(vec![area, dot_layer])
@@ -391,6 +443,7 @@ fn resolve_one(
                 symbol_fill: Color32::TRANSPARENT,
                 symbol_stroke: Stroke::NONE,
                 charts: charts(cx, *layer, parts, chart, opacity),
+                flows: Vec::new(),
                 rings: Vec::new(),
             }])
         }
@@ -439,6 +492,7 @@ fn resolve_one(
                 symbol_fill: with_opacity(color(symbol.color), opacity),
                 symbol_stroke: Stroke::new(0.8, with_opacity(color(symbol.outline), opacity)),
                 charts: Vec::new(),
+                flows: Vec::new(),
                 rings: Vec::new(),
             }])
         }

@@ -3924,3 +3924,266 @@ impl ScoreDialog {
         done
     }
 }
+
+// ---------------------------------------------------------------------------
+// Flows
+
+/// Lines from where rows start to where they go.
+pub struct FlowDialog {
+    pub rows: Option<territoria_model::flows::FlowRows>,
+    pub from: territoria_model::flows::FlowEnd,
+    pub to: territoria_model::flows::FlowEnd,
+    pub value: Option<String>,
+    /// For the current choice: (choice, rows placed at both ends, rows).
+    placed: Option<(String, usize, usize)>,
+}
+
+impl FlowDialog {
+    pub fn new(project: &Project) -> FlowDialog {
+        use territoria_model::flows::{FlowEnd, FlowRows};
+        // Points (customers) first, else a table.
+        let rows = project
+            .layers
+            .iter()
+            .find(|l| l.kind() == GeometryKind::Point)
+            .map(|l| FlowRows::Layer(l.id))
+            .or_else(|| project.tables.first().map(|t| FlowRows::Table(t.id)));
+        let mut d = FlowDialog {
+            rows,
+            from: FlowEnd::Own,
+            to: FlowEnd::Own,
+            value: None,
+            placed: None,
+        };
+        d.guess(project);
+        d
+    }
+
+    #[cfg(test)]
+    pub fn guess_for_test(&mut self, project: &Project) {
+        self.guess(project);
+    }
+
+    /// Ends whose columns name the most features of some layer.
+    fn guess(&mut self, project: &Project) {
+        use territoria_model::flows::{FlowEnd, FlowRows, match_column};
+        let Some(rows) = self.rows else {
+            return;
+        };
+        let Some(table) = rows.table(project) else {
+            return;
+        };
+        let own = match rows {
+            FlowRows::Layer(l) => Some(l),
+            FlowRows::Table(_) => None,
+        };
+        let mut found: Vec<(usize, String, LayerId)> = Vec::new();
+        for c in table
+            .columns
+            .iter()
+            .filter(|c| !c.kind.is_numeric() || c.kind == ColumnKind::Key)
+        {
+            for l in project.layers.iter().filter(|l| Some(l.id) != own) {
+                let hits = match_column(project, table, &c.name, l.id)
+                    .iter()
+                    .filter(|h| h.is_some())
+                    .count();
+                if hits * 2 >= table.rows().max(1) {
+                    found.push((hits, c.name.clone(), l.id));
+                }
+            }
+        }
+        found.sort_by_key(|f| std::cmp::Reverse(f.0));
+        let end = |f: &(usize, String, LayerId)| FlowEnd::Column {
+            column: f.1.clone(),
+            layer: f.2,
+        };
+        match (own, found.as_slice()) {
+            (Some(_), [best, ..]) => {
+                self.from = FlowEnd::Own;
+                self.to = end(best);
+            }
+            (None, [a, b, ..]) => {
+                self.from = end(a);
+                self.to = end(b);
+            }
+            (None, [a]) => {
+                self.from = end(a);
+                self.to = end(a);
+            }
+            _ => {
+                self.from = FlowEnd::Own;
+                self.to = FlowEnd::Own;
+            }
+        }
+        self.value = None;
+    }
+
+    pub fn show(&mut self, ctx: &egui::Context, project: &Project, open: &mut bool) -> bool {
+        use territoria_model::flows::{FlowEnd, FlowRows};
+        let mut apply = false;
+        let mut cancel = false;
+        let table = self.rows.and_then(|r| r.table(project));
+        let columns: Vec<String> = table
+            .map(|t| t.columns.iter().map(|c| c.name.clone()).collect())
+            .unwrap_or_default();
+        // How many rows find both ends (redone when the choice changes).
+        let choice = format!("{:?}{:?}{:?}", self.rows, self.from, self.to);
+        if self.placed.as_ref().is_none_or(|p| p.0 != choice)
+            && let Some(rows) = self.rows
+        {
+            let lines = territoria_model::flows::lines(project, rows, &self.from, &self.to, None);
+            let placed = lines.iter().map(|l| l.value as usize).sum();
+            self.placed = Some((choice, placed, table.map_or(0, |t| t.rows())));
+        }
+        *open = modal(ctx, "flows", "Flow lines", 520.0, |ui| {
+            ui.label(
+                RichText::new(
+                    "Lines from where each row starts to where it goes, as wide as its value: customers to their branch, deliveries, commuters.",
+                )
+                .weak(),
+            );
+            ui.add_space(6.0);
+            egui::Grid::new("flow-grid")
+                .num_columns(2)
+                .spacing([12.0, 8.0])
+                .show(ui, |ui| {
+                    ui.label("Rows");
+                    let before = self.rows;
+                    ComboBox::from_id_salt("flow-rows")
+                        .width(260.0)
+                        .selected_text(self.rows.map_or(String::new(), |r| r.name(project)))
+                        .show_ui(ui, |ui| {
+                            for l in &project.layers {
+                                ui.selectable_value(
+                                    &mut self.rows,
+                                    Some(FlowRows::Layer(l.id)),
+                                    format!("▣ {}", l.name),
+                                );
+                            }
+                            for t in &project.tables {
+                                ui.selectable_value(
+                                    &mut self.rows,
+                                    Some(FlowRows::Table(t.id)),
+                                    format!("▦ {}", t.name),
+                                );
+                            }
+                        });
+                    if self.rows != before {
+                        self.guess(project);
+                    }
+                    ui.end_row();
+                    let own_ok = matches!(self.rows, Some(FlowRows::Layer(_)));
+                    for which in 0..2 {
+                        ui.label(if which == 0 { "From" } else { "To" });
+                        let end = if which == 0 {
+                            &mut self.from
+                        } else {
+                            &mut self.to
+                        };
+                        ui.horizontal(|ui| {
+                            let text = match &*end {
+                                FlowEnd::Own => "The row's own place".to_owned(),
+                                FlowEnd::Column { column, .. } => column.clone(),
+                            };
+                            let layer = match &*end {
+                                FlowEnd::Column { layer, .. } => Some(*layer),
+                                FlowEnd::Own => project.layers.first().map(|l| l.id),
+                            };
+                            ComboBox::from_id_salt(("flow-dlg-end", which))
+                                .width(150.0)
+                                .selected_text(text)
+                                .show_ui(ui, |ui| {
+                                    if own_ok {
+                                        ui.selectable_value(
+                                            end,
+                                            FlowEnd::Own,
+                                            "The row's own place",
+                                        );
+                                    }
+                                    if let Some(layer) = layer {
+                                        for c in &columns {
+                                            ui.selectable_value(
+                                                end,
+                                                FlowEnd::Column {
+                                                    column: c.clone(),
+                                                    layer,
+                                                },
+                                                c,
+                                            );
+                                        }
+                                    }
+                                });
+                            if let FlowEnd::Column { layer, .. } = end {
+                                ui.label("names a feature of");
+                                ComboBox::from_id_salt(("flow-dlg-layer", which))
+                                    .width(110.0)
+                                    .selected_text(
+                                        project.layer(*layer).map_or("", |l| l.name.as_str()),
+                                    )
+                                    .show_ui(ui, |ui| {
+                                        for l in &project.layers {
+                                            ui.selectable_value(layer, l.id, &l.name);
+                                        }
+                                    });
+                            }
+                        });
+                        ui.end_row();
+                    }
+                    ui.label("Widths follow");
+                    ComboBox::from_id_salt("flow-dlg-value")
+                        .width(200.0)
+                        .selected_text(
+                            self.value
+                                .clone()
+                                .unwrap_or_else(|| "Number of rows".into()),
+                        )
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.value, None, "Number of rows");
+                            if let Some(t) = table {
+                                for c in t.columns.iter().filter(|c| c.kind.is_numeric()) {
+                                    ui.selectable_value(
+                                        &mut self.value,
+                                        Some(c.name.clone()),
+                                        &c.name,
+                                    );
+                                }
+                            }
+                        });
+                    ui.end_row();
+                    ui.label("");
+                    if let Some((_, placed, total)) = &self.placed {
+                        let text = format!(
+                            "{} of {} rows have both ends",
+                            format_value(*placed as f64),
+                            format_value(*total as f64)
+                        );
+                        if *placed == 0 {
+                            ui.colored_label(crate::theme::WARN, text);
+                        } else {
+                            ui.label(RichText::new(text).weak());
+                        }
+                    }
+                    ui.end_row();
+                    ui.label("");
+                    ui.horizontal(|ui| {
+                        let ok = self.placed.as_ref().is_some_and(|p| p.1 > 0);
+                        if ui
+                            .add_enabled(ok, egui::Button::new(RichText::new("Create").strong()))
+                            .clicked()
+                        {
+                            apply = true;
+                        }
+                        if ui.button("Cancel").clicked() {
+                            cancel = true;
+                        }
+                    });
+                    ui.end_row();
+                });
+        });
+        if cancel || apply {
+            *open = false;
+        }
+        apply
+    }
+}

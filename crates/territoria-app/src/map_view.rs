@@ -1350,6 +1350,9 @@ pub fn draw_resolved(shapes: &mut Vec<Shape>, r: &Resolved, view: &View, ppp: f3
             crate::charts::shapes(shapes, chart, p);
         }
     }
+    for flow in &r.flows {
+        crate::flowlines::shapes(shapes, flow, view);
+    }
 }
 
 /// Site markers, drawn above labels.

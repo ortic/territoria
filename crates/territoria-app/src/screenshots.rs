@@ -2896,3 +2896,120 @@ fn select_in_another_layer() {
     settle(&mut h);
     save(&mut h, "select-in");
 }
+
+/// Customers' lines to their branch, guessed from a column naming the
+/// branch, on screen and in exports.
+#[test]
+fn flow_lines() {
+    use crate::app::Export;
+    use crate::dialogs::{FlowDialog, Placement};
+    use crate::export_map::Format;
+    use territoria_model::flows::{FlowEnd, FlowRows};
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let app = h.state_mut();
+    let b = app.project.layer(layer).unwrap().geometry.bbox.unwrap();
+    let spots = [(0.3, 0.35), (0.65, 0.6), (0.8, 0.25), (0.45, 0.8)];
+    let at = |(u, v): (f64, f64)| (b.min().x + u * b.width(), b.min().y + v * b.height());
+    let branches = Table::new(vec![
+        Column::text(
+            "Branch",
+            ColumnKind::Key,
+            (0..4).map(|i| Some(format!("Branch {}", i + 1))).collect(),
+        ),
+        Column::number("Lon", spots.iter().map(|s| Some(at(*s).0)).collect()),
+        Column::number("Lat", spots.iter().map(|s| Some(at(*s).1)).collect()),
+    ])
+    .unwrap();
+    app.add_table(
+        "Branches".into(),
+        branches,
+        PathBuf::from("branches.csv"),
+        Placement::Points {
+            x: "Lon".into(),
+            y: "Lat".into(),
+        },
+        None,
+    );
+    let branches = app.project.layers.last().unwrap().id;
+    // Each customer served by the nearest branch.
+    let mut customers = customers(app, layer, 300);
+    let nearest: Vec<Option<String>> = (0..customers.rows())
+        .map(|r| {
+            let (x, y) = (
+                customers.column("Longitude").unwrap().f64(r).unwrap(),
+                customers.column("Latitude").unwrap().f64(r).unwrap(),
+            );
+            let i = (0..4)
+                .min_by(|a, b| {
+                    let d = |i: usize| {
+                        let (bx, by) = at(spots[i]);
+                        (bx - x).hypot(by - y)
+                    };
+                    d(*a).total_cmp(&d(*b))
+                })
+                .unwrap();
+            Some(format!("Branch {}", i + 1))
+        })
+        .collect();
+    customers
+        .columns
+        .push(Column::text("Served by", ColumnKind::Text, nearest));
+    app.add_table(
+        "Customers".into(),
+        customers,
+        PathBuf::from("customers.csv"),
+        Placement::Points {
+            x: "Longitude".into(),
+            y: "Latitude".into(),
+        },
+        None,
+    );
+    let points = app.project.layers.last().unwrap().id;
+    let mut d = {
+        // Choosing the rows guesses the ends.
+        let mut fresh = FlowDialog::new(&app.project);
+        fresh.rows = Some(FlowRows::Layer(points));
+        fresh.guess_for_test(&app.project);
+        fresh
+    };
+    assert_eq!(d.from, FlowEnd::Own);
+    assert_eq!(
+        d.to,
+        FlowEnd::Column {
+            column: "Served by".into(),
+            layer: branches
+        }
+    );
+    d.value = Some("Sales".into());
+    app.add_flows(&d);
+    settle(&mut h);
+    save(&mut h, "flows");
+    let app = h.state_mut();
+    let ml = app.project.maps[0].layers.last().unwrap().clone();
+    let lines = app.analyses.flows(&app.project, ml.id, &ml.kind).unwrap();
+    assert_eq!(lines.len(), 300, "a line per customer");
+
+    let dir = std::env::temp_dir().join(format!("territoria-flows-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("flows.svg");
+    app.set_map_export_for_test(crate::dialogs::MapExportSettings {
+        format: Format::Svg,
+        scale: 1.0,
+        title: String::new(),
+        legend: true,
+        scale_bar: false,
+    });
+    app.export(Export::Map(Format::Svg), path.clone());
+    settle(&mut h);
+    let svg = std::fs::read_to_string(&path).unwrap();
+    assert!(svg.contains("Line widths follow Sales"), "legend");
+    assert!(
+        svg.matches("stroke-linecap=\"round\"").count() >= 250,
+        "lines"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

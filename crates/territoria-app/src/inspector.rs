@@ -14,6 +14,16 @@ use crate::dialogs::{Colorable, colorables, match_report};
 use crate::map_view::color;
 use crate::meshes::AnalysisCache;
 
+/// A change of a flow layer's ends, value and style.
+type FlowEdit = Box<
+    dyn FnOnce(
+        &mut territoria_model::flows::FlowEnd,
+        &mut territoria_model::flows::FlowEnd,
+        &mut Option<String>,
+        &mut territoria_model::flows::FlowStyle,
+    ),
+>;
+
 /// A change of a chart layer's values and style.
 type ChartEdit =
     Box<dyn FnOnce(&mut Vec<territoria_model::ChartPart>, &mut territoria_model::ChartStyle)>;
@@ -829,6 +839,167 @@ fn map_layer(
     zoom_ui(ui, ml, view, map, actions);
     ui.separator();
     match &ml.kind {
+        MapLayerKind::Flows {
+            rows,
+            from,
+            to,
+            value,
+            style,
+        } => {
+            use territoria_model::flows::FlowEnd;
+            let edit_flow = |label: &str, f: FlowEdit| {
+                edit_layer(map, id, label, move |l| {
+                    if let MapLayerKind::Flows {
+                        from,
+                        to,
+                        value,
+                        style,
+                        ..
+                    } = &mut l.kind
+                    {
+                        f(from, to, value, style);
+                    }
+                })
+            };
+            let table = rows.table(project);
+            let columns: Vec<String> = table
+                .map(|t| t.columns.iter().map(|c| c.name.clone()).collect())
+                .unwrap_or_default();
+            let lines = analyses.flows(project, id, &ml.kind);
+            ui.label(
+                RichText::new(format!(
+                    "Rows of {} · {} lines",
+                    rows.name(project),
+                    lines.as_ref().map_or(0, |l| l.len())
+                ))
+                .weak(),
+            );
+            egui::Grid::new("flows")
+                .num_columns(2)
+                .spacing([10.0, 6.0])
+                .show(ui, |ui| {
+                    for (which, end) in [(0, from), (1, to)] {
+                        ui.label(if which == 0 { "From" } else { "To" });
+                        let mut chosen = end.clone();
+                        ui.horizontal(|ui| {
+                            let text = match end {
+                                FlowEnd::Own => "The row's own place".to_owned(),
+                                FlowEnd::Column { column, .. } => column.clone(),
+                            };
+                            ComboBox::from_id_salt(("flow-end", which))
+                                .width(130.0)
+                                .selected_text(text)
+                                .show_ui(ui, |ui| {
+                                    if matches!(rows, territoria_model::flows::FlowRows::Layer(_)) {
+                                        ui.selectable_value(
+                                            &mut chosen,
+                                            FlowEnd::Own,
+                                            "The row's own place",
+                                        );
+                                    }
+                                    let layer = match end {
+                                        FlowEnd::Column { layer, .. } => Some(*layer),
+                                        FlowEnd::Own => project.layers.first().map(|l| l.id),
+                                    };
+                                    if let Some(layer) = layer {
+                                        for c in &columns {
+                                            ui.selectable_value(
+                                                &mut chosen,
+                                                FlowEnd::Column {
+                                                    column: c.clone(),
+                                                    layer,
+                                                },
+                                                c,
+                                            );
+                                        }
+                                    }
+                                });
+                            if let FlowEnd::Column { layer, .. } = end {
+                                ui.label("in");
+                                ComboBox::from_id_salt(("flow-layer", which))
+                                    .width(110.0)
+                                    .selected_text(
+                                        project.layer(*layer).map_or("", |l| l.name.as_str()),
+                                    )
+                                    .show_ui(ui, |ui| {
+                                        for l in &project.layers {
+                                            if let FlowEnd::Column { layer, .. } = &mut chosen {
+                                                ui.selectable_value(layer, l.id, &l.name);
+                                            }
+                                        }
+                                    });
+                            }
+                        });
+                        if &chosen != end {
+                            actions.push(edit_flow(
+                                "Change flow ends",
+                                Box::new(move |from, to, _, _| {
+                                    *if which == 0 { from } else { to } = chosen;
+                                }),
+                            ));
+                        }
+                        ui.end_row();
+                    }
+                    ui.label("Widths follow");
+                    let mut v = value.clone();
+                    ComboBox::from_id_salt("flow-value")
+                        .width(180.0)
+                        .selected_text(v.clone().unwrap_or_else(|| "Number of rows".into()))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut v, None, "Number of rows");
+                            if let Some(t) = table {
+                                for c in t.columns.iter().filter(|c| c.kind.is_numeric()) {
+                                    ui.selectable_value(&mut v, Some(c.name.clone()), &c.name);
+                                }
+                            }
+                        });
+                    if &v != value {
+                        actions.push(edit_flow(
+                            "Change flow widths",
+                            Box::new(move |_, _, value, _| *value = v),
+                        ));
+                    }
+                    ui.end_row();
+                    ui.label("Colour");
+                    if let Some(c) = rgba_button(ui, style.color) {
+                        actions.push(edit_flow(
+                            "Change flow colour",
+                            Box::new(move |_, _, _, s| s.color = c),
+                        ));
+                    }
+                    ui.end_row();
+                    ui.label("Widest");
+                    let mut w = style.max_width;
+                    if ui
+                        .add(egui::Slider::new(&mut w, 1.0..=40.0).suffix(" pt"))
+                        .changed()
+                    {
+                        actions.push(edit_flow(
+                            "Change flow widths",
+                            Box::new(move |_, _, _, s| s.max_width = w),
+                        ));
+                    }
+                    ui.end_row();
+                    ui.label("");
+                    ui.horizontal(|ui| {
+                        let mut curved = style.curved;
+                        if ui.checkbox(&mut curved, "Curved").changed() {
+                            actions.push(edit_flow(
+                                "Curve flows",
+                                Box::new(move |_, _, _, s| s.curved = curved),
+                            ));
+                        }
+                        let mut arrows = style.arrows;
+                        if ui.checkbox(&mut arrows, "Arrows").changed() {
+                            actions.push(edit_flow(
+                                "Flow arrows",
+                                Box::new(move |_, _, _, s| s.arrows = arrows),
+                            ));
+                        }
+                    });
+                    ui.end_row();
+                });
+        }
         MapLayerKind::Boundaries { layer, style } => {
             style_ui(
                 ui,

@@ -132,9 +132,52 @@ impl MeshCache {
 #[derive(Default)]
 pub struct AnalysisCache {
     entries: HashMap<MapLayerId, (u64, Arc<Scaled>)>,
+    flows: HashMap<MapLayerId, (u64, Arc<Vec<territoria_model::flows::FlowLine>>)>,
 }
 
 impl AnalysisCache {
+    /// A flow layer's lines, recomputed when its rows or places change.
+    pub fn flows(
+        &mut self,
+        project: &Project,
+        id: MapLayerId,
+        kind: &MapLayerKind,
+    ) -> Option<Arc<Vec<territoria_model::flows::FlowLine>>> {
+        let MapLayerKind::Flows {
+            rows,
+            from,
+            to,
+            value,
+            ..
+        } = kind
+        else {
+            return None;
+        };
+        let mut h = DefaultHasher::new();
+        format!("{rows:?}{from:?}{to:?}{value:?}").hash(&mut h);
+        for l in &project.layers {
+            (l.id, l.rev).hash(&mut h);
+        }
+        for t in &project.tables {
+            (t.id, t.rev).hash(&mut h);
+        }
+        let key = h.finish();
+        if let Some((k, lines)) = self.flows.get(&id)
+            && *k == key
+        {
+            return Some(lines.clone());
+        }
+        let lines = Arc::new(territoria_model::flows::lines(
+            project,
+            *rows,
+            from,
+            to,
+            value.as_deref(),
+        ));
+        self.flows.insert(id, (key, lines.clone()));
+        Some(lines)
+    }
+
     pub fn get(
         &mut self,
         project: &Project,

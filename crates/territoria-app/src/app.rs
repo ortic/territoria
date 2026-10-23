@@ -235,6 +235,7 @@ pub struct TerritoriaApp {
     catchment: Option<crate::dialogs::CatchmentDialog>,
     join: Option<crate::dialogs::JoinDialog>,
     summarise: Option<crate::dialogs::SummariseDialog>,
+    flows: Option<crate::dialogs::FlowDialog>,
     score: Option<crate::dialogs::ScoreDialog>,
     /// The search box: query and what it found.
     search: String,
@@ -373,6 +374,7 @@ impl TerritoriaApp {
             catchment: None,
             join: None,
             summarise: None,
+            flows: None,
             score: None,
             search: String::new(),
             search_hits: Vec::new(),
@@ -1681,6 +1683,24 @@ impl TerritoriaApp {
             counts.push((ml.clone(), r.len()));
             resolved.extend(r);
             match &ml.kind {
+                MapLayerKind::Flows { style, value, .. } => {
+                    let max = rcx
+                        .analyses
+                        .flows(rcx.project, ml.id, &ml.kind)
+                        .map_or(0.0, |l| l.iter().map(|l| l.value).fold(0.0, f64::max));
+                    legends.push((
+                        ml.name.clone(),
+                        vec![territoria_analysis::LegendEntry {
+                            color: style.color,
+                            label: format!(
+                                "Line widths follow {}; widest {}",
+                                value.as_deref().unwrap_or("the number of rows"),
+                                territoria_analysis::format::format_value(max)
+                            ),
+                            count: 0,
+                        }],
+                    ));
+                }
                 MapLayerKind::Bivariate { x, y, .. } => {
                     if let Some(grid) = rcx
                         .analyses
@@ -2204,6 +2224,7 @@ impl TerritoriaApp {
                 MapLayerKind::Symbols { .. }
                     | MapLayerKind::Rings { .. }
                     | MapLayerKind::Charts { .. }
+                    | MapLayerKind::Flows { .. }
             ) {
                 return true;
             }
@@ -2420,6 +2441,39 @@ impl TerritoriaApp {
             },
         )?;
         Some(id)
+    }
+
+    /// A flow layer from the dialog's choice, on top of the map.
+    pub(crate) fn add_flows(&mut self, d: &crate::dialogs::FlowDialog) {
+        let Some(rows) = d.rows else {
+            return;
+        };
+        let before = self.project.clone();
+        let map = self.ensure_map();
+        let id = self.project.new_map_layer_id();
+        let what = d.value.clone().unwrap_or_else(|| rows.name(&self.project));
+        let added = self.push_map_layer(
+            map,
+            MapLayer {
+                id,
+                name: format!("Flows of {what}"),
+                visible: true,
+                opacity: 1.0,
+                zoom: Default::default(),
+                kind: MapLayerKind::Flows {
+                    rows,
+                    from: d.from.clone(),
+                    to: d.to.clone(),
+                    value: d.value.clone(),
+                    style: Default::default(),
+                },
+            },
+        );
+        self.history.push("Add flow lines", before);
+        if let Some(id) = added {
+            self.selection = Selection::MapLayer(map, id);
+            self.right_tab = RightTab::Properties;
+        }
     }
 
     /// Areas of `layer` coloured by two values at once.
@@ -2940,6 +2994,14 @@ impl TerritoriaApp {
                     });
                 } else {
                     self.toast("Show a map first.");
+                }
+            }
+            Command::FlowLines => {
+                let d = crate::dialogs::FlowDialog::new(&self.project);
+                if d.rows.is_none() {
+                    self.toast("Add data first: points or a table whose rows name where they start and go.");
+                } else {
+                    self.flows = Some(d);
                 }
             }
             Command::Catchment => {
@@ -3681,6 +3743,7 @@ impl TerritoriaApp {
                     Command::ReplaceLayer,
                     Command::HexGrid,
                     Command::Catchment,
+                    Command::FlowLines,
                     Command::CalculatedColumn,
                     Command::ExportMap,
                     Command::ExportHtml,
@@ -4091,6 +4154,14 @@ impl TerritoriaApp {
                 self.formula = Some(f);
             } else if open {
                 self.score = Some(d);
+            }
+        }
+        if let Some(mut d) = self.flows.take() {
+            let mut open = true;
+            if d.show(ctx, &self.project, &mut open) {
+                self.add_flows(&d);
+            } else if open {
+                self.flows = Some(d);
             }
         }
         if let Some(mut d) = self.summarise.take() {
@@ -4573,6 +4644,7 @@ impl eframe::App for TerritoriaApp {
             || self.catchment.is_some()
             || self.join.is_some()
             || self.summarise.is_some()
+            || self.flows.is_some()
             || self.score.is_some()
             || self.settings_dialog.is_some()
             || self.select_list.is_some()

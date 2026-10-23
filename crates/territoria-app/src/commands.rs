@@ -42,6 +42,7 @@ commands! {
     CalculatedColumn => "Data: Calculated Column…",
     HexGrid => "Data: New Hexagon Grid…",
     Catchment => "Map: Catchment Rings Around Points…",
+    FlowLines => "Map: Flow Lines Between Places…",
     ColorByValue => "Map: Colour Areas by Value…",
     NewMap => "Map: New Map",
     ExportMap => "Map: Export Map (PNG, SVG, PDF)…",

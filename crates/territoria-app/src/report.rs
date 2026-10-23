@@ -211,6 +211,7 @@ fn overview_layer(d: &ReportData) -> Resolved {
         symbol_fill: Color32::TRANSPARENT,
         symbol_stroke: Stroke::NONE,
         charts: Vec::new(),
+        flows: Vec::new(),
         rings: Vec::new(),
     }
 }
@@ -284,6 +285,7 @@ fn territory_layer(d: &ReportData, t: usize) -> Resolved {
         symbol_fill: Color32::TRANSPARENT,
         symbol_stroke: Stroke::NONE,
         charts: Vec::new(),
+        flows: Vec::new(),
         rings: Vec::new(),
     }
 }

@@ -143,6 +143,15 @@ pub enum MapLayerKind {
         radius_km: f64,
         ramp: territoria_analysis::RampSpec,
     },
+    /// Lines from where rows start to where they go, as wide as their value.
+    Flows {
+        rows: crate::flows::FlowRows,
+        from: crate::flows::FlowEnd,
+        to: crate::flows::FlowEnd,
+        /// Number column the widths follow (each row counts 1 without).
+        value: Option<String>,
+        style: crate::flows::FlowStyle,
+    },
     /// Rings of given radii around centres (catchment).
     Rings {
         centres: crate::catchment::Centres,
@@ -292,7 +301,9 @@ impl MapLayerKind {
                 centres: crate::catchment::Centres::Points(layer),
                 ..
             } => Some(*layer),
-            MapLayerKind::Territories { .. } | MapLayerKind::Rings { .. } => None,
+            MapLayerKind::Territories { .. }
+            | MapLayerKind::Rings { .. }
+            | MapLayerKind::Flows { .. } => None,
         }
     }
 
@@ -328,6 +339,7 @@ impl MapLayerKind {
             | MapLayerKind::Charts { style, .. } => Some(style),
             MapLayerKind::Territories { .. }
             | MapLayerKind::Rings { .. }
+            | MapLayerKind::Flows { .. }
             | MapLayerKind::Heatmap { .. } => None,
         }
     }
@@ -342,6 +354,7 @@ impl MapLayerKind {
             | MapLayerKind::Charts { style, .. } => Some(style),
             MapLayerKind::Territories { .. }
             | MapLayerKind::Rings { .. }
+            | MapLayerKind::Flows { .. }
             | MapLayerKind::Heatmap { .. } => None,
         }
     }
@@ -356,6 +369,7 @@ impl MapLayerKind {
             MapLayerKind::Symbols { .. } => "Circles sized by value",
             MapLayerKind::Rings { .. } => "Catchment rings",
             MapLayerKind::Heatmap { .. } => "Heat map (density)",
+            MapLayerKind::Flows { .. } => "Flows (lines between places)",
             MapLayerKind::Charts { chart, .. } => match chart.shape {
                 ChartShape::Bars => "Bar charts",
                 _ => "Pie charts",

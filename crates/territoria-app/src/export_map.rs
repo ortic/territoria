@@ -533,6 +533,9 @@ fn layer(s: &mut String, r: &Resolved, view: &View, tips: Option<&[String]>, fin
             crate::charts::svg(s, chart, p, &tip_attr(tips, chart.feature));
         }
     }
+    for flow in &r.flows {
+        crate::flowlines::svg(s, flow, view);
+    }
 }
 
 fn sites(s: &mut String, r: &Resolved, view: &View) {

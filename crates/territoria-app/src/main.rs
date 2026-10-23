@@ -10,6 +10,7 @@ mod commands;
 mod contents;
 mod dialogs;
 mod export_map;
+mod flowlines;
 mod heat;
 mod inspector;
 mod jobs;

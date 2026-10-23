@@ -81,6 +81,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                             MapLayerKind::Boundaries { .. } => "▣",
                             MapLayerKind::Choropleth { .. } => "▦",
                             MapLayerKind::Bivariate { .. } => "◩",
+                            MapLayerKind::Flows { .. } => "↗",
                             MapLayerKind::Categories { .. } => "◧",
                             MapLayerKind::Territories { .. } => "⬣",
                             MapLayerKind::Symbols { .. } => "●",
@@ -225,6 +226,16 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                                     ui.indent(("legend", ml.id.0), |ui| {
                                         size_legend(ui, symbol, max);
                                     });
+                                }
+                            }
+                            MapLayerKind::Flows { style, .. } => {
+                                if let Some(lines) = cx.analyses.flows(project, ml.id, &ml.kind) {
+                                    let max = lines.iter().map(|l| l.value).fold(0.0, f64::max);
+                                    if max > 0.0 {
+                                        ui.indent(("legend", ml.id.0), |ui| {
+                                            width_legend(ui, style, max);
+                                        });
+                                    }
                                 }
                             }
                             MapLayerKind::Bivariate { x, y, .. } => {
@@ -590,6 +601,22 @@ fn background_ui(ui: &mut Ui, map: &territoria_model::Map, actions: &mut Vec<Act
                 .small()
                 .weak(),
         );
+    }
+}
+
+/// Lines of three widths with their values.
+fn width_legend(ui: &mut Ui, style: &territoria_model::flows::FlowStyle, max: f64) {
+    let big = nice_below(max);
+    for v in [big, nice_below(big / 3.0), nice_below(big / 10.0)] {
+        let w = (style.max_width * (v / max) as f32).max(0.6);
+        ui.horizontal(|ui| {
+            let (rect, _) = ui.allocate_exact_size(vec2(36.0, 14.0), Sense::hover());
+            ui.painter().line_segment(
+                [rect.left_center(), rect.right_center()],
+                egui::Stroke::new(w, color(style.color)),
+            );
+            ui.label(RichText::new(format_value(v)).small());
+        });
     }
 }
 

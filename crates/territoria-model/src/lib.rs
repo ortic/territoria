@@ -6,6 +6,7 @@
 
 pub mod catchment;
 pub mod file;
+pub mod flows;
 pub mod grid;
 pub mod history;
 pub mod join;
