@@ -62,6 +62,11 @@ pub enum JobResult {
         path: PathBuf,
         result: Result<Vec<PreparedLayer>, String>,
     },
+    /// A table read again from its file.
+    Reloaded {
+        table: territoria_model::TableId,
+        result: Result<Table, String>,
+    },
     /// The map as an image for the clipboard.
     Copied(Result<egui::ColorImage, String>),
     /// Addresses of a table to be added, found (or not).

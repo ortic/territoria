@@ -339,6 +339,15 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                         actions.push(Action::LinkTable(id));
                         ui.close();
                     }
+                    if t.source.path.is_some()
+                        && ui
+                            .button("↻ Reload from file")
+                            .on_hover_text("Read the file again (e.g. this month's figures); links and colourings stay")
+                            .clicked()
+                    {
+                        actions.push(Action::ReloadTable(id));
+                        ui.close();
+                    }
                     ui.separator();
                     if ui.button("Remove…").clicked() {
                         actions.push(Action::RemoveTable(id));

@@ -48,6 +48,17 @@ ids!(
     RegionId
 );
 
+/// What reloading a table changed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TableChanges {
+    /// Rows before and after.
+    pub rows: (usize, usize),
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+    /// Links whose key column is no longer there.
+    pub broken_links: usize,
+}
+
 /// How replacing a layer's areas went.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Replaced {
@@ -374,6 +385,56 @@ impl Project {
         layer.name_column = name_column;
         layer.rev = rev;
         Some(report)
+    }
+
+    /// Puts newly read rows in place of a table's (a reload from its
+    /// file). Columns keep the kinds they were given; calculated columns
+    /// are computed again; links stay.
+    pub fn replace_table(
+        &mut self,
+        id: TableId,
+        mut table: territoria_data::Table,
+    ) -> Option<TableChanges> {
+        let old = self.table(id)?.table.clone();
+        let mut changes = TableChanges {
+            rows: (old.rows(), table.rows()),
+            ..Default::default()
+        };
+        for c in &old.columns {
+            match table.columns.iter_mut().find(|n| n.name == c.name) {
+                Some(n) if n.kind != c.kind => {
+                    n.convert(c.kind);
+                }
+                Some(_) => {}
+                None if c.formula.is_some() => {}
+                None => changes.removed.push(c.name.clone()),
+            }
+        }
+        changes.added = table
+            .columns
+            .iter()
+            .filter(|n| old.column(&n.name).is_none())
+            .map(|n| n.name.clone())
+            .collect();
+        for c in old.columns.iter().filter(|c| c.formula.is_some()) {
+            if table.column(&c.name).is_none()
+                && let Some(source) = &c.formula
+                && let Ok(f) = territoria_expr::Formula::compile(source, &table)
+            {
+                let col = f.column(&c.name, source, &table);
+                let _ = table.push_column(col);
+            }
+        }
+        changes.broken_links = self
+            .links
+            .iter()
+            .filter(|l| l.table == id && table.column(&l.column).is_none())
+            .count();
+        let rev = self.bump();
+        let t = self.table_mut(id)?;
+        t.table = Arc::new(table);
+        t.rev = rev;
+        Some(changes)
     }
 
     /// Removes a plan and the map layers showing it.

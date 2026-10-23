@@ -110,9 +110,21 @@ pub fn show(
                     if !any {
                         ui.label(RichText::new("Not linked to any areas yet.").weak());
                     }
-                    if ui.button("🔗 Link to map…").clicked() {
-                        actions.push(Action::LinkTable(id));
-                    }
+                    ui.horizontal(|ui| {
+                        if ui.button("🔗 Link to map…").clicked() {
+                            actions.push(Action::LinkTable(id));
+                        }
+                        if t.source.path.is_some()
+                            && ui
+                                .button("↻ Reload")
+                                .on_hover_text(
+                                    "Read the file again; links, types and calculated columns stay",
+                                )
+                                .clicked()
+                        {
+                            actions.push(Action::ReloadTable(id));
+                        }
+                    });
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("Columns").strong());

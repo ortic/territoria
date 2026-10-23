@@ -2067,3 +2067,45 @@ fn replace_with_newer_boundaries() {
         .run_command_for_test(crate::commands::Command::Undo);
     assert_eq!(h.state().project.plan(plan).unwrap().assignment.len(), n);
 }
+
+/// A table reloaded from its changed file: new figures, kinds kept,
+/// calculated columns computed again.
+#[test]
+fn reload_table_from_file() {
+    use crate::dialogs::Placement;
+    let (mut h, _lock) = harness(false);
+    let dir = std::env::temp_dir().join(format!("territoria-reload-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("sales.csv");
+    std::fs::write(&path, "Area,Revenue,Region\n0811,100,A\n8001,200,B\n").unwrap();
+    let (table, _) = territoria_io::read_table(&path, &Default::default()).unwrap();
+    let app = h.state_mut();
+    app.add_table("Sales".into(), table, path.clone(), Placement::None, None);
+    let id = app.project.tables[0].id;
+    // A calculated column and a changed kind.
+    app.apply_formula_for_test(crate::app::DataRef::Table(id), "Double", "[Revenue] * 2");
+    // Next month: new figures, a new column, Region gone.
+    std::fs::write(
+        &path,
+        "Area,Revenue,Customers\n0811,150,3\n8001,250,4\n3011,50,1\n",
+    )
+    .unwrap();
+    app.reload_table(id);
+    settle(&mut h);
+    let t = &h.state().project.tables[0].table;
+    assert_eq!(t.rows(), 3);
+    assert_eq!(t.column("Area").unwrap().display(0), "0811");
+    assert_eq!(
+        t.column("Double").unwrap().f64(2),
+        Some(100.0),
+        "recomputed"
+    );
+    let toasts = h.state().toasts_for_test();
+    assert!(
+        toasts
+            .iter()
+            .any(|m| m.contains("new columns: Customers") && m.contains("gone: Region")),
+        "{toasts:?}"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

@@ -83,6 +83,8 @@ pub enum Action {
     SelectUnits(LayerId, Vec<u32>),
     /// Show a kept view of a map.
     GoToView(MapId, [f64; 2], f64),
+    /// Read a table again from its file.
+    ReloadTable(TableId),
     /// Open the dialog for sites from a point layer.
     SitesFromPoints(PlanId),
     /// Select the features of table rows (adding to the selection: `true`).
@@ -765,6 +767,25 @@ impl TerritoriaApp {
         });
     }
 
+    /// Reads a table again from the file it came from, in the background.
+    pub(crate) fn reload_table(&mut self, id: TableId) {
+        let Some(path) = self.project.table(id).and_then(|t| t.source.path.clone()) else {
+            self.toast("This table didn't come from a file.");
+            return;
+        };
+        if !path.exists() {
+            self.error(format!("{} is no longer there.", path.display()));
+            return;
+        }
+        let label = format!("Reading {}", file_name(&path));
+        self.jobs.spawn(label, move |_| JobResult::Reloaded {
+            table: id,
+            result: territoria_io::read_table(&path, &TableOptions::default())
+                .map(|(t, _)| t)
+                .map_err(|e| e.to_string()),
+        });
+    }
+
     /// Puts the newer boundaries in place of the layer's.
     fn apply_replacement(&mut self, layer: LayerId, path: PathBuf, prepared: Vec<PreparedLayer>) {
         let Some(old) = self.project.layer(layer) else {
@@ -1081,6 +1102,35 @@ impl TerritoriaApp {
                 Ok(prepared) => self.apply_replacement(layer, path, prepared),
                 Err(e) => self.error(format!("Couldn't read {}: {e}", file_name(&path))),
             },
+            JobResult::Reloaded { table, result } => match result {
+                Ok(rows) => {
+                    let mut changes = None;
+                    self.edit("Reload table", |p| changes = p.replace_table(table, rows));
+                    if let Some(c) = changes {
+                        let fmt = territoria_analysis::format::format_value;
+                        let mut text = format!(
+                            "Reloaded: {} rows (before {})",
+                            fmt(c.rows.1 as f64),
+                            fmt(c.rows.0 as f64)
+                        );
+                        if !c.added.is_empty() {
+                            text.push_str(&format!("; new columns: {}", c.added.join(", ")));
+                        }
+                        if !c.removed.is_empty() {
+                            text.push_str(&format!("; gone: {}", c.removed.join(", ")));
+                        }
+                        if c.broken_links > 0 {
+                            self.error(format!(
+                                "{text}. {} links lost their key column: link the table again.",
+                                c.broken_links
+                            ));
+                        } else {
+                            self.toast(format!("{text}."));
+                        }
+                    }
+                }
+                Err(e) => self.error(format!("Couldn't reload the table: {e}")),
+            },
             JobResult::Copied(result) => match result {
                 Ok(image) => {
                     self.to_clipboard = Some(image);
@@ -1273,6 +1323,11 @@ impl TerritoriaApp {
     #[cfg(test)]
     pub fn presenting_for_test(&self) -> bool {
         self.presenting
+    }
+
+    #[cfg(test)]
+    pub fn apply_formula_for_test(&mut self, data: DataRef, name: &str, source: &str) {
+        self.apply_formula(data, None, name, source);
     }
 
     #[cfg(test)]
@@ -2823,6 +2878,7 @@ impl TerritoriaApp {
                     s.zoom_to = Some((layer, units));
                 }
             }
+            Action::ReloadTable(id) => self.reload_table(id),
             Action::GoToView(map, center, scale) => {
                 self.current_map = Some(map);
                 self.map_states.entry(map).or_default().go_to_view = Some((center, scale));

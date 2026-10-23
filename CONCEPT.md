@@ -186,7 +186,7 @@ territoria/
 - [x] Paste a table from the clipboard (Ctrl+V outside text fields opens the import dialog with the cells)
 - [x] Column types inferred with preview: text, number, integer, boolean, date, key/code (text that keeps leading zeros), coordinate
 - [x] Change a column's type after import
-- [ ] Linked tables: re-read from the source file on demand or on open; schema changes reported
+- [x] Linked tables: re-read from the source file on demand or on open; schema changes reported (on demand: Reload keeps links, column kinds and calculated columns; added/removed columns and broken links reported; not on open)
 - [x] Data grid: virtualized, sort, filter, column statistics, sum row, search, copy (sort and search)
 - [ ] Edit cells of imported tables; add/delete rows
 - [x] Calculated columns with one expression language (see 5.5) (on tables and layer attributes; the formula is kept and dependent columns recalculate)
