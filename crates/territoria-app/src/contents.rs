@@ -78,6 +78,7 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                         let icon = match &ml.kind {
                             MapLayerKind::Boundaries { .. } => "▣",
                             MapLayerKind::Choropleth { .. } => "▦",
+                            MapLayerKind::Bivariate { .. } => "◩",
                             MapLayerKind::Categories { .. } => "◧",
                             MapLayerKind::Territories { .. } => "⬣",
                             MapLayerKind::Symbols { .. } => "●",
@@ -211,6 +212,17 @@ pub fn show(ui: &mut Ui, cx: ContentsContext) -> Vec<Action> {
                                 if max > 0.0 {
                                     ui.indent(("legend", ml.id.0), |ui| {
                                         size_legend(ui, symbol, max);
+                                    });
+                                }
+                            }
+                            MapLayerKind::Bivariate { x, y, .. } => {
+                                if let Some(grid) = cx
+                                    .analyses
+                                    .get(project, cx.values, ml.id, &ml.kind)
+                                    .and_then(|s| s.grid.clone())
+                                {
+                                    ui.indent(("legend", ml.id.0), |ui| {
+                                        grid_legend(ui, &grid, &x.label(project), &y.label(project));
                                     });
                                 }
                             }
@@ -567,6 +579,53 @@ fn background_ui(ui: &mut Ui, map: &territoria_model::Map, actions: &mut Vec<Act
                 .weak(),
         );
     }
+}
+
+/// The colour grid of two values: the first rising to the right, the
+/// second upward; hovering a cell tells its ranges and areas.
+fn grid_legend(ui: &mut Ui, grid: &territoria_analysis::BivariateGrid, x: &str, y: &str) {
+    let k = grid.size;
+    let cell = 16.0;
+    ui.label(RichText::new(format!("↑ {y}")).small());
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(cell * k as f32, cell * k as f32), Sense::hover());
+    let at = |row: usize, col: usize| {
+        egui::Rect::from_min_size(
+            egui::pos2(
+                rect.left() + col as f32 * cell,
+                rect.bottom() - (row + 1) as f32 * cell,
+            ),
+            vec2(cell, cell),
+        )
+    };
+    for row in 0..k {
+        for col in 0..k {
+            ui.painter().rect_filled(
+                at(row, col).shrink(0.5),
+                0.0,
+                color(grid.colors[row * k + col]),
+            );
+        }
+    }
+    let range = |edges: &[f64], i: usize| match (edges.get(i), edges.get(i + 1)) {
+        (Some(a), Some(b)) => format!("{} – {}", format_value(*a), format_value(*b)),
+        _ => "–".to_owned(),
+    };
+    if let Some(p) = response.hover_pos() {
+        for row in 0..k {
+            for col in 0..k {
+                if at(row, col).contains(p) {
+                    response.clone().on_hover_text(format!(
+                        "{x}: {}\n{y}: {}\n{} areas",
+                        range(&grid.x_edges, col),
+                        range(&grid.y_edges, row),
+                        grid.counts[row * k + col]
+                    ));
+                }
+            }
+        }
+    }
+    ui.label(RichText::new(format!("{x} →")).small());
 }
 
 /// The largest power-of-ten multiple of 1, 2 or 5 not above `x`.

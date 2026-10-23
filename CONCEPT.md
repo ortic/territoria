@@ -232,7 +232,7 @@ territoria/
 - [x] Charts per area or row: pie (and donut), bars, stacked bars, paired bars (population pyramid), with size scaling (pie, donut and bars from any numbers of the layer or linked tables; pies sized by their total; values in the hover card, legend and exports; no stacked or paired bars yet)
 - [x] Heatmap / density: kernel (Gaussian, linear, uniform), radius in km or pixels, weight column (quartic kernel, spread in km, optional weight column, sequential ramps; computed for the view; embedded in exports)
 - [x] Hex or square grid aggregation of points (equal-area hexagons over points or areas, points counted and summed per cell; usable as territory units; no square grid)
-- [ ] Bivariate choropleth (two variables, 2×2/3×3 colour matrix) with quadrant labels
+- [x] Bivariate choropleth (two variables, 2×2/3×3 colour matrix) with quadrant labels (quantile classes, three colour grids, swap; legend grid tells ranges and counts on hover; in exports and web pages; no quadrant labels yet)
 - [ ] Hatching for several values per area / overlapping territories
 - [ ] Lines: style a line layer by data
 - [ ] Flows: origin–destination lines with width/colour by data, curved, arrows

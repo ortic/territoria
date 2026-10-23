@@ -1087,6 +1087,22 @@ fn hover_rows(
                 );
                 rows.push((ml.name.clone(), text));
             }
+            MapLayerKind::Bivariate { layer: l, x, y, .. } if *l == h.layer && custom.is_none() => {
+                for s in [x, y] {
+                    let v = values
+                        .values(project, *l, s)
+                        .get(h.feature)
+                        .copied()
+                        .flatten();
+                    rows.push((
+                        s.label(project),
+                        v.map_or(
+                            "no data".to_owned(),
+                            territoria_analysis::format::format_value,
+                        ),
+                    ));
+                }
+            }
             MapLayerKind::Charts {
                 layer: l, parts, ..
             } if *l == h.layer && custom.is_none() => {

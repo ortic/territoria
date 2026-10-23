@@ -2700,3 +2700,61 @@ fn charts_per_area() {
     assert!(svg.contains("Hardware"), "legend names the values");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Areas coloured by two values at once, with the grid legend on screen
+/// and in exports.
+#[test]
+fn two_values_at_once() {
+    use crate::app::Export;
+    use crate::export_map::Format;
+    use territoria_model::ValueSource;
+    let (mut h, _lock) = harness(false);
+    let layer = h
+        .state_mut()
+        .add_boundaries_now(&boundaries())
+        .expect("boundaries")[0];
+    let table = sales_table(h.state(), layer);
+    h.state_mut()
+        .add_linked_table_now("Sales 2026", table, "Area", layer, None);
+    let app = h.state_mut();
+    let link = app.project.links[0].id;
+    app.add_bivariate(
+        layer,
+        ValueSource::Linked {
+            link,
+            column: "Customers".into(),
+            agg: territoria_data::Aggregate::Sum,
+        },
+        ValueSource::Area,
+        "Customers and area".into(),
+    );
+    settle(&mut h);
+    save(&mut h, "bivariate");
+    let app = h.state_mut();
+    let ml = app.project.maps[0].layers.last().unwrap().clone();
+    let mut values = territoria_model::Cache::default();
+    let scaled = app
+        .analyses
+        .get(&app.project, &mut values, ml.id, &ml.kind)
+        .unwrap();
+    let grid = scaled.grid.as_ref().unwrap();
+    assert_eq!(grid.size, 3);
+    let n = app.project.layer(layer).unwrap().len();
+    assert_eq!(grid.counts.iter().sum::<usize>(), n, "every area in a cell");
+
+    let dir = std::env::temp_dir().join(format!("territoria-bivariate-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("bivariate.svg");
+    app.set_map_export_for_test(crate::dialogs::MapExportSettings {
+        format: Format::Svg,
+        scale: 1.0,
+        title: String::new(),
+        legend: true,
+        scale_bar: false,
+    });
+    app.export(Export::Map(Format::Svg), path.clone());
+    settle(&mut h);
+    let svg = std::fs::read_to_string(&path).unwrap();
+    assert!(svg.contains("↑ Area"), "grid legend in the export");
+    let _ = std::fs::remove_dir_all(dir);
+}

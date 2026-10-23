@@ -33,8 +33,19 @@ impl Format {
 pub struct Decorations {
     pub title: String,
     pub legends: Vec<(String, Vec<LegendEntry>)>,
+    /// Legends of two values at once, below the others.
+    pub grids: Vec<GridLegend>,
     pub credits: Vec<String>,
     pub scale_bar: bool,
+}
+
+/// The colour grid of a map coloured by two values.
+pub struct GridLegend {
+    pub title: String,
+    /// What rises to the right and upward.
+    pub x: String,
+    pub y: String,
+    pub grid: territoria_analysis::BivariateGrid,
 }
 
 /// Builds the SVG for `view` (its rect is the page, in points).
@@ -159,6 +170,26 @@ pub fn html(svg_body: &str, view: &View, title: &str, deco: &Decorations) -> Str
             );
         }
         legend.push_str("</div>");
+    }
+    for g in &deco.grids {
+        let k = g.grid.size;
+        let _ = write!(
+            legend,
+            "<div class=\"lg\"><b>{}</b><div>↑ {}</div><div style=\"display:grid;grid-template-columns:repeat({k},16px);gap:1px;margin:3px 0\">",
+            escape(&g.title),
+            escape(&g.y)
+        );
+        // Top row first: the second value is high at the top.
+        for row in (0..k).rev() {
+            for col in 0..k {
+                let (c, _) = hex(crate::map_view::color(g.grid.colors[row * k + col]));
+                let _ = write!(
+                    legend,
+                    "<i style=\"display:block;width:16px;height:16px;background:{c}\"></i>"
+                );
+            }
+        }
+        let _ = write!(legend, "</div><div>{} →</div></div>", escape(&g.x));
     }
     let credits = escape(&deco.credits.join(" · "));
     let title = escape(title);
@@ -714,6 +745,59 @@ fn decorations(s: &mut String, view: &View, crs: &Crs, deco: &Decorations) {
                 entries.len() - shown.len()
             );
         }
+        y += height + 8.0;
+    }
+    for g in &deco.grids {
+        let k = g.grid.size;
+        let cell = 14.0;
+        let side = cell * k as f32;
+        let up = format!("↑ {}", g.y);
+        let right = format!("{} →", g.x);
+        let width = [
+            text_width(&g.title, 12.0),
+            text_width(&up, 11.0),
+            text_width(&right, 11.0),
+            side,
+        ]
+        .into_iter()
+        .fold(0.0, f32::max)
+            + 20.0;
+        let height = 26.0 + 16.0 + side + 20.0;
+        let x = w - width - 12.0;
+        let _ = write!(
+            s,
+            r##"<rect x="{x:.1}" y="{y:.1}" width="{width:.1}" height="{height:.1}" rx="6" fill="#ffffff" fill-opacity="0.9"/><text x="{:.1}" y="{:.1}" font-size="12" fill="#202328">{}</text><text x="{:.1}" y="{:.1}" font-size="11" fill="#202328">{}</text>"##,
+            x + 10.0,
+            y + 18.0,
+            escape(&g.title),
+            x + 10.0,
+            y + 36.0,
+            escape(&up)
+        );
+        let top = y + 42.0;
+        for row in 0..k {
+            for col in 0..k {
+                let c = g.grid.colors[row * k + col];
+                let _ = write!(
+                    s,
+                    r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="#{:02x}{:02x}{:02x}"/>"##,
+                    x + 10.0 + col as f32 * cell,
+                    top + side - (row + 1) as f32 * cell,
+                    cell - 1.0,
+                    cell - 1.0,
+                    c.r(),
+                    c.g(),
+                    c.b()
+                );
+            }
+        }
+        let _ = write!(
+            s,
+            r##"<text x="{:.1}" y="{:.1}" font-size="11" fill="#202328">{}</text>"##,
+            x + 10.0,
+            top + side + 14.0,
+            escape(&right)
+        );
         y += height + 8.0;
     }
     // Scale bar, bottom right.

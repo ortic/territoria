@@ -202,7 +202,7 @@ pub struct TerritoriaApp {
 
     values: Cache,
     meshes: MeshCache,
-    analyses: AnalysisCache,
+    pub(crate) analyses: AnalysisCache,
     territory_cache: TerritoryCache,
     pub(crate) tiles: crate::tiles::Tiles,
     stats: StatsCache,
@@ -1667,6 +1667,7 @@ impl TerritoriaApp {
         };
         let mut resolved = Vec::new();
         let mut legends = Vec::new();
+        let mut grids = Vec::new();
         let mut credits: Vec<String> = Vec::new();
         if let Background::Tiles { attribution, .. } = &map.background
             && !attribution.is_empty()
@@ -1680,6 +1681,20 @@ impl TerritoriaApp {
             counts.push((ml.clone(), r.len()));
             resolved.extend(r);
             match &ml.kind {
+                MapLayerKind::Bivariate { x, y, .. } => {
+                    if let Some(grid) = rcx
+                        .analyses
+                        .get(rcx.project, rcx.values, ml.id, &ml.kind)
+                        .and_then(|s| s.grid.clone())
+                    {
+                        grids.push(crate::export_map::GridLegend {
+                            title: ml.name.clone(),
+                            x: x.label(rcx.project),
+                            y: y.label(rcx.project),
+                            grid,
+                        });
+                    }
+                }
                 MapLayerKind::Charts { parts, .. } => {
                     legends.push((
                         ml.name.clone(),
@@ -1789,9 +1804,11 @@ impl TerritoriaApp {
         }
         // Legends top layer first, like the Contents panel.
         legends.reverse();
+        grids.reverse();
         let deco = crate::export_map::Decorations {
             title: settings.title.clone(),
             legends: if settings.legend { legends } else { Vec::new() },
+            grids: if settings.legend { grids } else { Vec::new() },
             credits,
             scale_bar: settings.scale_bar,
         };
@@ -2402,6 +2419,44 @@ impl TerritoriaApp {
         Some(id)
     }
 
+    /// Areas of `layer` coloured by two values at once.
+    pub(crate) fn add_bivariate(
+        &mut self,
+        layer: LayerId,
+        x: territoria_model::ValueSource,
+        y: territoria_model::ValueSource,
+        name: String,
+    ) {
+        let before = self.project.clone();
+        let map = self.ensure_map();
+        let id = self.project.new_map_layer_id();
+        let added = self.push_map_layer(
+            map,
+            MapLayer {
+                id,
+                name,
+                visible: true,
+                opacity: 1.0,
+                kind: MapLayerKind::Bivariate {
+                    layer,
+                    x,
+                    y,
+                    scale: Default::default(),
+                    style: BoundaryStyle {
+                        stroke: territoria_analysis::Rgba([0xff, 0xff, 0xff, 140]),
+                        stroke_width: 0.5,
+                        ..Default::default()
+                    },
+                },
+            },
+        );
+        self.history.push("Colour by two values", before);
+        if let Some(id) = added {
+            self.selection = Selection::MapLayer(map, id);
+            self.right_tab = RightTab::Properties;
+        }
+    }
+
     /// A chart layer on `layer` of several values, each a slice or bar.
     pub(crate) fn add_charts(
         &mut self,
@@ -2464,6 +2519,9 @@ impl TerritoriaApp {
                 shape,
                 values,
             } => return self.add_charts(layer, shape, values),
+            ColorByOutcome::Bivariate { layer, x, y, name } => {
+                return self.add_bivariate(layer, x, y, name);
+            }
         };
         let before = self.project.clone();
         let map = self.ensure_map();

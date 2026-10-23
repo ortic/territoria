@@ -87,6 +87,14 @@ pub enum MapLayerKind {
         scale: ColorScale,
         style: BoundaryStyle,
     },
+    /// Areas coloured by two numbers at once (a grid of 2×2 or 3×3 colours).
+    Bivariate {
+        layer: LayerId,
+        x: ValueSource,
+        y: ValueSource,
+        scale: territoria_analysis::BivariateScale,
+        style: BoundaryStyle,
+    },
     /// Areas coloured by a text value.
     Categories {
         layer: LayerId,
@@ -245,6 +253,7 @@ impl MapLayerKind {
         match self {
             MapLayerKind::Boundaries { layer, .. }
             | MapLayerKind::Choropleth { layer, .. }
+            | MapLayerKind::Bivariate { layer, .. }
             | MapLayerKind::Categories { layer, .. }
             | MapLayerKind::Symbols { layer, .. }
             | MapLayerKind::Charts { layer, .. }
@@ -274,6 +283,7 @@ impl MapLayerKind {
                 ..
             } => links.contains(link),
             MapLayerKind::Charts { parts, .. } => parts.iter().any(|p| p.source.uses_links(links)),
+            MapLayerKind::Bivariate { x, y, .. } => x.uses_links(links) || y.uses_links(links),
             _ => false,
         }
     }
@@ -282,6 +292,7 @@ impl MapLayerKind {
         match self {
             MapLayerKind::Boundaries { style, .. }
             | MapLayerKind::Choropleth { style, .. }
+            | MapLayerKind::Bivariate { style, .. }
             | MapLayerKind::Categories { style, .. }
             | MapLayerKind::Symbols { style, .. }
             | MapLayerKind::Charts { style, .. } => Some(style),
@@ -295,6 +306,7 @@ impl MapLayerKind {
         match self {
             MapLayerKind::Boundaries { style, .. }
             | MapLayerKind::Choropleth { style, .. }
+            | MapLayerKind::Bivariate { style, .. }
             | MapLayerKind::Categories { style, .. }
             | MapLayerKind::Symbols { style, .. }
             | MapLayerKind::Charts { style, .. } => Some(style),
@@ -308,6 +320,7 @@ impl MapLayerKind {
         match self {
             MapLayerKind::Boundaries { .. } => "Boundaries",
             MapLayerKind::Choropleth { .. } => "Coloured by value",
+            MapLayerKind::Bivariate { .. } => "Coloured by two values",
             MapLayerKind::Categories { .. } => "Coloured by category",
             MapLayerKind::Territories { .. } => "Territories",
             MapLayerKind::Symbols { .. } => "Circles sized by value",

@@ -156,6 +156,7 @@ fn resolve_one(
         }
         MapLayerKind::Boundaries { layer, style }
         | MapLayerKind::Choropleth { layer, style, .. }
+        | MapLayerKind::Bivariate { layer, style, .. }
         | MapLayerKind::Categories { layer, style, .. } => {
             let l = project.layer(*layer)?;
             let mesh = meshes.get(layer)?.clone();

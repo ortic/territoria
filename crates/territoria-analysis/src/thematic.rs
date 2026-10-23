@@ -72,6 +72,8 @@ pub struct Scaled {
     pub legend: Vec<LegendEntry>,
     /// Smooth gradient for continuous scales: (colour stops, min, max).
     pub gradient: Option<(Vec<Rgba>, f64, f64)>,
+    /// Two values at once: their classes and colours.
+    pub grid: Option<crate::bivariate::BivariateGrid>,
 }
 
 impl ColorScale {
@@ -154,6 +156,7 @@ impl ColorScale {
                     edges,
                     legend,
                     gradient: None,
+                    grid: None,
                 }
             }
             ScaleMode::Continuous => {
@@ -196,6 +199,7 @@ impl ColorScale {
                     edges: vec![min, max],
                     legend,
                     gradient: (!finite.is_empty()).then_some((stops, min, max)),
+                    grid: None,
                 }
             }
         }
@@ -266,6 +270,7 @@ impl CategoryScale {
             edges: Vec::new(),
             legend,
             gradient: None,
+            grid: None,
         }
     }
 }

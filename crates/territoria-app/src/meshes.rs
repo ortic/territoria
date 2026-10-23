@@ -159,6 +159,13 @@ impl AnalysisCache {
                 let v = values.normalized(project, *layer, source, normalize);
                 scale.apply(&v)
             }
+            MapLayerKind::Bivariate {
+                layer, x, y, scale, ..
+            } => {
+                let a = values.values(project, *layer, x);
+                let b = values.values(project, *layer, y);
+                scale.apply(&a, &b)
+            }
             MapLayerKind::Categories {
                 layer,
                 source,

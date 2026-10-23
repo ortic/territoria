@@ -1274,6 +1274,8 @@ pub struct ColorByDialog {
     /// A chart of several values (their indices in the choices).
     pub chart: Option<territoria_model::ChartShape>,
     pub chart_values: Vec<usize>,
+    /// Coloured by two values at once: the second one (index in the choices).
+    pub second: Option<usize>,
 }
 
 impl ColorByDialog {
@@ -1285,6 +1287,7 @@ impl ColorByDialog {
             heat: false,
             chart: None,
             chart_values: Vec::new(),
+            second: None,
         }
     }
 }
@@ -1301,6 +1304,12 @@ pub enum ColorByOutcome {
         layer: LayerId,
         shape: territoria_model::ChartShape,
         values: Vec<(String, ValueSource)>,
+    },
+    Bivariate {
+        layer: LayerId,
+        x: ValueSource,
+        y: ValueSource,
+        name: String,
     },
 }
 
@@ -1372,6 +1381,20 @@ impl ColorByDialog {
                                 }
                             });
                         ui.end_row();
+                        if let Some(second) = &mut self.second {
+                            ui.label("and");
+                            ComboBox::from_id_salt("cb-second")
+                                .width(280.0)
+                                .selected_text(options.get(*second).map_or("", |o| o.0.as_str()))
+                                .show_ui(ui, |ui| {
+                                    for (i, (label, what)) in options.iter().enumerate() {
+                                        if matches!(what, Colorable::Number(_)) {
+                                            ui.selectable_value(second, i, label);
+                                        }
+                                    }
+                                });
+                            ui.end_row();
+                        }
                     }
                     // Numbers can also be circles; on points that's the default.
                     let points = self
@@ -1382,7 +1405,7 @@ impl ColorByDialog {
                         || matches!(options.get(self.choice), Some((_, Colorable::Number(_))))
                     {
                         let mut circles = self.circles.unwrap_or(points);
-                        let single = self.chart.is_none();
+                        let single = self.chart.is_none() && self.second.is_none();
                         ui.label("Show as");
                         ui.horizontal_wrapped(|ui| {
                             if ui
@@ -1393,6 +1416,7 @@ impl ColorByDialog {
                                 circles = false;
                                 self.heat = false;
                                 self.chart = None;
+                                self.second = None;
                             }
                             if ui
                                 .radio(single && circles && !self.heat, "Circles sized by value")
@@ -1404,6 +1428,7 @@ impl ColorByDialog {
                                 circles = true;
                                 self.heat = false;
                                 self.chart = None;
+                                self.second = None;
                             }
                             if points
                                 && ui
@@ -1415,6 +1440,28 @@ impl ColorByDialog {
                             {
                                 self.heat = true;
                                 self.chart = None;
+                                self.second = None;
+                            }
+                            if ui
+                                .radio(self.second.is_some(), "Two values at once")
+                                .on_hover_text(
+                                    "Colours that mix two values: see where both are high, or one but not the other",
+                                )
+                                .clicked()
+                                && self.second.is_none()
+                            {
+                                // The next number after the first as a start.
+                                let next = options
+                                    .iter()
+                                    .enumerate()
+                                    .filter(|(i, (_, w))| {
+                                        *i != self.choice && matches!(w, Colorable::Number(_))
+                                    })
+                                    .map(|(i, _)| i)
+                                    .min_by_key(|i| (*i < self.choice, *i));
+                                self.second = Some(next.unwrap_or(self.choice));
+                                self.chart = None;
+                                self.heat = false;
                             }
                             for (shape, label, tip) in [
                                 (
@@ -1444,6 +1491,7 @@ impl ColorByDialog {
                                     }
                                     self.chart = Some(shape);
                                     self.heat = false;
+                                    self.second = None;
                                 }
                             }
                         });
@@ -1472,6 +1520,19 @@ impl ColorByDialog {
                             .add_enabled(ready, egui::Button::new(RichText::new("Create").strong()))
                             .clicked();
                         if create
+                            && let (Some(layer), Some(second)) = (self.layer, self.second)
+                            && let (
+                                Some((xl, Colorable::Number(x))),
+                                Some((yl, Colorable::Number(y))),
+                            ) = (options.get(self.choice), options.get(second))
+                        {
+                            outcome = Some(ColorByOutcome::Bivariate {
+                                layer,
+                                x: x.clone(),
+                                y: y.clone(),
+                                name: format!("{xl} and {yl}"),
+                            });
+                        } else if create
                             && let (Some(layer), Some(shape)) = (self.layer, self.chart)
                         {
                             outcome = Some(ColorByOutcome::Chart {

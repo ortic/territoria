@@ -768,6 +768,139 @@ fn map_layer(
                 actions,
             );
         }
+        MapLayerKind::Bivariate {
+            layer,
+            x,
+            y,
+            scale,
+            style,
+        } => {
+            let numbers: Vec<(String, ValueSource)> = colorables(project, *layer)
+                .into_iter()
+                .filter_map(|(label, c)| match c {
+                    Colorable::Number(s) => Some((label, s)),
+                    _ => None,
+                })
+                .collect();
+            egui::Grid::new("bivariate")
+                .num_columns(2)
+                .spacing([10.0, 6.0])
+                .show(ui, |ui| {
+                    for (axis, current, label) in [(0, x, "Across →"), (1, y, "Up ↑")] {
+                        ui.label(label).on_hover_text(if axis == 0 {
+                            "Rises from left to right in the legend"
+                        } else {
+                            "Rises from bottom to top in the legend"
+                        });
+                        let mut chosen = current.clone();
+                        ComboBox::from_id_salt(("bivariate-axis", axis))
+                            .width(180.0)
+                            .selected_text(current.label(project))
+                            .show_ui(ui, |ui| {
+                                for (label, s) in &numbers {
+                                    ui.selectable_value(&mut chosen, s.clone(), label);
+                                }
+                            });
+                        if &chosen != current {
+                            actions.push(edit_layer(map, id, "Change value", move |l| {
+                                if let MapLayerKind::Bivariate { x, y, .. } = &mut l.kind {
+                                    *if axis == 0 { x } else { y } = chosen;
+                                }
+                            }));
+                        }
+                        ui.end_row();
+                    }
+                    ui.label("");
+                    if ui
+                        .button("⇄ Swap")
+                        .on_hover_text("Swap the two values")
+                        .clicked()
+                    {
+                        actions.push(edit_layer(map, id, "Swap values", |l| {
+                            if let MapLayerKind::Bivariate { x, y, .. } = &mut l.kind {
+                                std::mem::swap(x, y);
+                            }
+                        }));
+                    }
+                    ui.end_row();
+                    ui.label("Classes");
+                    ui.horizontal(|ui| {
+                        for k in [2usize, 3] {
+                            if ui
+                                .selectable_label(scale.classes == k, format!("{k} × {k}"))
+                                .on_hover_text("Each value in equal-count classes (quantiles)")
+                                .clicked()
+                                && scale.classes != k
+                            {
+                                actions.push(edit_layer(map, id, "Change classes", move |l| {
+                                    if let MapLayerKind::Bivariate { scale, .. } = &mut l.kind {
+                                        scale.classes = k;
+                                    }
+                                }));
+                            }
+                        }
+                    });
+                    ui.end_row();
+                    ui.label("Colours");
+                    ui.horizontal(|ui| {
+                        for p in territoria_analysis::BIVARIATE {
+                            let preview = territoria_analysis::BivariateScale {
+                                palette: p.name.to_owned(),
+                                ..scale.clone()
+                            };
+                            let k = scale.classes.clamp(2, 3);
+                            let cell = 18.0 / k as f32;
+                            let (rect, r) =
+                                ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
+                            let colors = preview.colors();
+                            for row in 0..k {
+                                for col in 0..k {
+                                    ui.painter().rect_filled(
+                                        egui::Rect::from_min_size(
+                                            egui::pos2(
+                                                rect.left() + 2.0 + col as f32 * cell,
+                                                rect.bottom() - 2.0 - (row + 1) as f32 * cell,
+                                            ),
+                                            vec2(cell, cell),
+                                        ),
+                                        0.0,
+                                        color(colors[row * k + col]),
+                                    );
+                                }
+                            }
+                            if scale.palette == p.name {
+                                ui.painter().rect_stroke(
+                                    rect,
+                                    2.0,
+                                    egui::Stroke::new(1.5, ui.visuals().selection.stroke.color),
+                                    egui::StrokeKind::Inside,
+                                );
+                            }
+                            if r.on_hover_text(p.name).clicked() {
+                                let name = p.name.to_owned();
+                                actions.push(edit_layer(map, id, "Change colours", move |l| {
+                                    if let MapLayerKind::Bivariate { scale, .. } = &mut l.kind {
+                                        scale.palette = name;
+                                    }
+                                }));
+                            }
+                        }
+                    });
+                    ui.end_row();
+                });
+            ui.separator();
+            style_ui(
+                ui,
+                project,
+                values,
+                style,
+                project.layer(*layer),
+                false,
+                map,
+                id,
+                actions,
+            );
+        }
         MapLayerKind::Choropleth {
             layer,
             source,
