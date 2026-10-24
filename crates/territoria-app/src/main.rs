@@ -21,6 +21,7 @@ mod meshes;
 mod plan_table;
 mod report;
 mod resolve;
+mod sample;
 #[cfg(test)]
 mod screenshots;
 mod search;

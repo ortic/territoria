@@ -28,6 +28,7 @@ macro_rules! commands {
 commands! {
     NewProject => "File: New Project",
     OpenProject => "File: Open Project…",
+    OpenSample => "File: Open the Sample Project",
     SaveProject => "File: Save",
     SaveProjectAs => "File: Save As…",
     Templates => "File: Templates (new from template, keep as template)…",

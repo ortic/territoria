@@ -4898,3 +4898,149 @@ fn shared_areas() {
         .map_events_for_test(vec![MapEvent::Share { plan, with: None }]);
     assert!(h.state().project.plan(plan).unwrap().shared.is_empty());
 }
+
+/// Builds the sample project of the welcome screen into
+/// `sample/sample.territoria` (see `sample.rs`).
+#[test]
+#[ignore]
+fn build_sample() {
+    use crate::dialogs::{ColorByOutcome, Colorable, Placement};
+    use territoria_model::ValueSource;
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("sample");
+    let (mut h, _lock) = harness(false);
+    let app = h.state_mut();
+    let cantons = app
+        .add_boundaries_now(&dir.join("cantons.geojson"))
+        .expect("cantons")[0];
+    {
+        let l = app.project.layer_mut(cantons).unwrap();
+        l.name = "Cantons".into();
+        l.key_column = Some("Code".into());
+        l.name_column = Some("Canton".into());
+        l.source.path = None;
+        l.source.attribution = Some(crate::sample::ATTRIBUTION.into());
+    }
+    app.add_table(
+        "Customers".into(),
+        crate::sample::customers(),
+        PathBuf::from("customers.csv"),
+        Placement::Points {
+            x: "Longitude".into(),
+            y: "Latitude".into(),
+        },
+        None,
+    );
+    let customers = app.project.layers.last().unwrap().id;
+    app.project.layer_mut(customers).unwrap().source.path = None;
+    let sales = ValueSource::Points {
+        layer: customers,
+        column: Some("Sales".into()),
+        agg: territoria_data::Aggregate::Sum,
+    };
+    app.apply_color_by_for_test(ColorByOutcome::Create {
+        layer: cantons,
+        name: "Sales".into(),
+        what: Colorable::Number(sales.clone()),
+        circles: false,
+        heat: false,
+    });
+    // Five sales regions with about the same sales.
+    let plan = app.project.add_plan("Sales regions", cantons, 5);
+    let rev = app.project.bump();
+    let p = app.project.plan_mut(plan).unwrap();
+    p.measures[0].source = sales;
+    p.measures[0].tolerance = 0.2;
+    p.rev = rev;
+    let settings = crate::territories::BalanceSettings {
+        start_over: true,
+        ..Default::default()
+    };
+    let mut values = territoria_model::Cache::default();
+    let input =
+        crate::territories::balance_input(&app.project, &mut values, plan, &settings).unwrap();
+    let proposal = crate::territories::run_balance(input, &mut |_| true).unwrap();
+    let rev = app.project.bump();
+    let geometry = app.project.layer(cantons).unwrap().geometry.clone();
+    let p = app.project.plan_mut(plan).unwrap();
+    for (u, t) in &proposal.moves {
+        p.assign(&[*u], Some(*t));
+    }
+    p.recolor(&geometry);
+    p.rev = rev;
+    // Each region after its canton with the most sales.
+    let layer = app.project.layer(cantons).unwrap().clone();
+    let weights = values.values(
+        &app.project,
+        cantons,
+        &app.project.plan(plan).unwrap().measures[0].source,
+    );
+    app.project
+        .plan_mut(plan)
+        .unwrap()
+        .name_after_largest(&layer, Some(&weights));
+    app.apply_action_for_test(crate::app::Action::ShowPlan(plan));
+    for m in &mut app.project.maps {
+        m.name = "Customers and sales regions".into();
+        m.background = Default::default();
+        for ml in &mut m.layers {
+            if ml.name == "cantons" {
+                ml.name = "Cantons".into();
+            }
+        }
+    }
+    app.project.title = "Sample".into();
+    settle(&mut h);
+    save(&mut h, "sample");
+    let app = h.state_mut();
+    app.store_workspace();
+    // Opened, the map fits the window it gets.
+    for m in &mut app.project.maps {
+        m.view = None;
+    }
+    territoria_model::file::save(&app.project, &dir.join("sample.territoria")).unwrap();
+}
+
+/// The welcome screen offers the work a crash left behind and the sample
+/// project.
+#[test]
+fn welcome_restores_and_opens_the_sample() {
+    use egui_kittest::kittest::Queryable;
+    let dir = std::env::temp_dir().join(format!("territoria-recovery-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("recovered.territoria");
+    let mut kept = crate::sample::project().unwrap();
+    kept.title = "Before the crash".into();
+    territoria_model::file::save(&kept, &path).unwrap();
+
+    let (mut h, _lock) = harness(false);
+    h.state_mut()
+        .set_recovered_for_test(path.clone(), Duration::from_secs(25 * 60));
+    h.run_steps(3);
+    save(&mut h, "welcome");
+    h.get_by_label("Restore").click();
+    settle(&mut h);
+    let app = h.state();
+    assert_eq!(app.project.title, "Before the crash");
+    assert!(app.is_dirty_for_test(), "restored work counts as unsaved");
+    assert!(path.exists(), "the copy stays until the work is saved");
+
+    // Discarding deletes the copy.
+    let (mut h, _lock2) = {
+        drop(h);
+        drop(_lock);
+        harness(false)
+    };
+    h.state_mut()
+        .set_recovered_for_test(path.clone(), Duration::from_secs(3 * 86400));
+    h.run_steps(3);
+    h.get_by_label("Discard").click();
+    h.run_steps(2);
+    assert!(!path.exists());
+
+    h.get_by_label("🗺 Open the sample").click();
+    settle(&mut h);
+    let app = h.state();
+    assert_eq!(app.project.title, "Sample");
+    assert_eq!(app.project.layers.len(), 2);
+    let _ = std::fs::remove_dir_all(&dir);
+}

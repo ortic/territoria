@@ -44,6 +44,8 @@ pub enum JobResult {
         result: Result<(), String>,
     },
     /// A template read, to start a new project from.
+    /// The recovery copy of an earlier session.
+    Recovered(Result<Project, String>),
     TemplateLoaded {
         name: String,
         result: Result<Project, String>,

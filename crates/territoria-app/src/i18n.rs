@@ -49,6 +49,10 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
         // Commands (category: name).
         ("File: New Project", "Datei: Neues Projekt"),
         ("File: Open Project…", "Datei: Projekt öffnen…"),
+        (
+            "File: Open the Sample Project",
+            "Datei: Beispielprojekt öffnen",
+        ),
         ("File: Save", "Datei: Speichern"),
         ("File: Save As…", "Datei: Speichern unter…"),
         (
@@ -1155,6 +1159,45 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
         ("Territory outlines (GeoJSON)…", "Gebietsumrisse (GeoJSON)…"),
         ("GeoJSON (with shapes)…", "GeoJSON (mit Formen)…"),
         ("📂 Open a project…", "📂 Projekt öffnen…"),
+        ("🗺 Open the sample", "🗺 Beispiel öffnen"),
+        (
+            "Swiss cantons with made-up customers and five sales regions, to try everything out.",
+            "Schweizer Kantone mit erfundenen Kunden und fünf Verkaufsgebieten, um alles auszuprobieren.",
+        ),
+        (
+            "Open the sample project and discard the changes to this one?",
+            "Das Beispielprojekt öffnen und die Änderungen an diesem Projekt verwerfen?",
+        ),
+        (
+            "The sample: Swiss cantons, made-up customers and five sales regions. Try painting, balancing or Colour by value.",
+            "Das Beispiel: Schweizer Kantone, erfundene Kunden und fünf Verkaufsgebiete. Probieren Sie Malen, Ausgleichen oder Nach Wert einfärben.",
+        ),
+        (
+            "Couldn't open the sample project: {e}",
+            "Das Beispielprojekt liess sich nicht öffnen: {e}",
+        ),
+        (
+            "Territoria closed with unsaved work ({age}).",
+            "Territoria wurde mit ungespeicherter Arbeit beendet ({age}).",
+        ),
+        ("Restore", "Wiederherstellen"),
+        ("Deletes the kept copy.", "Löscht die aufbewahrte Kopie."),
+        (
+            "Restored the unsaved work. Save it to keep it.",
+            "Die ungespeicherte Arbeit ist wiederhergestellt. Speichern Sie sie, um sie zu behalten.",
+        ),
+        (
+            "Couldn't restore the unsaved work: {e}",
+            "Die ungespeicherte Arbeit liess sich nicht wiederherstellen: {e}",
+        ),
+        (
+            "Restoring unsaved work",
+            "Ungespeicherte Arbeit wird wiederhergestellt",
+        ),
+        ("just now", "gerade eben"),
+        ("{n} min ago", "vor {n} Min."),
+        ("{n} hours ago", "vor {n} Stunden"),
+        ("{n} days ago", "vor {n} Tagen"),
         (
             "Geomarketing and territory planning.",
             "Geomarketing und Gebietsplanung.",

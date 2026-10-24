@@ -81,6 +81,8 @@ pub enum Action {
     AddToMap(LayerId),
     /// Show and activate a plan.
     ShowPlan(PlanId),
+    /// Restore (true) or discard the recovery copy of an earlier session.
+    Recover(PathBuf, bool),
     ActivateTerritory(Option<TerritoryId>),
     ZoomTo(LayerId, Vec<u32>),
     RemoveLayer(LayerId),
@@ -341,6 +343,11 @@ pub struct TerritoriaApp {
     stroke_before: Option<Project>,
     stroke_changes: usize,
     last_autosave: Instant,
+    /// The recovery copy is this session's (not a crashed one's).
+    autosaved: bool,
+    /// A copy of unsaved work left by an earlier session, offered on the
+    /// welcome screen: where and how old.
+    recovered: Option<(PathBuf, Duration)>,
     quit_confirmed: bool,
 }
 
@@ -376,6 +383,12 @@ impl TerritoriaApp {
         }
         if let Some(path) = open {
             app.open_path(&path);
+        } else {
+            app.recovered = app.paths.as_ref().and_then(|p| {
+                let path = recovery_file(&p.recovery_dir());
+                let age = std::fs::metadata(&path).ok()?.modified().ok()?.elapsed();
+                Some((path, age.unwrap_or_default()))
+            });
         }
         app
     }
@@ -488,6 +501,8 @@ impl TerritoriaApp {
             stroke_before: None,
             stroke_changes: 0,
             last_autosave: Instant::now(),
+            autosaved: false,
+            recovered: None,
             quit_confirmed: false,
         }
     }
@@ -1211,7 +1226,7 @@ impl TerritoriaApp {
     }
 
     /// Keeps the open tabs and the active plan with the project.
-    fn store_workspace(&mut self) {
+    pub(crate) fn store_workspace(&mut self) {
         let w = ProjectWorkspace {
             dock: self.dock.clone(),
             current_map: self.current_map,
@@ -1357,9 +1372,12 @@ impl TerritoriaApp {
         };
         self.store_workspace();
         let project = self.project.clone();
+        // The earlier session's copy is replaced now.
+        self.autosaved = true;
+        self.recovered = None;
         self.jobs.spawn("", move |_| {
             let _ = std::fs::create_dir_all(&dir);
-            let path = dir.join(format!("recovered.{}", territoria_model::file::EXTENSION));
+            let path = recovery_file(&dir);
             let result = territoria_model::file::save(&project, &path).map_err(|e| e.to_string());
             JobResult::Saved {
                 path,
@@ -1431,6 +1449,15 @@ impl TerritoriaApp {
                     &[("name", &name), ("e", &e)],
                 )),
             },
+            JobResult::Recovered(result) => match result {
+                Ok(project) => {
+                    // Untitled, so saving asks where; unsaved until then.
+                    self.set_project(project, None);
+                    self.history.dirty = true;
+                    self.toast("Restored the unsaved work. Save it to keep it.");
+                }
+                Err(e) => self.error(trf("Couldn't restore the unsaved work: {e}", &[("e", &e)])),
+            },
             JobResult::Loaded { path, result } => match result {
                 Ok(project) => self.set_project(project, Some(path)),
                 Err(e) => self.error(trf(
@@ -1444,6 +1471,13 @@ impl TerritoriaApp {
                     self.save_settings();
                     self.toast(trf("Saved {file}", &[("file", &file_name(&path))]));
                     self.path = Some(path);
+                    // Saved: this session's recovery copy isn't needed.
+                    if self.autosaved
+                        && let Some(dir) = self.paths.as_ref().map(Paths::recovery_dir)
+                    {
+                        let _ = std::fs::remove_file(recovery_file(&dir));
+                        self.autosaved = false;
+                    }
                 }
                 // Autosaves report themselves as an error to stay quiet.
                 Err(e) if e == "autosave" => {}
@@ -1707,6 +1741,21 @@ impl TerritoriaApp {
             color_by: color_by.map(|c| (c.to_owned(), territoria_data::Aggregate::Sum)),
         });
         id
+    }
+
+    #[cfg(test)]
+    pub fn set_recovered_for_test(&mut self, path: PathBuf, age: Duration) {
+        self.recovered = Some((path, age));
+    }
+
+    #[cfg(test)]
+    pub fn is_dirty_for_test(&self) -> bool {
+        self.history.dirty
+    }
+
+    #[cfg(test)]
+    pub fn apply_color_by_for_test(&mut self, outcome: ColorByOutcome) {
+        self.apply_color_by(outcome);
     }
 
     #[cfg(test)]
@@ -4424,6 +4473,25 @@ impl TerritoriaApp {
                     self.set_project(Project::new(), None);
                 }
             }
+            Command::OpenSample => {
+                if self.history.dirty && !self.project.layers.is_empty() {
+                    self.confirm = Some(Confirm {
+                        title: "Unsaved changes".into(),
+                        text: "Open the sample project and discard the changes to this one?".into(),
+                        action: ConfirmAction::Discard(Box::new(Command::OpenSample)),
+                    });
+                } else {
+                    match crate::sample::project() {
+                        Ok(project) => {
+                            self.set_project(project, None);
+                            self.toast("The sample: Swiss cantons, made-up customers and five sales regions. Try painting, balancing or Colour by value.");
+                        }
+                        Err(e) => {
+                            self.error(trf("Couldn't open the sample project: {e}", &[("e", &e)]))
+                        }
+                    }
+                }
+            }
             Command::OpenProject => self.ask_file(FileAction::OpenProject),
             Command::SaveProject => self.save(),
             Command::SaveProjectAs => self.ask_file(FileAction::SaveProjectAs),
@@ -4842,6 +4910,18 @@ impl TerritoriaApp {
                 self.add_boundaries_to_map(map, layer);
                 self.history.push("Add to map", before);
             }
+            Action::Recover(path, restore) => {
+                self.recovered = None;
+                if restore {
+                    self.jobs.spawn("Restoring unsaved work", move |_| {
+                        JobResult::Recovered(
+                            territoria_model::file::load(&path).map_err(|e| e.to_string()),
+                        )
+                    });
+                } else {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
             Action::ShowPlan(plan) => {
                 let before = self.project.clone();
                 self.show_plan(plan);
@@ -5257,7 +5337,11 @@ impl TerritoriaApp {
                 }
             };
             ui.menu_button(tr("File"), |ui| {
-                for c in [Command::NewProject, Command::OpenProject] {
+                for c in [
+                    Command::NewProject,
+                    Command::OpenProject,
+                    Command::OpenSample,
+                ] {
                     item(ui, commands, &self.keymap, c);
                 }
                 ui.menu_button(tr("Open Recent"), |ui| {
@@ -5637,6 +5721,35 @@ impl TerritoriaApp {
         let mut actions = Vec::new();
         ui.vertical_centered(|ui| {
             ui.add_space((ui.available_height() * 0.12).max(20.0));
+            if let Some((path, age)) = self.recovered.clone() {
+                egui::Frame::group(ui.style())
+                    .fill(ui.visuals().warn_fg_color.gamma_multiply(0.12))
+                    .inner_margin(egui::Margin::same(12))
+                    .corner_radius(8)
+                    .show(ui, |ui| {
+                        ui.set_max_width(560.0);
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(trf(
+                                    "Territoria closed with unsaved work ({age}).",
+                                    &[("age", &age_text(age))],
+                                ))
+                                .strong(),
+                            );
+                            if ui.button(tr("Restore")).clicked() {
+                                actions.push(Action::Recover(path.clone(), true));
+                            }
+                            if ui
+                                .button(tr("Discard"))
+                                .on_hover_text(tr("Deletes the kept copy."))
+                                .clicked()
+                            {
+                                actions.push(Action::Recover(path.clone(), false));
+                            }
+                        });
+                    });
+                ui.add_space(16.0);
+            }
             ui.label(RichText::new("Territoria").size(34.0).strong());
             ui.label(RichText::new("Put your data on the map and plan territories that are fair and compact.").size(15.0).weak());
             ui.add_space(28.0);
@@ -5678,9 +5791,21 @@ impl TerritoriaApp {
                 commands.push(Command::DownloadBoundaries);
             }
             ui.add_space(20.0);
-            if ui.button(tr("📂 Open a project…")).clicked() {
-                commands.push(Command::OpenProject);
-            }
+            ui.horizontal(|ui| {
+                // Centred: the two buttons side by side.
+                let width = 270.0;
+                ui.add_space(((ui.available_width() - width) / 2.0).max(0.0));
+                if ui.button(tr("📂 Open a project…")).clicked() {
+                    commands.push(Command::OpenProject);
+                }
+                if ui
+                    .button(tr("🗺 Open the sample"))
+                    .on_hover_text(tr("Swiss cantons with made-up customers and five sales regions, to try everything out."))
+                    .clicked()
+                {
+                    commands.push(Command::OpenSample);
+                }
+            });
             if !self.settings.recent_projects.is_empty() {
                 ui.add_space(18.0);
                 ui.label(RichText::new(tr("Recent projects")).strong());
@@ -6774,4 +6899,20 @@ fn plan_data_sheets(
         }
     }
     sheets
+}
+
+/// Where unsaved work is autosaved.
+fn recovery_file(dir: &Path) -> PathBuf {
+    dir.join(format!("recovered.{}", territoria_model::file::EXTENSION))
+}
+
+/// How long ago, in words: "5 minutes ago".
+fn age_text(age: Duration) -> String {
+    let minutes = age.as_secs() / 60;
+    match minutes {
+        0 => tr("just now").to_owned(),
+        1..=89 => trf("{n} min ago", &[("n", &minutes)]),
+        90..=2159 => trf("{n} hours ago", &[("n", &((minutes + 30) / 60))]),
+        _ => trf("{n} days ago", &[("n", &((minutes + 720) / 1440))]),
+    }
 }

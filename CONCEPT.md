@@ -132,9 +132,9 @@ territoria/
 - [x] Keyboard shortcuts for all commands, configurable (Settings → Keyboard shortcuts: every command, click and press the new keys, Delete for none; keys taken from another command move; kept in the settings file)
 - [x] Light/dark themes (Pythia's palette)
 - [x] Settings dialog (theme, size, autosave, background of new maps, recent projects, tile cache)
-- [x] Welcome screen: recent projects, new project, open sample, getting started (no sample project yet)
+- [x] Welcome screen: recent projects, new project, open sample, getting started (the sample: Swiss cantons with made-up customers, coloured by sales and divided into five sales regions; from the welcome screen or the File menu)
 - [x] Project: new, open, save, save as; recent projects
-- [x] Autosave and crash recovery (autosave to the data folder; no restore prompt yet)
+- [x] Autosave and crash recovery (autosave to the data folder; after a crash the welcome screen offers to restore or discard the kept copy; saving removes it)
 - [x] Undo/redo for every project change
 - [x] Context help (F1) and tooltips that explain, not just name (F1 opens searchable help on the topic of the selection: getting started, layers, data, formulas with all functions, colouring, symbols, territories, scenarios, selecting, views, exports, keyboard shortcuts)
 - [x] Remember where the user left off (map view, selected layer, open tables) (also the current map, active plan and territory)

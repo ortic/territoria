@@ -5,6 +5,11 @@ districts) and plans sales territories on them. This guide walks through
 a first project with open data, then explains the parts of the window.
 Press **F1** in the app for help on whatever is selected.
 
+To look around first, click **Open the sample** on the welcome screen
+(or **File → Open the Sample Project**): the Swiss cantons with about 400
+made-up customers, coloured by their sales and divided into five sales
+regions. It works offline; nothing is saved until you choose **Save As**.
+
 ## A first project in twenty minutes
 
 You need an internet connection for the boundaries and for finding the
@@ -125,6 +130,10 @@ districts) and, for points, plans a visiting **Round** by road.
 maps, the geocoding and routing services, the company name and logo for
 exports, territory colours for new plans, class sets kept for reuse, and
 the keyboard shortcuts (click one, press the new keys).
+
+Unsaved work is autosaved every few minutes. If Territoria closes before
+you save, the welcome screen offers the kept copy next time: **Restore**
+opens it as an unsaved project, **Discard** deletes it.
 
 Services that need an **API key** (a commercial geocoder or routing
 service, MapTiler or Thunderforest tiles) take it in the field under their
