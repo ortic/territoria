@@ -210,8 +210,9 @@ pub enum Export {
     /// What changes from the first plan to the second, as an Excel workbook.
     Changes(PlanId, PlanId),
     /// A table or a layer's attributes with each row's territories, as
-    /// Excel (`true`) or CSV; only a segment's rows when one is named.
-    Data(DataRef, bool, Option<String>),
+    /// Excel (`true`) or CSV; only these rows, in this order, when given
+    /// (the rows a table shows).
+    Data(DataRef, bool, Option<Vec<usize>>),
     /// A PDF with an overview and a page per territory.
     Report(PlanId),
     /// The current map as a PDF with a page per value of a layer's
@@ -673,11 +674,13 @@ impl TerritoriaApp {
                             .layer(a.layer)
                             .map(|l| format!("Atlas {}", l.name)),
                     ),
-                    Export::Data(d, excel, segment) => (
+                    Export::Data(d, excel, rows) => (
                         if excel { "Excel workbook" } else { "CSV" },
                         if excel { "xlsx" } else { "csv" },
-                        data_name(&self.project, d).map(|n| match segment {
-                            Some(s) => format!("{n} – {s}"),
+                        data_name(&self.project, d).map(|n| match rows {
+                            Some(rows) => {
+                                trf("{name} – {n} rows", &[("name", &n), ("n", &rows.len())])
+                            }
                             None => n,
                         }),
                     ),
@@ -881,20 +884,14 @@ impl TerritoriaApp {
                 .plan(p)
                 .map(|plan| plan_data_sheets(&self.project, &mut self.values, plan))
                 .unwrap_or_default(),
-            Export::Data(d, _, ref segment) => {
+            Export::Data(d, _, ref rows) => {
                 with_territories(&self.project, &mut self.values, d, None)
                     .map(|(name, table)| {
-                        // A segment: its rows only, with the values as shown.
-                        let table = match segment.as_deref().and_then(|s| table.column(s)) {
-                            Some(c) => {
-                                let keep: Vec<usize> = (0..table.rows())
-                                    .filter(|&r| {
-                                        matches!(
-                                            c.get(r),
-                                            territoria_data::table::Value::Bool(true)
-                                        )
-                                    })
-                                    .collect();
+                        let table = match rows {
+                            // Rows of an older revision can't be told apart.
+                            Some(rows) => {
+                                let keep: Vec<usize> =
+                                    rows.iter().copied().filter(|&r| r < table.rows()).collect();
                                 table.take_rows(&keep)
                             }
                             None => table,
@@ -5551,7 +5548,7 @@ impl TerritoriaApp {
             ui.selectable_value(&mut self.tool, Tool::Measure, tr("📏 Measure"))
                 .on_hover_text(tr("Click points to measure the distance along them; right-click takes the last one back, Esc starts over"));
             ui.selectable_value(&mut self.tool, Tool::Select, tr("⬚ Select"))
-                .on_hover_text(tr("Click or drag a rectangle over areas, Alt+drag for a lasso, Shift adds. Then assign them in one go (S)"));
+                .on_hover_text(tr("Click or drag a rectangle over areas, Alt+drag for a lasso, Ctrl+drag for a radius, Shift adds. Then assign them in one go (S)"));
             ui.add_enabled_ui(has_plan, |ui| {
                 ui.selectable_value(&mut self.tool, Tool::Paint, tr("✏ Paint"))
                     .on_hover_text(tr("Drag over areas to assign them to the active territory. Shift+click picks a territory, Alt+drag erases, right-drag moves the map (B)"))
@@ -5687,7 +5684,7 @@ impl TerritoriaApp {
                     Tool::Navigate => "Drag to move the map, scroll to zoom.",
                     Tool::Paint => "Drag over areas to assign them. Shift+click picks a territory, Alt+drag erases.",
                     Tool::Site => "Click on the map where the territory's site is (Esc cancels).",
-                    Tool::Select => "Click or drag a rectangle to select, Alt+drag for a lasso, Shift adds. Right-drag moves the map, Esc clears.",
+                    Tool::Select => "Click or drag a rectangle to select, Alt+drag for a lasso, Ctrl+drag for a radius, Shift adds. Right-drag moves the map, Esc clears.",
                     Tool::Measure => "Click points to measure; right-click takes the last one back, Esc starts over.",
                 })).weak());
             }

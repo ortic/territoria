@@ -167,7 +167,7 @@ territoria/
 - [x] Display projection: Web Mercator by default, any EPSG code per map (Web Mercator, local equal-area around the data, or any EPSG code; background maps in Web Mercator only)
 - [x] Level-of-detail rendering: simplified arcs per zoom level, GPU meshes, viewport culling
 - [x] Hover highlight with a tooltip card (name, key, data values)
-- [x] Selection: click, Ctrl+click, rectangle, lasso, radius; by list (ranges like `01-09, 15`) (Select tool: click, Shift/Ctrl+click toggles, drag a rectangle, Alt+drag a lasso; list dialog with ranges and wildcards; no radius yet)
+- [x] Selection: click, Ctrl+click, rectangle, lasso, radius; by list (ranges like `01-09, 15`) (Select tool: click, Shift/Ctrl+click toggles, drag a rectangle, Alt+drag a lasso, Ctrl+drag a circle with its radius in km; list dialog with ranges and wildcards)
 - [x] Transfer a selection to another layer (contained / touching / centre inside) ("Select in" on the selection bar: areas wholly inside, with their centre inside or touching; points inside; from points the areas they lie in)
 - [x] Labels with collision avoidance, placed at a pole of inaccessibility
 - [x] Layer list with visibility, order (drag), opacity, zoom range (order by context menu; no zoom range)
@@ -197,7 +197,7 @@ territoria/
 - [x] Spatial join: points get attributes of the area they lie in (areas get counts and sums of the points inside)
 - [x] Saved filters (segments) usable by analyses, reports and exports; one clear meaning (a segment is a yes/no column, usually calculated: "Only where" picks one or keeps the typed filter as one; tables show and export a segment's rows; not yet in reports)
 - [x] Table ↔ map coupling: hover/select rows highlights areas and the other way round (clicking rows selects their areas, Shift toggles; rows of the map's selection are highlighted and can be filtered; not on hover)
-- [x] Data export: CSV, XLSX (one sheet per table or files), filtered or all (plans, tables and layer attributes with each row's territories; not filtered yet)
+- [x] Data export: CSV, XLSX (one sheet per table or files), filtered or all (plans, tables and layer attributes with each row's territories; a table exports the rows it shows, as searched, filtered by segment or selection and sorted, or all of them)
 - [x] Coordinates in degrees-minutes-seconds and "lat, lon" in one column parsed on import (decimal pairs, DMS with N/S/E/W before or after, GPS degrees and minutes; suggested when a column looks like that)
 
 ### 5.5 Expression language (M2)
@@ -253,7 +253,7 @@ territoria/
 - [x] Territories: stable internal id, code, name, colour, weight/capacity, manager/site, notes (details of the active territory in the panel: name, code, size, lock, site, notes)
 - [x] Hierarchy: any number of levels (e.g. territory → region → area); levels built from the level below or from other boundaries ("borders like layer X") (levels of regions above territories, each grouping the one below: automatically (balanced, contiguous), like another layer's areas ("borders like layer X": cantons, districts) or by hand by dragging; each level named, with figures, wider borders the higher it is, a column in exports and a line on report pages)
 - [x] Paint tool: click or drag over units to assign them to the active territory; Shift to pick a territory from the map; Alt to unassign
-- [x] Assign by rectangle, lasso, radius, list, table selection (a bar over the map assigns or unassigns the selection, shows its measure total, zooms to it; no radius or table selection yet)
+- [x] Assign by rectangle, lasso, radius, list, table selection (a bar over the map assigns or unassigns the selection, shows its measure total, zooms to it; radius by Ctrl+drag; table rows clicked or found (Select on map) select their areas)
 - [x] Move a whole territory into another parent; drag in the territory tree (Regions list each region's territories as chips; drag one onto another region or "no region"; also the Region column of the plan table)
 - [x] KPI panel: per territory sums of chosen measures, target (mean or set), deviation in % with bars, unit count, area, parts (contiguity), compactness; totals; updates live while painting (no compactness figure)
 - [x] Measures: any numeric column of linked tables (sum/mean/count per territory), unit count, area, customer count; several at once (one in the panel; the model and optimizer take several)

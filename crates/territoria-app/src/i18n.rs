@@ -219,8 +219,8 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
             "Auf die Karte klicken, wo der Standort des Gebiets ist (Esc bricht ab).",
         ),
         (
-            "Click or drag a rectangle to select, Alt+drag for a lasso, Shift adds. Right-drag moves the map, Esc clears.",
-            "Klicken oder ein Rechteck ziehen wählt aus, Alt+Ziehen für ein Lasso, Shift fügt hinzu. Rechts ziehen verschiebt die Karte, Esc hebt auf.",
+            "Click or drag a rectangle to select, Alt+drag for a lasso, Ctrl+drag for a radius, Shift adds. Right-drag moves the map, Esc clears.",
+            "Klicken oder ein Rechteck ziehen wählt aus, Alt+Ziehen für ein Lasso, Ctrl+Ziehen für einen Umkreis, Umschalt fügt hinzu. Rechts ziehen verschiebt die Karte, Esc hebt auf.",
         ),
         (
             "Click points to measure; right-click takes the last one back, Esc starts over.",
@@ -1521,8 +1521,8 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
             "Punkte anklicken, um die Strecke entlang zu messen; Rechtsklick nimmt den letzten zurück, Esc beginnt neu",
         ),
         (
-            "Click or drag a rectangle over areas, Alt+drag for a lasso, Shift adds. Then assign them in one go (S)",
-            "Klicken oder ein Rechteck über Flächen ziehen, Alt+Ziehen für ein Lasso, Umschalt fügt hinzu. Dann alle auf einmal zuteilen (S)",
+            "Click or drag a rectangle over areas, Alt+drag for a lasso, Ctrl+drag for a radius, Shift adds. Then assign them in one go (S)",
+            "Klicken oder ein Rechteck über Flächen ziehen, Alt+Ziehen für ein Lasso, Ctrl+Ziehen für einen Umkreis, Umschalt fügt hinzu. Dann alle auf einmal zuteilen (S)",
         ),
         (
             "Drag over areas to assign them to the active territory. Shift+click picks a territory, Alt+drag erases, right-drag moves the map (B)",
@@ -1791,9 +1791,19 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
             "Eine leere Zeile am Ende; Zellen doppelklicken, um sie zu füllen",
         ),
         (
-            "This table with each row's territories (only the segment's rows when one is chosen)",
-            "Diese Tabelle mit den Gebieten jeder Zeile (nur die Zeilen des Segments, wenn eines gewählt ist)",
+            "This table with each row's territories: the rows shown, as found, filtered and sorted",
+            "Diese Tabelle mit den Gebieten jeder Zeile: die angezeigten Zeilen, wie gesucht, gefiltert und sortiert",
         ),
+        ("The {n} rows shown", "Die {n} angezeigten Zeilen"),
+        ("All {n} rows", "Alle {n} Zeilen"),
+        ("Select on map", "Auf der Karte auswählen"),
+        (
+            "Selects the areas of the rows shown, e.g. to assign them to a territory",
+            "Wählt die Flächen der angezeigten Zeilen aus, z. B. um sie einem Gebiet zuzuteilen",
+        ),
+        ("{name} – {n} rows", "{name} – {n} Zeilen"),
+        ("Excel, all rows…", "Excel, alle Zeilen…"),
+        ("CSV, all rows…", "CSV, alle Zeilen…"),
         (
             "Click to sort, right-click to edit",
             "Klicken sortiert, Rechtsklick bearbeitet",

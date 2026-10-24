@@ -3471,8 +3471,19 @@ fn segments() {
     let dir = std::env::temp_dir().join(format!("territoria-segment-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let csv = dir.join("big.csv");
+    let big = app
+        .project
+        .table(t)
+        .unwrap()
+        .table
+        .column("Big")
+        .unwrap()
+        .clone();
+    let rows: Vec<usize> = (0..big.len())
+        .filter(|&r| matches!(big.get(r), territoria_data::table::Value::Bool(true)))
+        .collect();
     app.export(
-        Export::Data(DataRef::Table(t), false, Some("Big".into())),
+        Export::Data(DataRef::Table(t), false, Some(rows)),
         csv.clone(),
     );
     app.open_table_for_test(DataRef::Table(t));
@@ -5043,4 +5054,84 @@ fn welcome_restores_and_opens_the_sample() {
     assert_eq!(app.project.title, "Sample");
     assert_eq!(app.project.layers.len(), 2);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A table exports the rows it shows, in the order it shows them.
+#[test]
+fn export_the_rows_shown() {
+    use crate::app::{DataRef, Export};
+    let (mut h, _lock) = harness(false);
+    let app = h.state_mut();
+    app.set_project(crate::sample::project().unwrap(), None);
+    let customers = app.project.layers[1].id;
+    let dir = std::env::temp_dir().join(format!("territoria-shown-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let csv = dir.join("shown.csv");
+    app.export(
+        Export::Data(DataRef::Layer(customers), false, Some(vec![41, 7, 300])),
+        csv.clone(),
+    );
+    settle(&mut h);
+    let text = std::fs::read_to_string(&csv).unwrap();
+    let keys: Vec<&str> = text
+        .lines()
+        .skip(1)
+        .map(|l| l.split([',', ';']).next().unwrap())
+        .collect();
+    assert_eq!(keys, ["K0042", "K0008", "K0301"]);
+    // The plan's column comes along.
+    assert!(
+        text.lines().next().unwrap().contains("Sales regions"),
+        "{text}"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Ctrl+drag with the Select tool selects the areas within a radius.
+#[test]
+fn select_by_radius() {
+    let (mut h, _lock) = harness(false);
+    h.state_mut()
+        .set_project(crate::sample::project().unwrap(), None);
+    settle(&mut h);
+    h.state_mut().tool = crate::map_view::Tool::Select;
+    h.run_steps(3);
+    let ctrl = egui::Modifiers::COMMAND;
+    let start = egui::pos2(660.0, 470.0);
+    let event = |h: &mut Harness<'_, TerritoriaApp>, e: egui::Event| {
+        h.input_mut().events.push(egui::Event::ModifiersChanged(ctrl));
+        h.input_mut().events.push(e);
+        h.step();
+    };
+    event(&mut h, egui::Event::PointerMoved(start));
+    event(
+        &mut h,
+        egui::Event::PointerButton {
+            pos: start,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: ctrl,
+        },
+    );
+    let end = start + egui::vec2(110.0, 0.0);
+    for i in 1..=10 {
+        event(
+            &mut h,
+            egui::Event::PointerMoved(start + (end - start) * (i as f32 / 10.0)),
+        );
+    }
+    save(&mut h, "select-radius");
+    event(
+        &mut h,
+        egui::Event::PointerButton {
+            pos: end,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: ctrl,
+        },
+    );
+    h.run_steps(2);
+    let (layer, units) = h.state().selected.clone().expect("a selection");
+    assert_eq!(layer, h.state().project.layers[0].id, "cantons");
+    assert!(units.len() >= 2 && units.len() < 26, "{units:?}");
 }

@@ -129,6 +129,16 @@ pub fn show(
             .response
             .on_hover_text(tr("Only the rows of a segment: a yes/no column"));
         ui.label(RichText::new(trf("{n} rows", &[("n", &format_value(state.order.len() as f64))])).weak());
+        // The rows found, on the map: to assign them, zoom to them, focus.
+        if !state.order.is_empty()
+            && state.order.len() < table.rows()
+            && ui
+                .button(tr("Select on map"))
+                .on_hover_text(tr("Selects the areas of the rows shown, e.g. to assign them to a territory"))
+                .clicked()
+        {
+            actions.push(Action::SelectRows(data, state.order.clone(), false));
+        }
         if selection.is_some() {
             ui.checkbox(&mut state.only_selected, tr("Only the selection"))
                 .on_hover_text(tr("Rows of the areas selected on the map"));
@@ -170,15 +180,45 @@ pub fn show(
                 actions.push(Action::AddRow(data));
             }
             ui.menu_button(tr("Export"), |ui| {
+                // The rows shown, as filtered and sorted; all of them too
+                // when some are hidden.
+                let shown = state.order.len();
+                let filtered = shown < table.rows();
+                let rows = Some(state.order.clone());
+                if filtered {
+                    ui.label(
+                        RichText::new(trf(
+                            "The {n} rows shown",
+                            &[("n", &format_value(shown as f64))],
+                        ))
+                        .weak(),
+                    );
+                }
                 if ui.button(tr("Excel…")).clicked() {
-                    actions.push(Action::Export(Export::Data(data, true, state.segment.clone())));
+                    actions.push(Action::Export(Export::Data(data, true, rows.clone())));
                 }
                 if ui.button(tr("CSV…")).clicked() {
-                    actions.push(Action::Export(Export::Data(data, false, state.segment.clone())));
+                    actions.push(Action::Export(Export::Data(data, false, rows)));
+                }
+                if filtered {
+                    ui.separator();
+                    ui.label(
+                        RichText::new(trf(
+                            "All {n} rows",
+                            &[("n", &format_value(table.rows() as f64))],
+                        ))
+                        .weak(),
+                    );
+                    if ui.button(tr("Excel, all rows…")).clicked() {
+                        actions.push(Action::Export(Export::Data(data, true, None)));
+                    }
+                    if ui.button(tr("CSV, all rows…")).clicked() {
+                        actions.push(Action::Export(Export::Data(data, false, None)));
+                    }
                 }
             })
             .response
-            .on_hover_text(tr("This table with each row's territories (only the segment's rows when one is chosen)"));
+            .on_hover_text(tr("This table with each row's territories: the rows shown, as found, filtered and sorted"));
     });
 
     let plan_revs = plans.iter().map(|(p, _)| p.rev).collect();

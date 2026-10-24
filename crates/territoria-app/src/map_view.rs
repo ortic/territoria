@@ -26,7 +26,8 @@ pub enum Tool {
     Paint,
     /// Click to place the active territory's site.
     Site,
-    /// Click, drag a rectangle or Alt+drag a lasso to select areas.
+    /// Click, drag a rectangle, Alt+drag a lasso or Ctrl+drag a circle to
+    /// select areas.
     Select,
     /// Click points to measure the distance along them.
     Measure,
@@ -51,9 +52,9 @@ pub struct MapState {
     pub fit_requested: bool,
     /// Feature to zoom to on the next frame: (layer, features).
     pub zoom_to: Option<(LayerId, Vec<u32>)>,
-    /// Screen points of the rectangle or lasso being dragged.
+    /// Screen points of the rectangle, lasso or circle being dragged.
     selecting: Option<Vec<Pos2>>,
-    lasso: bool,
+    drag_shape: DragShape,
     /// Measure tool: the clicked points (longitude, latitude).
     pub(crate) measure: Vec<[f64; 2]>,
     /// A view to go to on the next frame: centre and scale.
@@ -152,10 +153,31 @@ pub struct MapContext<'a> {
     pub focus: bool,
 }
 
-/// The rectangle (first and last point) or lasso of a drag, in screen points.
-fn selection_shape(path: &[Pos2], lasso: bool) -> Vec<Pos2> {
+/// What dragging with the Select tool draws.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum DragShape {
+    /// From the first to the last point.
+    #[default]
+    Rectangle,
+    /// Along the pointer (Alt).
+    Lasso,
+    /// Around the first point, to the last (Ctrl): a radius.
+    Circle,
+}
+
+/// The shape of a drag as a polygon in screen points.
+fn selection_shape(path: &[Pos2], shape: DragShape) -> Vec<Pos2> {
     match (path.first(), path.last()) {
-        (Some(_), Some(_)) if lasso => path.to_vec(),
+        (Some(_), Some(_)) if shape == DragShape::Lasso => path.to_vec(),
+        (Some(c), Some(b)) if shape == DragShape::Circle => {
+            let r = c.distance(*b);
+            (0..72)
+                .map(|i| {
+                    let a = i as f32 / 72.0 * std::f32::consts::TAU;
+                    *c + r * vec2(a.cos(), a.sin())
+                })
+                .collect()
+        }
         (Some(a), Some(b)) => {
             let r = Rect::from_two_pos(*a, *b);
             vec![
@@ -166,6 +188,15 @@ fn selection_shape(path: &[Pos2], lasso: bool) -> Vec<Pos2> {
             ]
         }
         _ => Vec::new(),
+    }
+}
+
+/// A distance for a label: two decimals below 10 km.
+fn km_text(km: f64) -> String {
+    if km < 10.0 {
+        format!("{km:.2} km")
+    } else {
+        format!("{} km", territoria_analysis::format::format_value(km))
     }
 }
 
@@ -683,18 +714,27 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
             events.push(MapEvent::ClickTerritory { plan, territory: t });
         }
     }
-    // Selecting: click, drag a rectangle, Alt+drag a lasso.
+    // Selecting: click, drag a rectangle, Alt+drag a lasso, Ctrl+drag a
+    // circle.
+    let mut radius_label: Option<(Pos2, String)> = None;
     if selecting_tool
         && let Some((layer_id, _)) = interactive
         && let Some(mesh) = meshes.get(&layer_id)
     {
-        let add = modifiers.shift || modifiers.command;
+        // Ctrl+drag draws a circle; Ctrl+click still toggles.
+        let add = modifiers.shift || (modifiers.command && state.selecting.is_none());
         if response.drag_started_by(egui::PointerButton::Primary)
             && !space
             && let Some(p) = response.interact_pointer_pos()
         {
             state.selecting = Some(vec![p]);
-            state.lasso = modifiers.alt;
+            state.drag_shape = if modifiers.alt {
+                DragShape::Lasso
+            } else if modifiers.command {
+                DragShape::Circle
+            } else {
+                DragShape::Rectangle
+            };
         }
         if response.dragged_by(egui::PointerButton::Primary)
             && let (Some(path), Some(p)) = (&mut state.selecting, pointer)
@@ -703,13 +743,13 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
             path.push(p);
         }
         if let Some(path) = &state.selecting {
-            let poly = selection_shape(path, state.lasso);
+            let poly = selection_shape(path, state.drag_shape);
             let c = crate::theme::ACCENT;
             if poly.len() > 2 {
                 shapes.push(Shape::Path(egui::epaint::PathShape {
                     points: poly.clone(),
                     closed: true,
-                    fill: if state.lasso {
+                    fill: if state.drag_shape == DragShape::Lasso {
                         Color32::TRANSPARENT
                     } else {
                         c.gamma_multiply(0.12)
@@ -717,11 +757,29 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
                     stroke: egui::epaint::PathStroke::new(1.5, c),
                 }));
             }
+            // The radius, as a line and in kilometres.
+            if state.drag_shape == DragShape::Circle
+                && let (Some(&a), Some(&b)) = (path.first(), path.last())
+                && let Ok(to_wgs) = Transformer::new(&map.crs, &Crs::wgs84())
+            {
+                shapes.push(Shape::line_segment([a, b], Stroke::new(1.5, c)));
+                shapes.push(Shape::circle_filled(a, 3.0, c));
+                let lonlat = |s: Pos2| {
+                    let d = view.to_display(s);
+                    to_wgs.convert(geo_types::Coord { x: d[0], y: d[1] })
+                };
+                if let (Some(x), Some(y)) = (lonlat(a), lonlat(b)) {
+                    radius_label = Some((
+                        b + vec2(10.0, -14.0),
+                        km_text(territoria_geo::haversine(x, y) / 1000.0),
+                    ));
+                }
+            }
         }
         if response.drag_stopped()
             && let Some(path) = state.selecting.take()
         {
-            let poly = selection_shape(&path, state.lasso);
+            let poly = selection_shape(&path, state.drag_shape);
             let units = mesh
                 .label_points
                 .iter()
@@ -765,7 +823,7 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
     }
 
     // Measuring: clicked points, a line to the pointer, the total.
-    let mut measure_label: Option<(Pos2, String)> = None;
+    let mut measure_label: Option<(Pos2, String)> = radius_label;
     if cx.tool == Tool::Measure
         && let (Ok(to_wgs), Ok(to_display)) = (
             Transformer::new(&map.crs, &Crs::wgs84()),
@@ -812,12 +870,7 @@ pub fn show(ui: &mut Ui, map: &Map, state: &mut MapState, cx: &mut MapContext) -
         if let Some(last) = screen.last()
             && path.len() > 1
         {
-            let text = if km < 10.0 {
-                format!("{km:.2} km")
-            } else {
-                format!("{} km", territoria_analysis::format::format_value(km))
-            };
-            measure_label = Some((*last + vec2(10.0, -14.0), text));
+            measure_label = Some((*last + vec2(10.0, -14.0), km_text(km)));
         }
     }
 
@@ -1807,7 +1860,7 @@ mod tests {
     fn lasso_and_rectangle() {
         let rect = selection_shape(
             &[pos2(10.0, 10.0), pos2(5.0, 30.0), pos2(40.0, 20.0)],
-            false,
+            DragShape::Rectangle,
         );
         assert_eq!(rect.len(), 4, "a rectangle from first to last point");
         assert!(inside(&rect, pos2(20.0, 15.0)));
@@ -1821,9 +1874,18 @@ mod tests {
             pos2(4.0, 10.0),
             pos2(0.0, 10.0),
         ];
-        let l = selection_shape(&lasso, true);
+        let l = selection_shape(&lasso, DragShape::Lasso);
         assert!(inside(&l, pos2(2.0, 8.0)));
         assert!(inside(&l, pos2(8.0, 2.0)));
         assert!(!inside(&l, pos2(8.0, 8.0)));
+        // A circle around the first point, through the last.
+        let c = selection_shape(
+            &[pos2(50.0, 50.0), pos2(60.0, 60.0), pos2(50.0, 70.0)],
+            DragShape::Circle,
+        );
+        assert!(inside(&c, pos2(50.0, 50.0)));
+        assert!(inside(&c, pos2(64.0, 64.0)), "within 20 of the centre");
+        assert!(!inside(&c, pos2(66.0, 66.0)));
+        assert!(!inside(&c, pos2(50.0, 71.0)));
     }
 }

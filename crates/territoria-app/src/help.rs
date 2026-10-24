@@ -104,7 +104,7 @@ Everything can be undone (Ctrl+Z). The command palette (Ctrl+Shift+P) finds ever
     Topic {
         id: "selection",
         title: "Selecting areas",
-        body: "- Select (S): click, drag a rectangle, or hold Alt to draw a lasso; with Shift or Ctrl the selection grows.
+        body: "- Select (S): click, drag a rectangle, hold Alt to draw a lasso or Ctrl to draw a circle (its radius in km shows while you drag); with Shift the selection grows, Ctrl+click adds or removes one area.
 - Map → Select Areas by List takes keys pasted from a spreadsheet.
 - The selection bar shows the count and the plan's measure, assigns the selection to the active territory, zooms to it or fades everything else (Focus).
 - Select in: carries the selection to another layer, e.g. the postcodes inside selected districts or the customers in them.
@@ -229,7 +229,7 @@ Alles lässt sich rückgängig machen (Ctrl+Z). Die Befehlspalette (Ctrl+Shift+P
     (
         "selection",
         "Gebiete auswählen",
-        "- Auswählen (S): klicken, ein Rechteck ziehen oder mit gedrückter Alt-Taste ein Lasso zeichnen; mit Shift oder Ctrl wächst die Auswahl.
+        "- Auswählen (S): klicken, ein Rechteck ziehen, mit gedrückter Alt-Taste ein Lasso oder mit Ctrl einen Kreis zeichnen (sein Radius in km steht beim Ziehen daneben); mit Shift wächst die Auswahl, Ctrl+Klick nimmt eine Fläche dazu oder weg.
 - Karte → Gebiete per Liste auswählen nimmt aus einer Tabellenkalkulation eingefügte Schlüssel.
 - Die Auswahlleiste zeigt die Anzahl und die Kennzahl der Planung, teilt die Auswahl dem aktiven Gebiet zu, zoomt hin oder blendet alles andere ab (Fokus).
 - Auswählen in: überträgt die Auswahl auf eine andere Ebene, z. B. die PLZ in ausgewählten Bezirken oder die Kunden darin.

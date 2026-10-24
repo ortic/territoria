@@ -118,7 +118,8 @@ without losing the original; the comparison shows what moved.
 
 ## Selecting
 
-**Select** (S): click, drag a rectangle, or Alt+drag a lasso. The
+**Select** (S): click, drag a rectangle, Alt+drag a lasso, or Ctrl+drag
+a circle around a place (the radius shows in km). Shift adds. The
 selection bar counts the selection, sums the plan's measure, assigns it
 to the active territory, zooms to it, fades the rest (*Focus*), carries
 it to another layer (*Select in*: the postcodes inside selected
