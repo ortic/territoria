@@ -33,16 +33,22 @@
             </Extension>
           </ProgId>
         </Component>
-        <Component Id="Docs" Bitness="always64">
+        <!-- A file each: unversioned files get their own component. -->
+        <Component Id="Guide" Bitness="always64">
           <File Id="Guide" Source="$(var.Root)\docs\guide.md" Name="Guide.md" KeyPath="yes" />
-          <File Id="Readme" Source="$(var.Root)\README.md" Name="README.md" />
+        </Component>
+        <Component Id="Readme" Bitness="always64">
+          <File Id="Readme" Source="$(var.Root)\README.md" Name="README.md" KeyPath="yes" />
         </Component>
       </Directory>
     </StandardDirectory>
+    <!-- Where the Start menu entry goes. -->
+    <StandardDirectory Id="ProgramMenuFolder" />
 
     <Feature Id="Main" Title="Territoria">
       <ComponentRef Id="Program" />
-      <ComponentRef Id="Docs" />
+      <ComponentRef Id="Guide" />
+      <ComponentRef Id="Readme" />
     </Feature>
   </Package>
 </Wix>
