@@ -64,6 +64,11 @@ pub enum JobResult {
         path: PathBuf,
         result: Result<(), String>,
     },
+    /// A map written; how many background tiles were missing.
+    MapExported {
+        path: PathBuf,
+        result: Result<usize, String>,
+    },
     Optimized {
         plan: territoria_model::PlanId,
         result: Result<crate::territories::Proposal, String>,

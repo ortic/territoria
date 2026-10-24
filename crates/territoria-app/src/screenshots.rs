@@ -657,6 +657,24 @@ fn vector_background_offline() {
     h.run_steps(3);
     save(&mut h, "vector-background");
     assert!(h.state().tiles.ready() > 0, "vector tiles drawn");
+    // Exported maps draw the same tiles.
+    let (_, tiles) = h
+        .state_mut()
+        .map_svg_for_test(&crate::dialogs::MapExportSettings {
+            format: crate::export_map::Format::Svg,
+            scale: 1.0,
+            title: String::new(),
+            legend: false,
+            scale_bar: false,
+            page: Default::default(),
+            footer: String::new(),
+            overview: false,
+            figures: false,
+            layout: None,
+        });
+    let (images, missing) = tiles.expect("vector tiles for the export").svg();
+    assert_eq!(missing, 0);
+    assert!(images.contains("data:image/png;base64,"));
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -5099,7 +5117,9 @@ fn select_by_radius() {
     let ctrl = egui::Modifiers::COMMAND;
     let start = egui::pos2(660.0, 470.0);
     let event = |h: &mut Harness<'_, TerritoriaApp>, e: egui::Event| {
-        h.input_mut().events.push(egui::Event::ModifiersChanged(ctrl));
+        h.input_mut()
+            .events
+            .push(egui::Event::ModifiersChanged(ctrl));
         h.input_mut().events.push(e);
         h.step();
     };
@@ -5134,4 +5154,79 @@ fn select_by_radius() {
     let (layer, units) = h.state().selected.clone().expect("a selection");
     assert_eq!(layer, h.state().project.layers[0].id, "cantons");
     assert!(units.len() >= 2 && units.len() < 26, "{units:?}");
+}
+
+/// Exported maps carry the background map: its tiles from the disk cache,
+/// else from the server; missing ones are counted.
+#[test]
+fn exported_maps_have_the_background() {
+    use crate::app::Export;
+    use crate::export_map::Format;
+    let (mut h, _lock) = harness(false);
+    let app = h.state_mut();
+    app.set_project(crate::sample::project().unwrap(), None);
+    // A server that isn't there: only cached tiles can show.
+    let url = format!(
+        "http://127.0.0.1:9/{}/{{z}}/{{x}}/{{y}}.png",
+        std::process::id()
+    );
+    for m in &mut app.project.maps {
+        m.background = territoria_model::map::Background::Tiles {
+            url: url.clone(),
+            attribution: "Test tiles".into(),
+        };
+        // Only the sample's cantons, no territories over the background.
+        m.layers.retain(|l| l.kind.plan().is_none());
+    }
+    settle(&mut h);
+    let settings = crate::dialogs::MapExportSettings {
+        format: Format::Png,
+        scale: 1.0,
+        title: String::new(),
+        legend: false,
+        scale_bar: false,
+        page: Default::default(),
+        footer: String::new(),
+        overview: false,
+        figures: false,
+        layout: None,
+    };
+    let (svg, tiles) = h.state_mut().map_svg_for_test(&settings);
+    assert!(svg.contains(crate::export_map::BACKGROUND));
+    let tiles = tiles.expect("tiles for the background");
+    let files = tiles.files();
+    assert!(!files.is_empty() && files.len() <= 256, "{}", files.len());
+    // Offline: nothing to show, every tile missing.
+    let (_, missing) = tiles.svg();
+    assert_eq!(missing, files.len());
+    // Cached: a plain magenta tile everywhere.
+    let mut png = Vec::new();
+    image::RgbaImage::from_pixel(256, 256, image::Rgba([255, 0, 255, 255]))
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    for f in &files {
+        std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+        std::fs::write(f, &png).unwrap();
+    }
+    let (images, missing) = tiles.svg();
+    assert_eq!(missing, 0);
+    assert_eq!(images.matches("<image").count(), files.len());
+
+    let dir = std::env::temp_dir().join(format!("territoria-bg-export-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("map.png");
+    let app = h.state_mut();
+    app.set_map_export_for_test(settings);
+    app.export(Export::Map(Format::Png), path.clone());
+    settle(&mut h);
+    let img = image::open(&path).unwrap().to_rgba8();
+    // A corner of the map is outside Switzerland: the tile shows there.
+    assert_eq!(img.get_pixel(3, 3).0, [255, 0, 255, 255]);
+    if let Some(out) = out_dir() {
+        let _ = std::fs::copy(&path, out.join("export-background.png"));
+    }
+    for f in &files {
+        let _ = std::fs::remove_file(f);
+    }
+    let _ = std::fs::remove_dir_all(dir);
 }

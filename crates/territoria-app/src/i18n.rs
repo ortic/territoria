@@ -1798,6 +1798,10 @@ static GERMAN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
         ("All {n} rows", "Alle {n} Zeilen"),
         ("Select on map", "Auf der Karte auswählen"),
         (
+            "Wrote {file}, but {n} pieces of the background map couldn't be loaded (offline?).",
+            "{file} geschrieben, aber {n} Teile der Hintergrundkarte liessen sich nicht laden (offline?).",
+        ),
+        (
             "Selects the areas of the rows shown, e.g. to assign them to a territory",
             "Wählt die Flächen der angezeigten Zeilen aus, z. B. um sie einem Gebiet zuzuteilen",
         ),

@@ -182,6 +182,10 @@ pub struct GridLegend {
 }
 
 /// Builds the SVG for `view` (its rect is the page, in points).
+/// Where the background map goes, under the layers: replaced by its tiles
+/// once they are fetched (see [`crate::tiles::ExportTiles`]).
+pub const BACKGROUND: &str = "<!--background-->";
+
 pub fn svg(
     resolved: &[Resolved],
     view: &View,
@@ -197,6 +201,7 @@ pub fn svg(
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" font-family="{font}">"#
     );
     let _ = write!(s, r##"<rect width="{w}" height="{h}" fill="#f3f1ec"/>"##);
+    s.push_str(BACKGROUND);
     map_into(&mut s, resolved, view, "map");
     s.push_str(overlays);
     decorations(&mut s, view, crs, deco);
@@ -1255,6 +1260,7 @@ fn frame_svg(
         frame.width(),
         frame.height()
     );
+    s.push_str(BACKGROUND);
     map_into(s, resolved, view, "frame");
     s.push_str(overlays);
     // The overview: everything small, the page's part marked.

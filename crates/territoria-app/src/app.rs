@@ -777,7 +777,7 @@ impl TerritoriaApp {
             let Some(settings) = self.map_export.take() else {
                 return;
             };
-            let svg = match self.map_svg(&settings) {
+            let (svg, tiles) = match self.map_svg(&settings) {
                 Ok(svg) => svg,
                 Err(e) => {
                     self.error(e);
@@ -789,9 +789,13 @@ impl TerritoriaApp {
                 .to_vec();
             let label = format!("Writing {}", file_name(&path));
             self.jobs.spawn(label, move |_| {
+                // The background map first: its tiles may come from afar.
+                let (background, missing) = tiles.map_or((String::new(), 0), |t| t.svg());
+                let svg = svg.replacen(crate::export_map::BACKGROUND, &background, 1);
                 let result = crate::export_map::encode(&svg, format, settings.scale, &font)
-                    .and_then(|bytes| std::fs::write(&path, bytes).map_err(|e| e.to_string()));
-                JobResult::Exported { path, result }
+                    .and_then(|bytes| std::fs::write(&path, bytes).map_err(|e| e.to_string()))
+                    .map(|()| missing);
+                JobResult::MapExported { path, result }
             });
             return;
         }
@@ -1540,6 +1544,17 @@ impl TerritoriaApp {
                 }
                 Err(e) => self.error(trf("Couldn't add the columns: {e}", &[("e", &e)])),
             },
+            JobResult::MapExported { path, result } => match result {
+                Ok(0) => self.toast(trf("Wrote {file}", &[("file", &file_name(&path))])),
+                Ok(n) => self.error(trf(
+                    "Wrote {file}, but {n} pieces of the background map couldn't be loaded (offline?).",
+                    &[("file", &file_name(&path)), ("n", &n)],
+                )),
+                Err(e) => self.error(trf(
+                    "Couldn't write {file}: {e}",
+                    &[("file", &file_name(&path)), ("e", &e)],
+                )),
+            },
             JobResult::Exported { path, result } => match result {
                 Ok(()) => self.toast(trf("Wrote {file}", &[("file", &file_name(&path))])),
                 Err(e) => self.error(trf(
@@ -1738,6 +1753,14 @@ impl TerritoriaApp {
             color_by: color_by.map(|c| (c.to_owned(), territoria_data::Aggregate::Sum)),
         });
         id
+    }
+
+    #[cfg(test)]
+    pub fn map_svg_for_test(
+        &mut self,
+        settings: &crate::dialogs::MapExportSettings,
+    ) -> (String, Option<crate::tiles::ExportTiles>) {
+        self.map_svg(settings).expect("map svg")
     }
 
     #[cfg(test)]
@@ -2068,15 +2091,34 @@ impl TerritoriaApp {
     }
 
     /// The current map as SVG, as it is on screen.
-    fn map_svg(&mut self, settings: &crate::dialogs::MapExportSettings) -> Result<String, String> {
-        self.map_render(settings, false, None)
+    /// The map as SVG, and the background tiles to put into it (at
+    /// [`crate::export_map::BACKGROUND`]).
+    fn map_svg(
+        &mut self,
+        settings: &crate::dialogs::MapExportSettings,
+    ) -> Result<(String, Option<crate::tiles::ExportTiles>), String> {
+        let (svg, view) = self.map_render(settings, false, None)?;
+        // Raster images as sharp as the picture; documents at twice their
+        // size in points, sharp enough for print.
+        let pixels_per_point = match settings.format {
+            crate::export_map::Format::Png => settings.scale,
+            _ => settings.scale.max(2.0),
+        };
+        let tiles = self
+            .current_map
+            .and_then(|m| self.project.map(m))
+            .and_then(|m| {
+                self.tiles
+                    .plan_export(&m.background, &m.crs, &view, pixels_per_point)
+            });
+        Ok((svg, tiles))
     }
 
     pub(crate) fn map_svg_for_cli(
         &mut self,
         settings: &crate::dialogs::MapExportSettings,
     ) -> Result<String, String> {
-        self.map_render(settings, false, None)
+        self.map_render(settings, false, None).map(|(svg, _)| svg)
     }
 
     pub(crate) fn set_map_export_settings(&mut self, settings: crate::dialogs::MapExportSettings) {
@@ -2088,15 +2130,16 @@ impl TerritoriaApp {
         &mut self,
         settings: &crate::dialogs::MapExportSettings,
     ) -> Result<String, String> {
-        self.map_render(settings, true, None)
+        self.map_render(settings, true, None).map(|(svg, _)| svg)
     }
 
+    /// The map as SVG, with the view its frame shows.
     fn map_render(
         &mut self,
         settings: &crate::dialogs::MapExportSettings,
         page: bool,
         at: Option<&AtlasPage>,
-    ) -> Result<String, String> {
+    ) -> Result<(String, territoria_render::View), String> {
         let map_id = self.current_map.ok_or("There's no map to export.")?;
         let map = self
             .project
@@ -2576,12 +2619,8 @@ impl TerritoriaApp {
                 .unzip();
             let mut body = String::new();
             crate::export_map::map_into_with(&mut body, &resolved, &full, "", &tips, true);
-            return Ok(crate::export_map::html(
-                &body,
-                &full,
-                &settings.title,
-                &deco,
-            ));
+            let html = crate::export_map::html(&body, &full, &settings.title, &deco);
+            return Ok((html, full));
         }
         // Heat maps as images over the layers.
         let mut overlays = String::new();
@@ -2621,7 +2660,7 @@ impl TerritoriaApp {
             for (_, text, _) in &mut placed.texts {
                 *text = fill_in(text);
             }
-            return Ok(crate::export_map::arranged_svg(
+            let svg = crate::export_map::arranged_svg(
                 &resolved,
                 &view,
                 &map.crs,
@@ -2630,10 +2669,11 @@ impl TerritoriaApp {
                 "sans-serif",
                 &overlays,
                 &placed,
-            ));
+            );
+            return Ok((svg, view));
         }
         if let Some(size) = page_size {
-            return Ok(crate::export_map::page_svg(
+            let svg = crate::export_map::page_svg(
                 &resolved,
                 &view,
                 &map.crs,
@@ -2641,16 +2681,12 @@ impl TerritoriaApp {
                 size,
                 "sans-serif",
                 &overlays,
-            ));
+            );
+            return Ok((svg, view));
         }
-        Ok(crate::export_map::svg(
-            &resolved,
-            &view,
-            &map.crs,
-            &deco,
-            "sans-serif",
-            &overlays,
-        ))
+        let svg =
+            crate::export_map::svg(&resolved, &view, &map.crs, &deco, "sans-serif", &overlays);
+        Ok((svg, view))
     }
 
     /// A new layer with the areas of `layer` merged by `column`.
@@ -4305,7 +4341,7 @@ impl TerritoriaApp {
                 figures: false,
                 layout: None,
             };
-            let svg = self.map_render(&settings, false, Some(&page))?;
+            let (svg, _) = self.map_render(&settings, false, Some(&page))?;
             pages.push(AtlasSheet {
                 title,
                 members,
@@ -4528,11 +4564,13 @@ impl TerritoriaApp {
                     layout: None,
                 };
                 match self.map_svg(&settings) {
-                    Ok(svg) => {
+                    Ok((svg, tiles)) => {
                         let font = egui::FontDefinitions::default().font_data["Ubuntu-Light"]
                             .font
                             .to_vec();
                         self.jobs.spawn("Copying the map", move |_| {
+                            let background = tiles.map(|t| t.svg().0).unwrap_or_default();
+                            let svg = svg.replacen(crate::export_map::BACKGROUND, &background, 1);
                             JobResult::Copied(crate::export_map::rasterize(&svg, 2.0, &font))
                         });
                     }

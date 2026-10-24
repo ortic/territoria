@@ -79,7 +79,8 @@ without losing the original; the comparison shows what moved.
 ### 5. Share
 
 - **Map → Export Map**: PNG, SVG or PDF, as on screen or on an A4/A3
-  page with title, legend, scale bar, north arrow and a footer.
+  page with title, legend, scale bar, north arrow and a footer. The
+  background map comes along, as sharp as the export.
 - **Map → Export as Web Page**: one HTML file that zooms and shows a
   card for each area on hover, to send to anyone.
 - **Map → Export Atlas**: a PDF page per canton (or region, rep).

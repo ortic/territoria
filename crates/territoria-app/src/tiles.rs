@@ -297,32 +297,16 @@ impl Tiles {
             self.slots.insert(key, (slot, self.frame));
         }
         // The zoom level whose pixels match the screen's.
-        let metres_per_pixel = view.scale / pixels_per_point as f64;
-        let z = ((2.0 * HALF_WORLD / 256.0) / metres_per_pixel)
-            .log2()
-            .round()
-            .clamp(0.0, 19.0) as u8;
-        let n = 1u32 << z;
-        let size = 2.0 * HALF_WORLD / n as f64;
-        let (min, max) = view.visible();
-        let tx = |x: f64| ((x + HALF_WORLD) / size).floor().clamp(0.0, n as f64 - 1.0) as u32;
-        let ty = |y: f64| ((HALF_WORLD - y) / size).floor().clamp(0.0, n as f64 - 1.0) as u32;
-        let (x0, x1) = (tx(min[0]), tx(max[0]));
-        let (y0, y1) = (ty(max[1]), ty(min[1]));
-        if (x1 - x0 + 1) as u64 * (y1 - y0 + 1) as u64 > 400 {
+        let z = zoom_for(view, pixels_per_point);
+        let (xs, ys) = tile_range(view, z);
+        if xs.clone().count() * ys.clone().count() > 400 {
             return;
         }
         let template_dir = self.cache_dir.join(format!("{:016x}", hash(url)));
         let mut wanted = Vec::new();
-        for y in y0..=y1 {
-            for x in x0..=x1 {
-                let rect = Rect::from_min_max(
-                    view.to_screen([x as f64 * size - HALF_WORLD, HALF_WORLD - y as f64 * size]),
-                    view.to_screen([
-                        (x + 1) as f64 * size - HALF_WORLD,
-                        HALF_WORLD - (y + 1) as f64 * size,
-                    ]),
-                );
+        for y in ys {
+            for x in xs.clone() {
+                let rect = tile_rect(view, z, x, y);
                 let key = (url.to_owned(), z, x, y);
                 match self.slots.get_mut(&key) {
                     Some((Slot::Ready(tex), used)) => {
@@ -437,6 +421,19 @@ fn load(
     file: &std::path::Path,
     api_key: &territoria_io::ApiKey,
 ) -> Option<ColorImage> {
+    let bytes = tile_bytes(agent, key, file, api_key)?;
+    let img = image::load_from_memory(&bytes).ok()?.to_rgba8();
+    let size = [img.width() as usize, img.height() as usize];
+    Some(ColorImage::from_rgba_unmultiplied(size, img.as_raw()))
+}
+
+/// A tile's file as the server sends it, from the disk cache if there.
+fn tile_bytes(
+    agent: &ureq::Agent,
+    key: &Key,
+    file: &std::path::Path,
+    api_key: &territoria_io::ApiKey,
+) -> Option<Vec<u8>> {
     let bytes = match std::fs::read(file) {
         Ok(b) => b,
         Err(_) => {
@@ -460,7 +457,219 @@ fn load(
             bytes
         }
     };
-    let img = image::load_from_memory(&bytes).ok()?.to_rgba8();
-    let size = [img.width() as usize, img.height() as usize];
-    Some(ColorImage::from_rgba_unmultiplied(size, img.as_raw()))
+    Some(bytes)
+}
+
+/// The zoom level whose tiles have about `pixels_per_point` pixels per
+/// point of `view`.
+fn zoom_for(view: &View, pixels_per_point: f32) -> u8 {
+    let metres_per_pixel = view.scale / pixels_per_point as f64;
+    ((2.0 * HALF_WORLD / 256.0) / metres_per_pixel)
+        .log2()
+        .round()
+        .clamp(0.0, 19.0) as u8
+}
+
+/// The tiles of zoom `z` covering `view`: x and y ranges.
+fn tile_range(
+    view: &View,
+    z: u8,
+) -> (std::ops::RangeInclusive<u32>, std::ops::RangeInclusive<u32>) {
+    let n = 1u32 << z;
+    let size = 2.0 * HALF_WORLD / n as f64;
+    let (min, max) = view.visible();
+    let tx = |x: f64| ((x + HALF_WORLD) / size).floor().clamp(0.0, n as f64 - 1.0) as u32;
+    let ty = |y: f64| ((HALF_WORLD - y) / size).floor().clamp(0.0, n as f64 - 1.0) as u32;
+    (tx(min[0])..=tx(max[0]), ty(max[1])..=ty(min[1]))
+}
+
+/// Where tile `z`/`x`/`y` lies on screen.
+fn tile_rect(view: &View, z: u8, x: u32, y: u32) -> Rect {
+    let size = 2.0 * HALF_WORLD / (1u32 << z) as f64;
+    Rect::from_min_max(
+        view.to_screen([x as f64 * size - HALF_WORLD, HALF_WORLD - y as f64 * size]),
+        view.to_screen([
+            (x + 1) as f64 * size - HALF_WORLD,
+            HALF_WORLD - (y + 1) as f64 * size,
+        ]),
+    )
+}
+
+/// The background map of an export: which tiles, where. Planned with the
+/// view, fetched in the background ([`ExportTiles::svg`]).
+pub struct ExportTiles {
+    background: territoria_model::map::Background,
+    clip: Rect,
+    tiles: Vec<(u8, u32, u32, Rect)>,
+    cache_dir: PathBuf,
+    api_key: territoria_io::ApiKey,
+}
+
+/// Exports keep to this many tiles, coarser if need be.
+const MAX_EXPORT_TILES: usize = 256;
+
+impl Tiles {
+    /// The tiles of `background` behind `view`, sharp at `pixels_per_point`
+    /// (`None` without a background, or off Web Mercator).
+    pub fn plan_export(
+        &self,
+        background: &territoria_model::map::Background,
+        crs: &territoria_geo::Crs,
+        view: &View,
+        pixels_per_point: f32,
+    ) -> Option<ExportTiles> {
+        use territoria_model::map::Background;
+        if matches!(background, Background::None) || !crs.is_web_mercator() {
+            return None;
+        }
+        let mut z = zoom_for(view, pixels_per_point);
+        let (xs, ys) = loop {
+            let (xs, ys) = tile_range(view, z);
+            if xs.clone().count() * ys.clone().count() <= MAX_EXPORT_TILES || z == 0 {
+                break (xs, ys);
+            }
+            z -= 1;
+        };
+        let tiles = ys
+            .flat_map(|y| xs.clone().map(move |x| (x, y)))
+            .map(|(x, y)| (z, x, y, tile_rect(view, z, x, y)))
+            .collect();
+        Some(ExportTiles {
+            background: background.clone(),
+            clip: view.rect,
+            tiles,
+            cache_dir: self.cache_dir.clone(),
+            api_key: self.shared.api_key.lock().unwrap().clone(),
+        })
+    }
+}
+
+impl ExportTiles {
+    /// Where the raster tiles are cached.
+    #[cfg(test)]
+    pub fn files(&self) -> Vec<PathBuf> {
+        let territoria_model::map::Background::Tiles { url, .. } = &self.background else {
+            return Vec::new();
+        };
+        let dir = self.cache_dir.join(format!("{:016x}", hash(url)));
+        self.tiles
+            .iter()
+            .map(|(z, x, y, _)| dir.join(format!("{z}/{x}/{y}")))
+            .collect()
+    }
+
+    /// Fetches the tiles (from the disk cache where it has them) and gives
+    /// them as SVG images clipped to the map, with how many failed.
+    pub fn svg(&self) -> (String, usize) {
+        use std::fmt::Write;
+        use territoria_model::map::Background;
+        let agent = ureq::Agent::config_builder()
+            .timeout_global(Some(std::time::Duration::from_secs(30)))
+            .user_agent(USER_AGENT)
+            .build()
+            .new_agent();
+        let vector = match &self.background {
+            Background::Vector { source, style, .. } => {
+                match crate::vector_style::VectorMap::open(source, style, &agent, &self.api_key) {
+                    Ok(m) => Some((m, crate::vector_style::Cache::default())),
+                    Err(e) => {
+                        tracing::warn!("export background: {e}");
+                        return (String::new(), self.tiles.len());
+                    }
+                }
+            }
+            _ => None,
+        };
+        // A data address for each tile, fetched a few at a time.
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let uris: Vec<Mutex<Option<String>>> =
+            self.tiles.iter().map(|_| Mutex::new(None)).collect();
+        std::thread::scope(|scope| {
+            for _ in 0..WORKERS {
+                scope.spawn(|| {
+                    loop {
+                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(&(z, x, y, _)) = self.tiles.get(i) else {
+                            return;
+                        };
+                        let uri = match (&self.background, &vector) {
+                            (_, Some((map, cache))) => {
+                                let fetch = |url: &str| -> Option<Vec<u8>> {
+                                    agent
+                                        .get(self.api_key.apply(url, false))
+                                        .call()
+                                        .ok()?
+                                        .body_mut()
+                                        .with_config()
+                                        .limit(16 << 20)
+                                        .read_to_vec()
+                                        .ok()
+                                };
+                                map.tile_image(z, x, y, &fetch, cache)
+                                    .and_then(|img| crate::heat::png_data_uri(&img))
+                            }
+                            (Background::Tiles { url, .. }, None) => {
+                                let key = (url.clone(), z, x, y);
+                                let file = self
+                                    .cache_dir
+                                    .join(format!("{:016x}", hash(url)))
+                                    .join(format!("{z}/{x}/{y}"));
+                                tile_bytes(&agent, &key, &file, &self.api_key)
+                                    .and_then(|b| data_uri(&b))
+                            }
+                            _ => None,
+                        };
+                        *uris[i].lock().unwrap() = uri;
+                    }
+                });
+            }
+        });
+        let c = self.clip;
+        let mut s = String::new();
+        let _ = write!(
+            s,
+            r#"<clipPath id="background"><rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}"/></clipPath><g clip-path="url(#background)">"#,
+            c.min.x,
+            c.min.y,
+            c.width(),
+            c.height()
+        );
+        let mut failed = 0;
+        for ((_, _, _, r), uri) in self.tiles.iter().zip(uris) {
+            match uri.into_inner().unwrap() {
+                // A hair larger: no seams between tiles.
+                Some(uri) => {
+                    let _ = write!(
+                        s,
+                        r#"<image x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" preserveAspectRatio="none" href="{uri}"/>"#,
+                        r.min.x,
+                        r.min.y,
+                        r.width() + 0.6,
+                        r.height() + 0.6
+                    );
+                }
+                None => failed += 1,
+            }
+        }
+        s.push_str("</g>");
+        (s, failed)
+    }
+}
+
+/// A tile file as a data address: PNG and JPEG as they are, anything else
+/// as PNG.
+fn data_uri(bytes: &[u8]) -> Option<String> {
+    let mime = match bytes {
+        [0x89, b'P', b'N', b'G', ..] => "image/png",
+        [0xff, 0xd8, ..] => "image/jpeg",
+        _ => {
+            let img = image::load_from_memory(bytes).ok()?.to_rgba8();
+            let size = [img.width() as usize, img.height() as usize];
+            return crate::heat::png_data_uri(&ColorImage::from_rgba_unmultiplied(
+                size,
+                img.as_raw(),
+            ));
+        }
+    };
+    Some(format!("data:{mime};base64,{}", crate::heat::base64(bytes)))
 }

@@ -290,7 +290,7 @@ territoria/
 
 ### 5.10 Output (M6)
 
-- [x] Export the map view as PNG (any DPI), SVG, PDF (with title, legends, scale bar, credits; no background tiles yet)
+- [x] Export the map view as PNG (any DPI), SVG, PDF (with title, legends, scale bar, credits and the background map, raster or vector, fetched for the export's sharpness; not in atlas pages yet)
 - [x] Print layouts: page size/orientation, map frame(s) with scale, legend, title, text, image, scale bar, north arrow, inset map, table (A4/A3 landscape or portrait: title, logo, one map frame showing what the screen shows, legend, scale bar, north arrow, an overview inset with the page's part marked, a table of the territories' figures, footer and credits; automatic, or arranged by hand: parts dragged and sized on the page, own texts with {project}/{map}/{date} and images kept in the project, the arrangement kept with the map; one map frame per page)
 - [x] Text templates in layouts (`{project.title}`, `{date}`, `{territory.name}`) (page footers with {project}, {map} and {date}; territory names on report pages)
 - [x] Atlas/reports: one page per territory, area, filter value or column, or combinations; merged PDF or files; data tables per page (XLSX) (per territory: one PDF with an overview and a page per territory with its map, figures and largest areas; map atlas: the current map with a page per value of one or two columns (region and segment) or per area, zoomed, others veiled, with legend and scale bar, as one PDF or a PDF per page, with a workbook of each page's areas; also from the command line; data tables per territory as an Excel workbook with a sheet each)
