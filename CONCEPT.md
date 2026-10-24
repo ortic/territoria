@@ -310,6 +310,7 @@ territoria/
 ### 5.12 Automation & polish (M8)
 
 - [x] CLI: open a project, refresh linked data, export maps/reports/data, run an optimization (exports of maps (PNG, SVG, PDF, web page), reports and plan workbooks; no refresh or optimization from the command line yet)
+- [x] MCP server for AI agents: `territoria mcp` over stdio (open/new/save, describe, add and download boundaries, add data linked or as points, list values, colour by, query, create/balance/edit plans, figures, assign, render the map as an image, all exports, undo; works on project files, not the open window)
 - [x] Project templates (styles, layouts, analyses) and "new from template" (File → Templates: keep the project as a named template, start a new untitled project from one, delete; kept in the data folder)
 - [x] Theme/corporate profile: default colours, fonts, logos (company name and logo (PNG, JPEG, SVG) on exported maps, web pages and reports; territory palettes per plan with a default for new plans; no fonts yet)
 - [x] German UI translation (Settings → Language: menus and all commands, toolbar, panels, tables, the status bar, dialogs, hover hints, messages with their values and the help in German; default names of new maps and territories and errors passed on from file readers stay English)

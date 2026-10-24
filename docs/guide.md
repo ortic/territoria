@@ -146,6 +146,22 @@ A key goes where the address says `{key}`, e.g.
 geocoding and routing addresses without `{key}` get it as the `key`
 parameter.
 
+## Working with an AI agent
+
+Territoria can be driven by an AI agent such as Claude Code or Claude
+Desktop through the Model Context Protocol. Register it once:
+
+```sh
+claude mcp add territoria -- territoria mcp
+```
+
+(in Claude Desktop, add a server with the command `territoria` and the
+argument `mcp`). Then ask in plain words: *“Open sales.territoria, colour
+the postcodes by revenue, make eight territories with the same revenue and
+show me the map.”* The agent adds data, colours, plans, assigns and
+exports with the same functions as the menus, looks at the map as a
+picture, and saves the project; open it in Territoria to carry on.
+
 ## Open data credits
 
 - Boundaries in the download dialog: geoBoundaries, CC BY 4.0.

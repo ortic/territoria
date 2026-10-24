@@ -17,6 +17,7 @@ mod i18n;
 mod inspector;
 mod jobs;
 mod map_view;
+mod mcp;
 mod meshes;
 mod plan_table;
 mod report;

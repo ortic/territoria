@@ -6,6 +6,7 @@
 //! territoria --export-report OUT [--plan NAME] PROJECT (.pdf)
 //! territoria --export-plan OUT [--plan NAME] PROJECT   (.xlsx)
 //! territoria --export-atlas OUT [--per COLUMN[,COLUMN]] [--separate] [--tables] PROJECT
+//! territoria mcp                                        (a Model Context Protocol server)
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -26,6 +27,8 @@ Usage:
                                                        of the columns (or per area); --separate
                                                        writes a PDF per page, --tables a workbook
                                                        with each page's areas
+  territoria mcp                                       an MCP server on stdin/stdout, for AI
+                                                       agents: claude mcp add territoria -- territoria mcp
   territoria --help
 
 Without --map or --plan, the first one in the project is used. Without
@@ -84,6 +87,9 @@ fn parse(args: &[String]) -> Result<Args, String> {
 /// Runs a command-line task if the arguments ask for one: `Some(exit
 /// code)`; `None` means open the app.
 pub fn run(args: &[String]) -> Option<i32> {
+    if args.first().is_some_and(|a| a == "mcp") {
+        return Some(crate::mcp::serve());
+    }
     let a = match parse(args) {
         Ok(a) => a,
         Err(e) => {

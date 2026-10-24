@@ -166,7 +166,6 @@ pub struct AtlasSpec {
 
 impl AtlasSpec {
     /// One PDF with a page per value of `column` (or per area).
-    #[cfg(test)]
     pub fn new(layer: LayerId, column: Option<&str>) -> AtlasSpec {
         AtlasSpec {
             layer,
@@ -273,7 +272,7 @@ pub struct TerritoriaApp {
     pub history: History,
     pub path: Option<PathBuf>,
 
-    values: Cache,
+    pub(crate) values: Cache,
     meshes: MeshCache,
     pub(crate) analyses: AnalysisCache,
     territory_cache: TerritoryCache,
@@ -366,16 +365,7 @@ impl TerritoriaApp {
         let workspace: Option<Workspace> =
             cc.storage.and_then(|s| eframe::get_value(s, WORKSPACE_KEY));
         let mut app = Self::with_settings(settings, paths);
-        if app.paths.is_some() {
-            for p in app.settings.load_keys(&territoria_config::SystemKeychain) {
-                app.error(trf(
-                    "Couldn't read an API key from the system keychain ({problem}).",
-                    &[("problem", &p)],
-                ));
-            }
-            app.stored_keys = app.settings.keys();
-            app.tiles.set_key(&app.settings.tile_key);
-        }
+        app.load_keys();
         app.jobs.set_context(cc.egui_ctx.clone());
         app.apply_theme(&cc.egui_ctx);
         if let Some(w) = workspace {
@@ -392,6 +382,22 @@ impl TerritoriaApp {
             });
         }
         app
+    }
+
+    /// The services' API keys from the system keychain (with settings
+    /// from a file only).
+    pub(crate) fn load_keys(&mut self) {
+        if self.paths.is_none() {
+            return;
+        }
+        for p in self.settings.load_keys(&territoria_config::SystemKeychain) {
+            self.error(trf(
+                "Couldn't read an API key from the system keychain ({problem}).",
+                &[("problem", &p)],
+            ));
+        }
+        self.stored_keys = self.settings.keys();
+        self.tiles.set_key(&self.settings.tile_key);
     }
 
     /// Runs the background jobs to the end (for the command line).
@@ -429,6 +435,10 @@ impl TerritoriaApp {
     /// Makes `map` the one exports use.
     pub(crate) fn use_map(&mut self, map: MapId) {
         self.current_map = Some(map);
+    }
+
+    pub(crate) fn current_map(&self) -> Option<MapId> {
+        self.current_map
     }
 
     pub fn with_settings(settings: Settings, paths: Option<Paths>) -> Self {
@@ -1700,7 +1710,6 @@ impl TerritoriaApp {
 
     /// Reads boundaries and adds them with the suggested key and name
     /// columns, without the dialog.
-    #[cfg(test)]
     pub fn add_boundaries_now(&mut self, path: &Path) -> Result<Vec<LayerId>, String> {
         let layers = territoria_io::read_vector(path, &VectorOptions::default())
             .map_err(|e| e.to_string())?;
@@ -2093,7 +2102,7 @@ impl TerritoriaApp {
     /// The current map as SVG, as it is on screen.
     /// The map as SVG, and the background tiles to put into it (at
     /// [`crate::export_map::BACKGROUND`]).
-    fn map_svg(
+    pub(crate) fn map_svg(
         &mut self,
         settings: &crate::dialogs::MapExportSettings,
     ) -> Result<(String, Option<crate::tiles::ExportTiles>), String> {
@@ -3697,7 +3706,7 @@ impl TerritoriaApp {
         }
     }
 
-    fn apply_link(&mut self, outcome: LinkOutcome) {
+    pub(crate) fn apply_link(&mut self, outcome: LinkOutcome) {
         let LinkOutcome::Link {
             table,
             layer,
@@ -3958,7 +3967,7 @@ impl TerritoriaApp {
     }
 
     /// New plans take the colours chosen in Settings.
-    fn apply_default_palette(&mut self, plan: PlanId) {
+    pub(crate) fn apply_default_palette(&mut self, plan: PlanId) {
         let Some(name) = self.settings.territory_colors.clone() else {
             return;
         };
@@ -3971,7 +3980,7 @@ impl TerritoriaApp {
         }
     }
 
-    fn apply_color_by(&mut self, outcome: ColorByOutcome) {
+    pub(crate) fn apply_color_by(&mut self, outcome: ColorByOutcome) {
         let (layer, name, what, circles, heat) = match outcome {
             ColorByOutcome::Create {
                 layer,
@@ -4445,7 +4454,7 @@ impl TerritoriaApp {
         ));
     }
 
-    fn show_plan(&mut self, plan: PlanId) {
+    pub(crate) fn show_plan(&mut self, plan: PlanId) {
         let map = self.ensure_map();
         let on_map = self
             .project

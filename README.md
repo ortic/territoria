@@ -100,6 +100,25 @@ territoria --export-plan territories.xlsx project.territoria
 territoria --export-atlas atlas.pdf --per Region --separate --tables project.territoria
 ```
 
+## AI agents (MCP)
+
+`territoria mcp` runs Territoria as a [Model Context Protocol](https://modelcontextprotocol.io)
+server, so an agent such as Claude Code or Claude Desktop can make maps and
+plan territories in project files:
+
+```sh
+claude mcp add territoria -- territoria mcp
+```
+
+Its 18 tools open, create and save projects; add boundaries (files or a
+country's open boundaries), tables linked by key and points; colour areas by
+a value; create, balance and edit territory plans and read their figures;
+query tables; draw the map as a picture the agent looks at; and export maps,
+web pages, atlases, reports and workbooks. Then ask, for example: *“Download
+the districts of Austria, make six regions of equal area, show me the map and
+save it as austria.territoria.”* The agent works on files, not on an open
+window; open the saved project in Territoria to carry on by hand.
+
 ## Development
 
 ```sh

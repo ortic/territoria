@@ -1002,7 +1002,7 @@ impl LinkDialog {
         }
     }
 
-    fn rematch(&mut self, project: &Project, auto_mode: bool) {
+    pub(crate) fn rematch(&mut self, project: &Project, auto_mode: bool) {
         self.matching = None;
         let (Some(layer), Some(column), Some(t)) =
             (self.layer, &self.column, project.table(self.table))
