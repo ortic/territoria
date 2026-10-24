@@ -24,8 +24,10 @@
                       Description="Geomarketing and territory planning"
                       WorkingDirectory="INSTALLFOLDER" Icon="territoria.ico" Advertise="yes" />
           </File>
+          <!-- The documents' icon: a file of the installation. -->
+          <File Id="DocumentIcon" Source="$(var.Packaging)\territoria.ico" />
           <!-- .territoria files open in Territoria. -->
-          <ProgId Id="Territoria.Project" Description="Territoria project" Icon="territoria.ico">
+          <ProgId Id="Territoria.Project" Description="Territoria project" Icon="DocumentIcon" IconIndex="0">
             <Extension Id="territoria" ContentType="application/x-territoria">
               <Verb Id="open" Command="Open" TargetFile="territoria.exe" Argument="&quot;%1&quot;" />
             </Extension>
