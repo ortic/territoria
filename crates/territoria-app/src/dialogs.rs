@@ -572,7 +572,7 @@ impl ImportTable {
                     ComboBox::from_id_salt("delim")
                         .selected_text(delimiter_label(d))
                         .show_ui(ui, |ui| {
-                            for c in [b',', b';', b'\t', b'|'] {
+                            for c in *b",;\t|" {
                                 ui.selectable_value(&mut sel, c, delimiter_label(c));
                             }
                         });
@@ -2362,10 +2362,10 @@ impl ExportMapDialog {
                         self.selected = None;
                     }
                 });
-                if let Some(layout) = &mut s.layout {
-                    if layout_editor(ui, layout, size, &mut self.selected) {
-                        self.wants_image = true;
-                    }
+                if let Some(layout) = &mut s.layout
+                    && layout_editor(ui, layout, size, &mut self.selected)
+                {
+                    self.wants_image = true;
                 }
             }
             ui.label(

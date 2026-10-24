@@ -705,7 +705,7 @@ pub fn hatch_segments(rings: &[Vec<egui::Pos2>], spacing: f32) -> Vec<[egui::Pos
             }
         }
         xs.sort_by(f32::total_cmp);
-        for pair in xs.chunks_exact(2) {
+        for pair in xs.as_chunks::<2>().0 {
             out.push([
                 egui::pos2(pair[0], pair[0] - c),
                 egui::pos2(pair[1], pair[1] - c),

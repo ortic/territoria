@@ -78,7 +78,7 @@ pub fn decode(bytes: &[u8], label: Option<&str>) -> (String, &'static str) {
 pub fn detect_delimiter(text: &str) -> u8 {
     let sample: String = text.lines().take(50).collect::<Vec<_>>().join("\n");
     let mut best = (b',', 0usize, 0usize);
-    for d in [b',', b';', b'\t', b'|'] {
+    for d in *b",;\t|" {
         let mut rdr = csv::ReaderBuilder::new()
             .delimiter(d)
             .has_headers(false)

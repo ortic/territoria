@@ -415,32 +415,26 @@ fn expression(op: &str, args: &[Value], cx: &Ctx) -> Value {
         "match" => {
             let input = arg(0);
             let rest = &args[1.min(args.len())..];
-            let mut pairs = rest.chunks_exact(2);
-            for p in pairs.by_ref() {
-                let hit = match &p[0] {
+            let (pairs, default) = rest.as_chunks::<2>();
+            for [label, output] in pairs {
+                let hit = match label {
                     Value::Array(labels) => labels.iter().any(|l| equal(l, &input)),
                     l => equal(l, &input),
                 };
                 if hit {
-                    return eval(&p[1], cx);
+                    return eval(output, cx);
                 }
             }
-            pairs
-                .remainder()
-                .first()
-                .map_or(Value::Null, |d| eval(d, cx))
+            default.first().map_or(Value::Null, |d| eval(d, cx))
         }
         "case" => {
-            let mut pairs = args.chunks_exact(2);
-            for p in pairs.by_ref() {
-                if truthy(&eval(&p[0], cx)) {
-                    return eval(&p[1], cx);
+            let (pairs, default) = args.as_chunks::<2>();
+            for [condition, output] in pairs {
+                if truthy(&eval(condition, cx)) {
+                    return eval(output, cx);
                 }
             }
-            pairs
-                .remainder()
-                .first()
-                .map_or(Value::Null, |d| eval(d, cx))
+            default.first().map_or(Value::Null, |d| eval(d, cx))
         }
         "coalesce" => args
             .iter()
@@ -462,7 +456,9 @@ fn expression(op: &str, args: &[Value], cx: &Ctx) -> Value {
             let stops: Vec<(f64, Value)> = args
                 .get(2..)
                 .unwrap_or_default()
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .filter_map(|p| Some((p[0].as_f64()?, eval(&p[1], cx))))
                 .collect();
             by_stops(x, &stops, base, false)
@@ -475,7 +471,9 @@ fn expression(op: &str, args: &[Value], cx: &Ctx) -> Value {
             stops.extend(
                 args.get(2..)
                     .unwrap_or_default()
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .filter_map(|p| Some((p[0].as_f64()?, eval(&p[1], cx)))),
             );
             by_stops(x, &stops, 1.0, true)

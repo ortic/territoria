@@ -252,7 +252,9 @@ impl Reader<'_> {
         let n = self.count()?;
         let raw = self.bytes(n * 16)?;
         Ok(raw
-            .chunks_exact(16)
+            .as_chunks::<16>()
+            .0
+            .iter()
             .map(|c| Coord {
                 x: f64::from_le_bytes(c[..8].try_into().unwrap()),
                 y: f64::from_le_bytes(c[8..].try_into().unwrap()),
