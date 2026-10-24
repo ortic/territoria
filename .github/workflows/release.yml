@@ -15,21 +15,28 @@ env:
 permissions:
   contents: write
 
+# The runners follow the repository variables described in ci.yml. With
+# HOSTED_RUNNERS off the release carries only the AppImage.
 jobs:
   linux:
-    # The oldest supported runner: the AppImage then runs on older systems too.
-    runs-on: ubuntu-22.04
+    # Hosted: the oldest supported image, so the AppImage runs on older
+    # systems too.
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-22.04' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
       - run: sh packaging/build-appimage.sh
       - uses: actions/upload-artifact@v4
         with:
           name: linux
           path: target/Territoria-*.AppImage
+      - if: always() && runner.environment == 'self-hosted'
+        run: cargo clean
 
   macos:
+    if: vars.HOSTED_RUNNERS != 'off'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,6 +51,7 @@ jobs:
           path: target/Territoria-*.dmg
 
   windows:
+    if: vars.HOSTED_RUNNERS != 'off'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -58,8 +66,12 @@ jobs:
 
   release:
     needs: [linux, macos, windows]
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
+    # Skipped macOS and Windows jobs don't hold the release back.
+    if: >-
+      always() && startsWith(github.ref, 'refs/tags/') &&
+      needs.linux.result == 'success' &&
+      !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - name: Tag matches the version

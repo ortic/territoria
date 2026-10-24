@@ -9,29 +9,50 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
 
+# Repository variables choose the runners:
+#   LINUX_RUNNER    label for the Linux jobs (default ubuntu-latest);
+#                   territoria-local is the self-hosted runner.
+#   HOSTED_RUNNERS  off skips the macOS and Windows jobs.
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      # A self-hosted runner keeps its disk between jobs.
+      - if: always() && runner.environment == 'self-hosted'
+        run: cargo clean
+
+  test-linux:
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
+      - run: cargo build --workspace --all-targets
+      # Screenshot tests skip themselves unless TERRITORIA_SCREENSHOT_DIR is
+      # set; the UI tests that drive the app run without a GPU.
+      - run: cargo test --workspace --no-fail-fast
+      - if: always() && runner.environment == 'self-hosted'
+        run: cargo clean
 
   test:
+    if: vars.HOSTED_RUNNERS != 'off'
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace --all-targets
-      # Screenshot tests skip themselves unless TERRITORIA_SCREENSHOT_DIR is
-      # set; the UI tests that drive the app run without a GPU.
       - run: cargo test --workspace --no-fail-fast
