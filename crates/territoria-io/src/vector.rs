@@ -156,8 +156,8 @@ pub fn read_vector(
         .to_owned();
     match ext.as_str() {
         "shp" => {
-            let read = |ext: &str| std::fs::read(path.with_extension(ext)).ok();
-            let shp = std::fs::read(path)?;
+            let read = |ext: &str| crate::files::read(&path.with_extension(ext)).ok();
+            let shp = crate::files::read(path)?;
             let files = ShapefileParts {
                 shp,
                 shx: read("shx"),
@@ -169,8 +169,8 @@ pub fn read_vector(
         }
         "zip" => read_zip(path, options),
         "gpkg" => crate::gpkg::read_geopackage(path, options),
-        "geojson" | "json" => read_geojson(&stem, &std::fs::read(path)?, options),
-        "kml" => crate::kml::read_kml(&stem, &std::fs::read(path)?, options),
+        "geojson" | "json" => read_geojson(&stem, &crate::files::read(path)?, options),
+        "kml" => crate::kml::read_kml(&stem, &crate::files::read(path)?, options),
         "kmz" => crate::kml::read_kmz(&stem, path, options),
         _ => Err(ImportError::Unsupported(ext)),
     }
@@ -186,7 +186,7 @@ struct ShapefileParts {
 
 /// All shapefiles and GeoJSON files inside a zip archive.
 fn read_zip(path: &Path, options: &VectorOptions) -> Result<Vec<ImportedLayer>, ImportError> {
-    let mut archive = zip::ZipArchive::new(std::fs::File::open(path)?)
+    let mut archive = zip::ZipArchive::new(crate::files::open(path)?)
         .map_err(|e| ImportError::Format(format!("not a readable zip file: {e}")))?;
     let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
     for i in 0..archive.len() {
@@ -243,13 +243,7 @@ fn read_zip(path: &Path, options: &VectorOptions) -> Result<Vec<ImportedLayer>, 
         } else if lower.ends_with(".kml") {
             layers.extend(crate::kml::read_kml(&stem, bytes, options)?);
         } else if lower.ends_with(".gpkg") {
-            // SQLite reads files: unpack it next to the other temporary files.
-            let tmp =
-                std::env::temp_dir().join(format!("territoria-{}-{stem}.gpkg", std::process::id()));
-            std::fs::write(&tmp, bytes)?;
-            let read = crate::gpkg::read_geopackage(&tmp, options);
-            let _ = std::fs::remove_file(&tmp);
-            layers.extend(read?);
+            layers.extend(crate::gpkg::read_geopackage_bytes(bytes, options)?);
         }
     }
     if layers.is_empty() {

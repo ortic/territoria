@@ -41,7 +41,7 @@ pub struct Logo {
 impl Logo {
     /// The image at `path` (PNG, JPEG or SVG), sized to fit `max_w` × `max_h`.
     pub fn load(path: &std::path::Path, max_w: f32, max_h: f32) -> Option<Logo> {
-        let bytes = std::fs::read(path).ok()?;
+        let bytes = territoria_io::files::read(path).ok()?;
         let ext = path
             .extension()
             .and_then(|e| e.to_str())

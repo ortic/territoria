@@ -1,5 +1,7 @@
 //! Background maps: XYZ raster tiles in Web Mercator, fetched on worker
-//! threads and cached on disk.
+//! threads and cached on disk. In the browser the browser fetches and
+//! caches raster tiles; vector maps and backgrounds in exports are
+//! desktop-only there for now.
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -68,11 +70,13 @@ pub const VECTOR_PRESETS: &[VectorPreset] = &[
 ];
 
 const HALF_WORLD: f64 = 20_037_508.342_789_244;
+#[cfg(not(target_arch = "wasm32"))]
 const USER_AGENT: &str = concat!(
     "Territoria/",
     env!("CARGO_PKG_VERSION"),
     " (desktop map viewer)"
 );
+/// Tiles loading at a time.
 const WORKERS: usize = 4;
 const MAX_TEXTURES: usize = 600;
 
@@ -84,7 +88,9 @@ enum Slot {
     Failed,
 }
 
-/// A vector map being opened, ready, or what went wrong.
+/// A vector map being opened, ready, or what went wrong (in the browser
+/// always that).
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 enum VectorState {
     Opening,
     Ready(
@@ -105,6 +111,9 @@ struct Shared {
     vectors: Mutex<HashMap<String, VectorState>>,
     /// For servers that need one, in place of `{key}` in the address.
     api_key: Mutex<territoria_io::ApiKey>,
+    /// Requests the browser is answering.
+    #[cfg(target_arch = "wasm32")]
+    loading: std::sync::atomic::AtomicUsize,
 }
 
 /// Tiles in memory (as textures) and on disk.
@@ -113,6 +122,7 @@ pub struct Tiles {
     shared: Arc<Shared>,
     rx: Receiver<(Key, Option<ColorImage>)>,
     tx: Sender<(Key, Option<ColorImage>)>,
+    #[cfg(not(target_arch = "wasm32"))]
     started: bool,
     cache_dir: PathBuf,
     frame: u64,
@@ -131,9 +141,12 @@ impl Tiles {
                 queue: Mutex::new(VecDeque::new()),
                 vectors: Mutex::new(HashMap::new()),
                 api_key: Mutex::new(Default::default()),
+                #[cfg(target_arch = "wasm32")]
+                loading: Default::default(),
             }),
             rx,
             tx,
+            #[cfg(not(target_arch = "wasm32"))]
             started: false,
             cache_dir,
             frame: 0,
@@ -150,6 +163,7 @@ impl Tiles {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn start(&mut self, ctx: &egui::Context) {
         if self.started {
             return;
@@ -190,6 +204,30 @@ impl Tiles {
         }
     }
 
+    /// In the browser: asks for the next tiles in the queue, a few at a
+    /// time.
+    #[cfg(target_arch = "wasm32")]
+    fn start(&mut self, ctx: &egui::Context) {
+        use std::sync::atomic::Ordering;
+        while self.shared.loading.load(Ordering::Relaxed) < WORKERS {
+            let Some((key, _)) = self.shared.queue.lock().unwrap().pop_back() else {
+                break;
+            };
+            self.shared.loading.fetch_add(1, Ordering::Relaxed);
+            let url = tile_url(&key, &self.shared.api_key.lock().unwrap());
+            let (shared, tx, ctx) = (self.shared.clone(), self.tx.clone(), ctx.clone());
+            wasm_bindgen_futures::spawn_local(async move {
+                let image = crate::web::fetch(&url)
+                    .await
+                    .ok()
+                    .and_then(|bytes| decode(&bytes));
+                shared.loading.fetch_sub(1, Ordering::Relaxed);
+                let _ = tx.send((key, image));
+                ctx.request_repaint();
+            });
+        }
+    }
+
     /// Draws a vector map, once it is open (opening starts in the
     /// background on first use).
     pub fn paint_vector(
@@ -207,6 +245,13 @@ impl Tiles {
             match vectors.get(&id) {
                 Some(VectorState::Ready(..)) => true,
                 Some(_) => false,
+                #[cfg(target_arch = "wasm32")]
+                None => {
+                    let e = "vector maps aren't available in the browser version yet";
+                    vectors.insert(id.clone(), VectorState::Failed(e.into()));
+                    false
+                }
+                #[cfg(not(target_arch = "wasm32"))]
                 None => {
                     vectors.insert(id.clone(), VectorState::Opening);
                     let shared = self.shared.clone();
@@ -336,6 +381,8 @@ impl Tiles {
             q.retain(|(k, _)| k.1 == z);
             q.extend(wanted);
         }
+        #[cfg(target_arch = "wasm32")]
+        self.start(painter.ctx());
         self.evict(painter.ctx());
     }
 
@@ -392,6 +439,7 @@ fn hash(s: &str) -> u64 {
 }
 
 /// A tile of an open vector map, drawn.
+#[cfg(not(target_arch = "wasm32"))]
 fn draw_vector(
     shared: &Shared,
     agent: &ureq::Agent,
@@ -415,19 +463,33 @@ fn draw_vector(
 }
 
 /// From the disk cache, else from the server (and cached).
+#[cfg(not(target_arch = "wasm32"))]
 fn load(
     agent: &ureq::Agent,
     key: &Key,
     file: &std::path::Path,
     api_key: &territoria_io::ApiKey,
 ) -> Option<ColorImage> {
-    let bytes = tile_bytes(agent, key, file, api_key)?;
-    let img = image::load_from_memory(&bytes).ok()?.to_rgba8();
+    decode(&tile_bytes(agent, key, file, api_key)?)
+}
+
+fn decode(bytes: &[u8]) -> Option<ColorImage> {
+    let img = image::load_from_memory(bytes).ok()?.to_rgba8();
     let size = [img.width() as usize, img.height() as usize];
     Some(ColorImage::from_rgba_unmultiplied(size, img.as_raw()))
 }
 
+/// The tile's address on its server.
+fn tile_url((url, z, x, y): &Key, api_key: &territoria_io::ApiKey) -> String {
+    api_key
+        .apply(url, false)
+        .replace("{z}", &z.to_string())
+        .replace("{x}", &x.to_string())
+        .replace("{y}", &y.to_string())
+}
+
 /// A tile's file as the server sends it, from the disk cache if there.
+#[cfg(not(target_arch = "wasm32"))]
 fn tile_bytes(
     agent: &ureq::Agent,
     key: &Key,
@@ -437,13 +499,7 @@ fn tile_bytes(
     let bytes = match std::fs::read(file) {
         Ok(b) => b,
         Err(_) => {
-            let (url, z, x, y) = key;
-            let url = api_key
-                .apply(url, false)
-                .replace("{z}", &z.to_string())
-                .replace("{x}", &x.to_string())
-                .replace("{y}", &y.to_string());
-            let mut response = agent.get(&url).call().ok()?;
+            let mut response = agent.get(&tile_url(key, api_key)).call().ok()?;
             let bytes = response
                 .body_mut()
                 .with_config()
@@ -497,6 +553,7 @@ fn tile_rect(view: &View, z: u8, x: u32, y: u32) -> Rect {
 
 /// The background map of an export: which tiles, where. Planned with the
 /// view, fetched in the background ([`ExportTiles::svg`]).
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub struct ExportTiles {
     background: territoria_model::map::Background,
     clip: Rect,
@@ -519,7 +576,11 @@ impl Tiles {
         pixels_per_point: f32,
     ) -> Option<ExportTiles> {
         use territoria_model::map::Background;
-        if matches!(background, Background::None) || !crs.is_web_mercator() {
+        // The browser can't wait for tiles: exports there have none yet.
+        if cfg!(target_arch = "wasm32")
+            || matches!(background, Background::None)
+            || !crs.is_web_mercator()
+        {
             return None;
         }
         let mut z = zoom_for(view, pixels_per_point);
@@ -558,8 +619,15 @@ impl ExportTiles {
             .collect()
     }
 
+    /// In the browser there are none (see [`Tiles::plan_export`]).
+    #[cfg(target_arch = "wasm32")]
+    pub fn svg(&self) -> (String, usize) {
+        (String::new(), self.tiles.len())
+    }
+
     /// Fetches the tiles (from the disk cache where it has them) and gives
     /// them as SVG images clipped to the map, with how many failed.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn svg(&self) -> (String, usize) {
         use std::fmt::Write;
         use territoria_model::map::Background;
@@ -658,6 +726,7 @@ impl ExportTiles {
 
 /// A tile file as a data address: PNG and JPEG as they are, anything else
 /// as PNG.
+#[cfg(not(target_arch = "wasm32"))]
 fn data_uri(bytes: &[u8]) -> Option<String> {
     let mime = match bytes {
         [0x89, b'P', b'N', b'G', ..] => "image/png",

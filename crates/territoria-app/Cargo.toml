@@ -12,7 +12,6 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
-eframe.workspace = true
 egui.workspace = true
 egui_dock.workspace = true
 egui_extras.workspace = true
@@ -30,12 +29,27 @@ territoria-io.workspace = true
 territoria-model.workspace = true
 territoria-render.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
-ureq.workspace = true
 resvg = "0.45"
 svg2pdf = "0.13"
 pdf-writer = "0.12"
+web-time.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# wgpu with OpenGL as the fallback.
+eframe = { workspace = true, features = ["wgpu", "glow", "wayland", "x11"] }
+tracing-subscriber.workspace = true
+ureq.workspace = true
+
+# In the browser: WebGL, logs to the console, files and tiles through the
+# page.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+eframe = { workspace = true, features = ["glow"] }
+js-sys = "0.3"
+log = "0.4"
+tracing = { workspace = true, features = ["log"] }
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["Blob", "BlobPropertyBag", "Document", "Element", "HtmlAnchorElement", "HtmlCanvasElement", "Response", "Storage", "Url", "Window"] }
 
 [dev-dependencies]
 egui_kittest = { version = "0.36", features = ["eframe", "wgpu", "snapshot"] }

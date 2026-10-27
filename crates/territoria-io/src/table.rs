@@ -48,7 +48,7 @@ pub fn read_table(path: &Path, options: &TableOptions) -> Result<(Table, TableIn
     if is_spreadsheet(path) {
         read_spreadsheet(path, options)
     } else {
-        let bytes = std::fs::read(path)?;
+        let bytes = crate::files::read(path)?;
         read_text(&bytes, options)
     }
 }
@@ -192,16 +192,41 @@ fn build(mut rows: Vec<Vec<String>>, header: bool, decimal: Option<Decimal>) -> 
 }
 
 pub fn sheet_names(path: &Path) -> Result<Vec<String>, ImportError> {
-    let wb = calamine::open_workbook_auto(path).map_err(|e| ImportError::Format(e.to_string()))?;
-    Ok(wb.sheet_names())
+    Ok(open_workbook(path)?.sheet_names())
+}
+
+type Workbook = calamine::Sheets<std::io::BufReader<crate::files::File>>;
+
+/// Opens a workbook by its extension, like `calamine::open_workbook_auto`.
+fn open_workbook(path: &Path) -> Result<Workbook, ImportError> {
+    use calamine::{Ods, Sheets, Xls, Xlsb, Xlsx, open_workbook_from_rs};
+    let err = |e: calamine::Error| ImportError::Format(e.to_string());
+    let file = std::io::BufReader::new(crate::files::open(path)?);
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_lowercase);
+    match ext.as_deref() {
+        Some("xls") => open_workbook_from_rs::<Xls<_>, _>(file)
+            .map(Sheets::Xls)
+            .map_err(|e| err(e.into())),
+        Some("xlsb") => open_workbook_from_rs::<Xlsb<_>, _>(file)
+            .map(Sheets::Xlsb)
+            .map_err(|e| err(e.into())),
+        Some("ods") => open_workbook_from_rs::<Ods<_>, _>(file)
+            .map(Sheets::Ods)
+            .map_err(|e| err(e.into())),
+        _ => open_workbook_from_rs::<Xlsx<_>, _>(file)
+            .map(Sheets::Xlsx)
+            .map_err(|e| err(e.into())),
+    }
 }
 
 fn read_spreadsheet(
     path: &Path,
     options: &TableOptions,
 ) -> Result<(Table, TableInfo), ImportError> {
-    let mut wb =
-        calamine::open_workbook_auto(path).map_err(|e| ImportError::Format(e.to_string()))?;
+    let mut wb = open_workbook(path)?;
     let sheets = wb.sheet_names();
     let sheet = options
         .sheet

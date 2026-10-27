@@ -528,7 +528,7 @@ pub fn optimize(
     options: &Options,
     progress: &mut dyn FnMut(f32) -> bool,
 ) -> Solution {
-    let start_time = std::time::Instant::now();
+    let start_time = web_time::Instant::now();
     let n = problem.units();
     let k = problem.territories();
     let initial: Vec<u32> = problem.initial.iter().map(|t| t.unwrap_or(NONE)).collect();

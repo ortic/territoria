@@ -89,6 +89,16 @@ impl Command {
         Command::ALL.iter().copied().find(|c| c.id() == id)
     }
 
+    /// Whether this version can do it: the browser has no folder for
+    /// templates, can't download boundaries yet and has no window to close.
+    pub fn available(self) -> bool {
+        !(cfg!(target_arch = "wasm32")
+            && matches!(
+                self,
+                Command::Templates | Command::DownloadBoundaries | Command::Quit
+            ))
+    }
+
     /// Label without the category prefix, for menus.
     pub fn short_label(self) -> &'static str {
         let label = self.label();

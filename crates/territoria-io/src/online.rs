@@ -10,6 +10,7 @@ use std::time::{Duration, SystemTime};
 use serde::{Deserialize, Serialize};
 
 use crate::ImportError;
+use crate::http::Client;
 
 const CATALOG_URL: &str = "https://www.geoboundaries.org/api/current/gbOpen/ALL/ALL/";
 pub(crate) const USER_AGENT: &str = concat!("Territoria/", env!("CARGO_PKG_VERSION"));
@@ -113,13 +114,12 @@ pub fn parse_catalog(json: &str) -> Result<Vec<BoundarySet>, ImportError> {
     Ok(sets)
 }
 
-fn agent() -> ureq::Agent {
-    ureq::Agent::config_builder()
-        .timeout_connect(Some(Duration::from_secs(20)))
-        .timeout_global(Some(Duration::from_secs(600)))
-        .user_agent(USER_AGENT)
-        .build()
-        .new_agent()
+fn client() -> Client {
+    Client::new(
+        USER_AGENT,
+        Some(Duration::from_secs(20)),
+        Duration::from_secs(600),
+    )
 }
 
 /// The catalogue, from `cache_dir` when fresh, else from the internet (and
@@ -134,10 +134,7 @@ pub fn catalog(cache_dir: &Path) -> Result<Vec<BoundarySet>, ImportError> {
     if fresh && let Ok(text) = std::fs::read_to_string(&file) {
         return parse_catalog(&text);
     }
-    let fetched = agent()
-        .get(CATALOG_URL)
-        .call()
-        .and_then(|mut r| r.body_mut().with_config().limit(64 << 20).read_to_string());
+    let fetched = client().text(CATALOG_URL, &[]);
     match fetched {
         Ok(text) => {
             let sets = parse_catalog(&text)?;
@@ -157,6 +154,8 @@ pub fn catalog(cache_dir: &Path) -> Result<Vec<BoundarySet>, ImportError> {
 /// Downloads a boundary set into `cache_dir` (or finds it there).
 /// `progress(bytes, total)` is called while downloading; returning `false`
 /// cancels.
+// In the browser `File` is a stand-in without a `Drop`.
+#[cfg_attr(target_arch = "wasm32", allow(clippy::drop_non_drop))]
 pub fn download(
     set: &BoundarySet,
     simplified: bool,
@@ -173,14 +172,12 @@ pub fn download(
         &set.url
     };
     std::fs::create_dir_all(cache_dir)?;
-    let mut response = agent()
-        .get(url)
-        .call()
+    let client = client();
+    let (total, mut reader) = client
+        .open(url)
         .map_err(|e| ImportError::Format(format!("download failed: {e}")))?;
-    let total = response.body().content_length();
     let tmp = path.with_extension("part");
     let mut out = std::fs::File::create(&tmp)?;
-    let mut reader = response.body_mut().as_reader();
     let mut buf = vec![0u8; 1 << 16];
     let mut done = 0u64;
     loop {

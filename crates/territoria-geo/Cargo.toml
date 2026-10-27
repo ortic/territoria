@@ -13,3 +13,6 @@ spade = "2"
 proj4rs.workspace = true
 rstar.workspace = true
 serde.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+proj4rs = { workspace = true, features = ["aeqd"] }

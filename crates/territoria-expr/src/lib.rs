@@ -91,8 +91,8 @@ pub struct Formula {
 }
 
 fn today() -> i32 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
         .map_or(0, |d| (d.as_secs() / 86_400) as i32)
 }
 

@@ -1,6 +1,9 @@
 //! Vector background maps: a MapLibre style (fills, lines, circles and
 //! the background; no labels yet) drawn into tile images.
 
+// The browser version doesn't open vector maps yet (see tiles.rs).
+#![cfg_attr(target_arch = "wasm32", allow(dead_code))]
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -880,6 +883,7 @@ impl VectorMap {
     /// Opens `source` (a .pmtiles or .mbtiles file, or a tile address) with
     /// `style` (a style file or address; empty: the built-in one). Without
     /// a source, the style's own vector source is used.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn open(
         source: &str,
         style: &str,

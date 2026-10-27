@@ -14,8 +14,9 @@ flate2 = "1"
 geo.workspace = true
 geo-types.workspace = true
 geojson.workspace = true
-# SQLite compiled in: GeoPackages need no system library.
-rusqlite = { version = "0.40", features = ["bundled"] }
+# SQLite compiled in: GeoPackages need no system library (in the browser it
+# is sqlite-wasm-rs). `serialize` opens GeoPackages held in memory.
+rusqlite = { version = "0.40", features = ["bundled", "serialize"] }
 rust_xlsxwriter.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -23,6 +24,13 @@ shapefile = { workspace = true, features = ["encoding_rs"] }
 territoria-data.workspace = true
 territoria-geo.workspace = true
 thiserror.workspace = true
-ureq.workspace = true
 roxmltree = "0.20"
+web-time.workspace = true
 zip.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ureq.workspace = true
+
+# Excel's timestamps from the browser's clock (std has none there).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+rust_xlsxwriter = { workspace = true, features = ["wasm"] }

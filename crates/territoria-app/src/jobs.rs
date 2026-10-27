@@ -1,6 +1,7 @@
 //! Background work: imports, mesh building, loading and saving. Jobs run on
 //! their own threads and report back through a channel; the UI thread
-//! never waits for them.
+//! never waits for them. The browser has no threads: there a job runs at
+//! once, and the page waits until it is done.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -202,8 +203,14 @@ impl Jobs {
         self.ctx = Some(ctx);
     }
 
-    /// Runs `work` on a new thread; `label` shows in the status bar (empty
-    /// for quiet jobs).
+    /// The UI's context, to wake it up.
+    #[cfg(target_arch = "wasm32")]
+    pub fn context(&self) -> Option<egui::Context> {
+        self.ctx.clone()
+    }
+
+    /// Runs `work` on a new thread (in the browser: now); `label` shows in
+    /// the status bar (empty for quiet jobs).
     pub fn spawn(
         &mut self,
         label: impl Into<String>,
@@ -238,6 +245,14 @@ impl Jobs {
         };
         let tx = self.tx.clone();
         let ctx = self.ctx.clone();
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = tx.send((id, work(&job)));
+            if let Some(ctx) = ctx {
+                ctx.request_repaint();
+            }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
         std::thread::Builder::new()
             .name("territoria-job".into())
             .spawn(move || {

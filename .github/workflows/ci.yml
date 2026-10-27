@@ -43,6 +43,25 @@ jobs:
       - if: always() && runner.environment == 'self-hosted'
         run: cargo clean
 
+  # The browser version (see pages.yml) must keep building.
+  wasm:
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
+      # SQLite is compiled for wasm with clang and llvm-ar (a self-hosted
+      # runner brings its own).
+      - if: runner.environment == 'github-hosted'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang llvm
+      - run: cargo clippy --target wasm32-unknown-unknown --workspace -- -D warnings
+      - if: always() && runner.environment == 'self-hosted'
+        run: cargo clean
+
   test:
     if: vars.HOSTED_RUNNERS != 'off'
     strategy:

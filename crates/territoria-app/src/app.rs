@@ -3,19 +3,20 @@
 use crate::i18n::{tr, tr_str, trf};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use egui::{Align, Layout, RichText, Ui};
 use egui_dock::{DockArea, DockState, Style as DockStyle, TabViewer};
 use serde::{Deserialize, Serialize};
 use territoria_analysis::{CategoryScale, ColorScale};
-use territoria_config::{Paths, Settings, ThemeChoice, load_toml, save_toml};
+use territoria_config::{Paths, Settings, ThemeChoice, save_toml};
 use territoria_io::{GeometryKind, TableOptions, VectorOptions};
 use territoria_model::{
     BoundaryStyle, Cache, History, LayerId, MapId, MapLayer, MapLayerId, MapLayerKind, PlanId,
     Project, SourceInfo, TableId, TerritoryId,
 };
 use tracing::{error, info};
+use web_time::Instant;
 
 use crate::commands::{Command, Keymap};
 use crate::dialogs::{
@@ -166,6 +167,7 @@ pub struct AtlasSpec {
 
 impl AtlasSpec {
     /// One PDF with a page per value of `column` (or per area).
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn new(layer: LayerId, column: Option<&str>) -> AtlasSpec {
         AtlasSpec {
             layer,
@@ -358,10 +360,13 @@ impl TerritoriaApp {
         open: Option<PathBuf>,
     ) -> Self {
         theme::install(&cc.egui_ctx);
+        #[cfg(not(target_arch = "wasm32"))]
         let settings: Settings = paths
             .as_ref()
-            .and_then(|p| load_toml(&p.settings_file()).ok())
+            .and_then(|p| territoria_config::load_toml(&p.settings_file()).ok())
             .unwrap_or_default();
+        #[cfg(target_arch = "wasm32")]
+        let settings = crate::web::load_settings().unwrap_or_default();
         let workspace: Option<Workspace> =
             cc.storage.and_then(|s| eframe::get_value(s, WORKSPACE_KEY));
         let mut app = Self::with_settings(settings, paths);
@@ -401,6 +406,7 @@ impl TerritoriaApp {
     }
 
     /// Runs the background jobs to the end (for the command line).
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn finish_jobs(&mut self, timeout: Duration) {
         let start = Instant::now();
         loop {
@@ -415,6 +421,7 @@ impl TerritoriaApp {
     }
 
     /// Error messages shown so far (for the command line).
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn errors(&self) -> Vec<String> {
         self.toasts
             .iter()
@@ -424,6 +431,7 @@ impl TerritoriaApp {
     }
 
     /// Messages shown so far (for the command line).
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn messages(&self) -> Vec<String> {
         self.toasts
             .iter()
@@ -433,10 +441,12 @@ impl TerritoriaApp {
     }
 
     /// Makes `map` the one exports use.
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn use_map(&mut self, map: MapId) {
         self.current_map = Some(map);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn current_map(&self) -> Option<MapId> {
         self.current_map
     }
@@ -444,7 +454,7 @@ impl TerritoriaApp {
     pub fn with_settings(settings: Settings, paths: Option<Paths>) -> Self {
         let tile_dir = match &paths {
             Some(p) => p.data_dir.join("tiles"),
-            None => std::env::temp_dir().join("territoria-tiles"),
+            None => crate::temp_dir().join("territoria-tiles"),
         };
         TerritoriaApp {
             paths,
@@ -551,6 +561,10 @@ impl TerritoriaApp {
         {
             error!("saving settings: {e:#}");
         }
+        #[cfg(target_arch = "wasm32")]
+        if let Err(e) = crate::web::save_settings(&self.settings) {
+            error!("saving settings: {e}");
+        }
     }
 
     /// Shows a message; fixed texts are translated here, texts with
@@ -589,7 +603,12 @@ impl TerritoriaApp {
             return;
         }
         let (tx, rx) = std::sync::mpsc::channel();
+        #[cfg(not(target_arch = "wasm32"))]
         let mut dialog = rfd::FileDialog::new();
+        #[cfg(target_arch = "wasm32")]
+        let mut dialog = rfd::AsyncFileDialog::new();
+        // The name to save under.
+        let mut name = None;
         if let Some(dir) = &self.settings.last_dir {
             dialog = dialog.set_directory(dir);
         }
@@ -597,13 +616,17 @@ impl TerritoriaApp {
             FileAction::OpenProject => {
                 dialog.add_filter("Territoria project", &[territoria_model::file::EXTENSION])
             }
-            FileAction::SaveProjectAs => dialog
-                .add_filter("Territoria project", &[territoria_model::file::EXTENSION])
-                .set_file_name(format!(
+            FileAction::SaveProjectAs => {
+                let file = format!(
                     "{}.{}",
                     self.project.title,
                     territoria_model::file::EXTENSION
-                )),
+                );
+                name = Some(file.clone());
+                dialog
+                    .add_filter("Territoria project", &[territoria_model::file::EXTENSION])
+                    .set_file_name(file)
+            }
             FileAction::AddBoundaries | FileAction::ReplaceLayer(_) => dialog
                 .add_filter(
                     "Boundaries (Shapefile, GeoJSON, GeoPackage, KML, zip)",
@@ -623,7 +646,7 @@ impl TerritoriaApp {
                 dialog.add_filter("MapLibre style (JSON)", &["json"])
             }
             FileAction::Export(e) => {
-                let (filter, ext, name) = match e.clone() {
+                let (filter, ext, title) = match e.clone() {
                     Export::PlanSheets(p) => (
                         "Excel workbook",
                         "xlsx",
@@ -695,20 +718,37 @@ impl TerritoriaApp {
                         }),
                     ),
                 };
-                dialog
-                    .add_filter(filter, &[ext])
-                    .set_file_name(format!("{}.{ext}", name.unwrap_or_else(|| "export".into())))
+                let file = format!("{}.{ext}", title.unwrap_or_else(|| "export".into()));
+                name = Some(file.clone());
+                dialog.add_filter(filter, &[ext]).set_file_name(file)
             }
         };
         let save = matches!(action, FileAction::SaveProjectAs | FileAction::Export(_));
-        std::thread::spawn(move || {
-            let path = if save {
-                dialog.save_file()
-            } else {
-                dialog.pick_file()
-            };
-            let _ = tx.send(path);
-        });
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            // The dialog suggests it.
+            let _ = name;
+            std::thread::spawn(move || {
+                let path = if save {
+                    dialog.save_file()
+                } else {
+                    dialog.pick_file()
+                };
+                let _ = tx.send(path);
+            });
+        }
+        // The browser has no save dialog: files are written, then downloaded.
+        #[cfg(target_arch = "wasm32")]
+        if save {
+            let _ = tx.send(name.map(|n| crate::web::download_path(&n)));
+        } else {
+            // A shapefile's parts are picked together.
+            let several = matches!(
+                action,
+                FileAction::AddBoundaries | FileAction::ReplaceLayer(_)
+            );
+            crate::web::pick(dialog, several, tx, self.jobs.context());
+        }
         self.file_dialog = Some((rx, action));
     }
 
@@ -803,7 +843,9 @@ impl TerritoriaApp {
                 let (background, missing) = tiles.map_or((String::new(), 0), |t| t.svg());
                 let svg = svg.replacen(crate::export_map::BACKGROUND, &background, 1);
                 let result = crate::export_map::encode(&svg, format, settings.scale, &font)
-                    .and_then(|bytes| std::fs::write(&path, bytes).map_err(|e| e.to_string()))
+                    .and_then(|bytes| {
+                        territoria_io::files::write(&path, &bytes).map_err(|e| e.to_string())
+                    })
                     .map(|()| missing);
                 JobResult::MapExported { path, result }
             });
@@ -837,7 +879,8 @@ impl TerritoriaApp {
             };
             let label = format!("Writing {}", file_name(&path));
             self.jobs.spawn(label, move |_| {
-                let result = std::fs::write(&path, page).map_err(|e| e.to_string());
+                let result =
+                    territoria_io::files::write(&path, page.as_bytes()).map_err(|e| e.to_string());
                 JobResult::Exported { path, result }
             });
             return;
@@ -885,8 +928,9 @@ impl TerritoriaApp {
             let label = format!("Writing {}", file_name(&path));
             self.jobs.spawn(label, move |_| {
                 let pages = crate::report::pages(&data);
-                let result = crate::export_map::pdf_pages(&pages, &font)
-                    .and_then(|bytes| std::fs::write(&path, bytes).map_err(|e| e.to_string()));
+                let result = crate::export_map::pdf_pages(&pages, &font).and_then(|bytes| {
+                    territoria_io::files::write(&path, &bytes).map_err(|e| e.to_string())
+                });
                 JobResult::Exported { path, result }
             });
             return;
@@ -1313,9 +1357,7 @@ impl TerritoriaApp {
     pub(crate) fn templates_dir(&self) -> PathBuf {
         match &self.paths {
             Some(p) => p.templates_dir(),
-            None => {
-                std::env::temp_dir().join(format!("territoria-templates-{}", std::process::id()))
-            }
+            None => crate::run_dir("templates"),
         }
     }
 
@@ -1478,6 +1520,17 @@ impl TerritoriaApp {
             },
             JobResult::Saved { path, result } => match result {
                 Ok(()) => {
+                    #[cfg(target_arch = "wasm32")]
+                    if let Err(e) = crate::web::download(&path) {
+                        self.history.dirty = true;
+                        self.error(trf(
+                            "Couldn't save {file}: {e}",
+                            &[("file", &file_name(&path)), ("e", &e)],
+                        ));
+                        return;
+                    }
+                    // A download can't be opened again.
+                    #[cfg(not(target_arch = "wasm32"))]
                     self.settings.add_recent(&path);
                     self.save_settings();
                     self.toast(trf("Saved {file}", &[("file", &file_name(&path))]));
@@ -1554,24 +1607,32 @@ impl TerritoriaApp {
                 }
                 Err(e) => self.error(trf("Couldn't add the columns: {e}", &[("e", &e)])),
             },
-            JobResult::MapExported { path, result } => match result {
-                Ok(0) => self.toast(trf("Wrote {file}", &[("file", &file_name(&path))])),
-                Ok(n) => self.error(trf(
-                    "Wrote {file}, but {n} pieces of the background map couldn't be loaded (offline?).",
-                    &[("file", &file_name(&path)), ("n", &n)],
-                )),
-                Err(e) => self.error(trf(
-                    "Couldn't write {file}: {e}",
-                    &[("file", &file_name(&path)), ("e", &e)],
-                )),
-            },
-            JobResult::Exported { path, result } => match result {
-                Ok(()) => self.toast(trf("Wrote {file}", &[("file", &file_name(&path))])),
-                Err(e) => self.error(trf(
-                    "Couldn't write {file}: {e}",
-                    &[("file", &file_name(&path)), ("e", &e)],
-                )),
-            },
+            JobResult::MapExported { path, result } => {
+                #[cfg(target_arch = "wasm32")]
+                let result = result.and_then(|n| crate::web::download_all().map(|()| n));
+                match result {
+                    Ok(0) => self.toast(trf("Wrote {file}", &[("file", &file_name(&path))])),
+                    Ok(n) => self.error(trf(
+                        "Wrote {file}, but {n} pieces of the background map couldn't be loaded (offline?).",
+                        &[("file", &file_name(&path)), ("n", &n)],
+                    )),
+                    Err(e) => self.error(trf(
+                        "Couldn't write {file}: {e}",
+                        &[("file", &file_name(&path)), ("e", &e)],
+                    )),
+                }
+            }
+            JobResult::Exported { path, result } => {
+                #[cfg(target_arch = "wasm32")]
+                let result = result.and_then(|()| crate::web::download_all());
+                match result {
+                    Ok(()) => self.toast(trf("Wrote {file}", &[("file", &file_name(&path))])),
+                    Err(e) => self.error(trf(
+                        "Couldn't write {file}: {e}",
+                        &[("file", &file_name(&path)), ("e", &e)],
+                    )),
+                }
+            }
             JobResult::Geocoded {
                 name,
                 mut table,
@@ -1710,6 +1771,7 @@ impl TerritoriaApp {
 
     /// Reads boundaries and adds them with the suggested key and name
     /// columns, without the dialog.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn add_boundaries_now(&mut self, path: &Path) -> Result<Vec<LayerId>, String> {
         let layers = territoria_io::read_vector(path, &VectorOptions::default())
             .map_err(|e| e.to_string())?;
@@ -2072,7 +2134,7 @@ impl TerritoriaApp {
     fn cache_dir(&self) -> PathBuf {
         match &self.paths {
             Some(p) => p.data_dir.join("boundaries"),
-            None => std::env::temp_dir().join("territoria-boundaries"),
+            None => crate::temp_dir().join("territoria-boundaries"),
         }
     }
 
@@ -2123,6 +2185,7 @@ impl TerritoriaApp {
         Ok((svg, tiles))
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn map_svg_for_cli(
         &mut self,
         settings: &crate::dialogs::MapExportSettings,
@@ -2130,6 +2193,7 @@ impl TerritoriaApp {
         self.map_render(settings, false, None).map(|(svg, _)| svg)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn set_map_export_settings(&mut self, settings: crate::dialogs::MapExportSettings) {
         self.map_export = Some(settings);
     }
@@ -2449,8 +2513,8 @@ impl TerritoriaApp {
         if !company.is_empty() {
             credits.insert(0, company.to_owned());
         }
-        let today = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        let today = web_time::SystemTime::now()
+            .duration_since(web_time::UNIX_EPOCH)
             .map_or(0, |d| (d.as_secs() / 86_400) as i32);
         let fill_in = |text: &str| {
             text.replace("{project}", &self.project.title)
@@ -3012,7 +3076,7 @@ impl TerritoriaApp {
                 }
                 job.progress(k as f32 / total as f32);
                 if k > 0 {
-                    std::thread::sleep(std::time::Duration::from_millis(settings.interval_ms));
+                    territoria_io::http::pause(Duration::from_millis(settings.interval_ms));
                 }
                 let trip =
                     territoria_io::routing::trip(&settings, &stops).map_err(|e| e.to_string());
@@ -4218,8 +4282,8 @@ impl TerritoriaApp {
             .into_iter()
             .chain(layer.source.attribution.iter().cloned())
             .collect();
-        let today = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        let today = web_time::SystemTime::now()
+            .duration_since(web_time::UNIX_EPOCH)
             .map_or(0, |d| (d.as_secs() / 86_400) as i32);
         Ok(crate::report::ReportData {
             title: p.name.clone(),
@@ -5372,6 +5436,9 @@ impl TerritoriaApp {
         let mut exports = Vec::new();
         egui::MenuBar::new().ui(ui, |ui| {
             let item = |ui: &mut Ui, commands: &mut Vec<Command>, keymap: &Keymap, c: Command| {
+                if !c.available() {
+                    return;
+                }
                 let shortcut = keymap.shortcut_text(&ctx, c);
                 if ui
                     .add(egui::Button::new(c.short_label()).shortcut_text(shortcut))
@@ -5388,20 +5455,23 @@ impl TerritoriaApp {
                 ] {
                     item(ui, commands, &self.keymap, c);
                 }
-                ui.menu_button(tr("Open Recent"), |ui| {
-                    if self.settings.recent_projects.is_empty() {
-                        ui.label(RichText::new("No recent projects").weak());
-                    }
-                    for p in self.settings.recent_projects.clone() {
-                        if ui
-                            .button(file_name(&p))
-                            .on_hover_text(p.display().to_string())
-                            .clicked()
-                        {
-                            self.open_path(&p);
+                // In the browser saved projects are downloads: nothing to open again.
+                if !cfg!(target_arch = "wasm32") {
+                    ui.menu_button(tr("Open Recent"), |ui| {
+                        if self.settings.recent_projects.is_empty() {
+                            ui.label(RichText::new("No recent projects").weak());
                         }
-                    }
-                });
+                        for p in self.settings.recent_projects.clone() {
+                            if ui
+                                .button(file_name(&p))
+                                .on_hover_text(p.display().to_string())
+                                .clicked()
+                            {
+                                self.open_path(&p);
+                            }
+                        }
+                    });
+                }
                 ui.separator();
                 for c in [Command::SaveProject, Command::SaveProjectAs, Command::Templates] {
                     item(ui, commands, &self.keymap, c);
@@ -5828,9 +5898,10 @@ impl TerritoriaApp {
                 }
             });
             ui.add_space(10.0);
-            if ui
-                .link("No boundaries at hand? Download open boundaries for any country.")
-                .clicked()
+            if Command::DownloadBoundaries.available()
+                && ui
+                    .link("No boundaries at hand? Download open boundaries for any country.")
+                    .clicked()
             {
                 commands.push(Command::DownloadBoundaries);
             }
@@ -6261,6 +6332,7 @@ impl TerritoriaApp {
         let matches: Vec<Command> = Command::ALL
             .iter()
             .copied()
+            .filter(|c| c.available())
             .filter(|c| {
                 let label = c.label().to_lowercase();
                 query
@@ -6371,10 +6443,10 @@ impl TerritoriaApp {
             self.toast("To paste a table, copy cells with a header row from a spreadsheet.");
             return;
         }
-        let dir = self.paths.as_ref().map_or_else(
-            || std::env::temp_dir().join(format!("territoria-pasted-{}", std::process::id())),
-            |p| p.data_dir.join("pasted"),
-        );
+        let dir = self
+            .paths
+            .as_ref()
+            .map_or_else(|| crate::run_dir("pasted"), |p| p.data_dir.join("pasted"));
         let _ = std::fs::create_dir_all(&dir);
         let path = (1..)
             .map(|i| {
@@ -6384,15 +6456,25 @@ impl TerritoriaApp {
                     format!("Pasted table {i}.txt")
                 })
             })
-            .find(|p| !p.exists())
+            .find(|p| !territoria_io::files::exists(p))
             .unwrap_or_else(|| dir.join("Pasted table.txt"));
-        match std::fs::write(&path, text) {
+        match territoria_io::files::write(&path, text.as_bytes()) {
             Ok(()) => self.import_table_file(path, TableOptions::default()),
             Err(e) => self.error(trf("Couldn't keep the pasted table: {e}", &[("e", &e)])),
         }
     }
 
     fn handle_dropped_files(&mut self, ctx: &egui::Context) {
+        // The browser hands over the contents, which arrive a bit later.
+        #[cfg(target_arch = "wasm32")]
+        let files = {
+            let dropped = ctx.input(|i| i.raw.dropped_files.clone());
+            if !dropped.is_empty() {
+                crate::web::read_dropped(dropped, ctx.clone());
+            }
+            crate::web::dropped()
+        };
+        #[cfg(not(target_arch = "wasm32"))]
         let files: Vec<PathBuf> = ctx.input(|i| {
             i.raw
                 .dropped_files
@@ -6899,12 +6981,13 @@ fn write_atlas(
                 i += 1;
             }
             let bytes = crate::export_map::pdf_pages(std::slice::from_ref(&p.svg), font)?;
-            std::fs::write(beside(&name, "pdf"), bytes).map_err(|e| e.to_string())?;
+            territoria_io::files::write(&beside(&name, "pdf"), &bytes)
+                .map_err(|e| e.to_string())?;
         }
     } else {
         let svgs: Vec<String> = pages.iter().map(|p| p.svg.clone()).collect();
         let bytes = crate::export_map::pdf_pages(&svgs, font)?;
-        std::fs::write(path, bytes).map_err(|e| e.to_string())?;
+        territoria_io::files::write(path, &bytes).map_err(|e| e.to_string())?;
     }
     if !sheets.is_empty() {
         let sheets: Vec<(&str, &territoria_data::Table)> =

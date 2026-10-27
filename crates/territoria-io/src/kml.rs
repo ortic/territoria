@@ -182,7 +182,7 @@ pub fn read_kmz(
     path: &Path,
     options: &VectorOptions,
 ) -> Result<Vec<ImportedLayer>, ImportError> {
-    let mut archive = zip::ZipArchive::new(std::fs::File::open(path)?)
+    let mut archive = zip::ZipArchive::new(crate::files::open(path)?)
         .map_err(|e| ImportError::Format(format!("not a readable KMZ file: {e}")))?;
     let names: Vec<String> = archive
         .file_names()

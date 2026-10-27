@@ -2,8 +2,10 @@
 //! (CSV, Excel).
 
 pub mod export;
+pub mod files;
 pub mod geocode;
 pub mod gpkg;
+pub mod http;
 pub mod kml;
 pub mod online;
 pub mod routing;

@@ -4013,6 +4013,8 @@ version = "0.101.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49aa1d1558e9465f5053bf9fb5361fe75db827c6a4423d5e5fe72096622f8908"
 dependencies = [
+ "js-sys",
+ "wasm-bindgen",
  "zip",
 ]
 
@@ -4645,6 +4647,8 @@ dependencies = [
  "egui_kittest",
  "geo-types",
  "image",
+ "js-sys",
+ "log",
  "pdf-writer",
  "resvg",
  "rfd",
@@ -4663,6 +4667,9 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ureq",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
  "winresource",
 ]
 
@@ -4692,6 +4699,7 @@ name = "territoria-expr"
 version = "0.1.0"
 dependencies = [
  "territoria-data",
+ "web-time",
 ]
 
 [[package]]
@@ -4730,6 +4738,7 @@ dependencies = [
  "territoria-geo",
  "thiserror 2.0.21",
  "ureq",
+ "web-time",
  "zip",
 ]
 
@@ -4748,12 +4757,16 @@ dependencies = [
  "territoria-geo",
  "territoria-io",
  "thiserror 2.0.21",
+ "web-time",
  "zip",
 ]
 
 [[package]]
 name = "territoria-optimize"
 version = "0.1.0"
+dependencies = [
+ "web-time",
+]
 
 [[package]]
 name = "territoria-render"

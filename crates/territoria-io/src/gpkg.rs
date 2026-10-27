@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use geo_types::{Coord, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon};
-use rusqlite::{Connection, OpenFlags, types::ValueRef};
+use rusqlite::{Connection, types::ValueRef};
 use territoria_geo::Crs;
 
 use crate::ImportError;
@@ -197,7 +197,32 @@ pub fn read_geopackage(
     path: &Path,
     options: &VectorOptions,
 ) -> Result<Vec<ImportedLayer>, ImportError> {
-    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(err)?;
+    // In the browser the file is in memory, not on disk.
+    #[cfg(target_arch = "wasm32")]
+    return read_geopackage_bytes(&crate::files::read(path)?, options);
+    #[cfg(not(target_arch = "wasm32"))]
+    read_tables(
+        Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(err)?,
+        options,
+    )
+}
+
+/// All feature tables of a GeoPackage held in memory (from a zip, say).
+pub fn read_geopackage_bytes(
+    bytes: &[u8],
+    options: &VectorOptions,
+) -> Result<Vec<ImportedLayer>, ImportError> {
+    let mut conn = Connection::open_in_memory().map_err(err)?;
+    conn.deserialize_read_exact(rusqlite::MAIN_DB, bytes, bytes.len(), true)
+        .map_err(err)?;
+    read_tables(conn, options)
+}
+
+fn read_tables(
+    conn: Connection,
+    options: &VectorOptions,
+) -> Result<Vec<ImportedLayer>, ImportError> {
     let tables: Vec<(String, Option<String>, String, i64)> = {
         let mut q = conn
             .prepare(
@@ -479,6 +504,21 @@ mod tests {
             (c.x - 7.4386).abs() < 0.001 && (c.y - 46.9511).abs() < 0.001,
             "{c:?}"
         );
+
+        // Zipped, it is read from memory (as in the browser).
+        let zipped = dir.join("test.zip");
+        {
+            use std::io::Write;
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&zipped).unwrap());
+            zip.start_file("plz/test.gpkg", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(&std::fs::read(&path).unwrap()).unwrap();
+            zip.finish().unwrap();
+        }
+        let from_zip = crate::read_vector(&zipped, &VectorOptions::default()).unwrap();
+        assert_eq!(from_zip.len(), 1);
+        assert_eq!(from_zip[0].name, "Postcodes");
+        assert_eq!(from_zip[0].attributes.rows(), 2);
         let _ = std::fs::remove_dir_all(dir);
     }
 }

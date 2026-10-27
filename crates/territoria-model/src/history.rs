@@ -1,6 +1,8 @@
 //! Undo and redo as project snapshots (cheap: heavy data is shared).
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use web_time::Instant;
 
 use crate::Project;
 

@@ -16,4 +16,5 @@ territoria-expr.workspace = true
 territoria-geo.workspace = true
 territoria-io.workspace = true
 thiserror.workspace = true
+web-time.workspace = true
 zip.workspace = true

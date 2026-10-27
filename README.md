@@ -2,7 +2,9 @@
 
 Put your data on the map and plan territories that are fair and compact.
 Territoria is a native desktop tool for geomarketing and territory planning,
-written in Rust (egui on wgpu), for Linux, Windows and macOS.
+written in Rust (egui on wgpu), for Linux, Windows and macOS. To try it
+without installing anything, open the browser version at
+<https://ortic.github.io/territoria/>.
 
 ![Territories balanced on Swiss postcodes](docs/screenshots/territories.png)
 
@@ -88,6 +90,26 @@ The AppImage downloads `appimagetool` 1.9.1 when it isn't installed. The
 disk image signs the app when `CODESIGN_IDENTITY` is set. The installer
 registers the `.territoria` file type and a Start menu entry; the `.exe`
 carries the icon.
+
+### Browser version
+
+The same app as WebAssembly, built with [Trunk](https://trunkrs.dev) and
+published to GitHub Pages on every push to `master` (`.github/workflows/pages.yml`).
+SQLite is compiled to wasm too, which needs `clang` (and `llvm-ar`):
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install trunk --locked
+cd crates/territoria-app
+trunk serve --release           # http://127.0.0.1:8080
+```
+
+In the browser, files come from the file picker (or are dropped on the page)
+and leave as downloads; settings are kept in the browser. Raster background
+maps load; vector background maps, background maps in exports and the other
+online services (boundary downloads, geocoding, routing) are desktop-only
+for now, and long work such as a large import or balancing holds the page
+until it is done.
 
 ## Command line
 

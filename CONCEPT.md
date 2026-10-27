@@ -315,6 +315,7 @@ territoria/
 - [x] Theme/corporate profile: default colours, fonts, logos (company name and logo (PNG, JPEG, SVG) on exported maps, web pages and reports; territory palettes per plan with a default for new plans; no fonts yet)
 - [x] German UI translation (Settings → Language: menus and all commands, toolbar, panels, tables, the status bar, dialogs, hover hints, messages with their values and the help in German; default names of new maps and territories and errors passed on from file readers stay English)
 - [x] Packages for Linux (`.deb`, AppImage), Windows (MSI), macOS (`.dmg`) (packaging/: .deb and AppImage built and tried on Linux; a universal .app in a .dmg with icon and file type, optionally signed (build-dmg.sh), and an MSI with Start menu entry, file type and the icon in the .exe (build-msi.ps1, WiX 4+) are written but not yet run on macOS and Windows)
+- [ ] Browser version on GitHub Pages (WebAssembly) (the app built with Trunk and deployed on each push: open, import and save through the browser's file picker, drop and downloads; settings in the browser's storage; raster background maps; no vector background maps, backgrounds in exports, boundary downloads, geocoding or routing in the browser yet; background work holds the page while it runs)
 - [x] User guide with a tutorial project built from open data (docs/guide.md: a first project from geoBoundaries cantons and a sample customer list geocoded by postcode and town, through colours, territories and exports; the window, data, selecting and settings; F1 help in the app)
 
 ---

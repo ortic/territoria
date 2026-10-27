@@ -5,11 +5,13 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use web_time::Instant;
 
 use crate::ImportError;
+use crate::http::Client;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum GeocoderKind {
@@ -265,7 +267,7 @@ pub(crate) fn parse_photon(text: &str) -> Result<Option<Hit>, ImportError> {
 }
 
 fn ask(
-    agent: &ureq::Agent,
+    client: &Client,
     settings: &GeocoderSettings,
     a: &Address,
 ) -> Result<Option<Hit>, ImportError> {
@@ -276,13 +278,11 @@ fn ask(
         .key
         .get()
         .filter(|_| !settings.url.contains("{key}"));
-    let net = |e: ureq::Error| ImportError::Format(format!("geocoder: {e}"));
+    let net = |e: String| ImportError::Format(format!("geocoder: {e}"));
+    let line = a.line();
     match settings.kind {
         GeocoderKind::Nominatim => {
-            let mut req = agent
-                .get(format!("{base}/search"))
-                .query("format", "jsonv2")
-                .query("limit", "1");
+            let mut query = vec![("format", "jsonv2"), ("limit", "1")];
             if a.text.trim().is_empty() {
                 // Structured search: parts are matched for what they are.
                 for (k, v) in [
@@ -292,40 +292,29 @@ fn ask(
                     ("country", &a.country),
                 ] {
                     if !v.trim().is_empty() {
-                        req = req.query(k, v.trim());
+                        query.push((k, v.trim()));
                     }
                 }
             } else {
-                req = req.query("q", a.line());
+                query.push(("q", &line));
             }
             if !settings.email.trim().is_empty() {
-                req = req.query("email", settings.email.trim());
+                query.push(("email", settings.email.trim()));
             }
             if let Some(k) = key {
-                req = req.query("key", k);
+                query.push(("key", k));
             }
-            let text = req
-                .call()
-                .map_err(net)?
-                .body_mut()
-                .read_to_string()
+            let text = client
+                .text(&format!("{base}/search"), &query)
                 .map_err(net)?;
             parse_nominatim(&text)
         }
         GeocoderKind::Photon => {
-            let mut req = agent
-                .get(format!("{base}/api"))
-                .query("q", a.line())
-                .query("limit", "1");
+            let mut query = vec![("q", line.as_str()), ("limit", "1")];
             if let Some(k) = key {
-                req = req.query("key", k);
+                query.push(("key", k));
             }
-            let text = req
-                .call()
-                .map_err(net)?
-                .body_mut()
-                .read_to_string()
-                .map_err(net)?;
+            let text = client.text(&format!("{base}/api"), &query).map_err(net)?;
             parse_photon(&text)
         }
     }
@@ -350,15 +339,12 @@ pub fn geocode(
     progress: &mut dyn FnMut(usize, usize) -> bool,
 ) -> Result<Geocoded, ImportError> {
     let mut cache = DiskCache::open(cache_dir);
-    let agent = ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(30)))
-        .user_agent(if settings.email.trim().is_empty() {
-            crate::online::USER_AGENT.to_owned()
-        } else {
-            format!("{} ({})", crate::online::USER_AGENT, settings.email.trim())
-        })
-        .build()
-        .new_agent();
+    let user_agent = if settings.email.trim().is_empty() {
+        crate::online::USER_AGENT.to_owned()
+    } else {
+        format!("{} ({})", crate::online::USER_AGENT, settings.email.trim())
+    };
+    let client = Client::new(&user_agent, None, Duration::from_secs(30));
     let mut out = Geocoded {
         hits: vec![None; addresses.len()],
         ..Default::default()
@@ -383,10 +369,10 @@ pub fn geocode(
         }
         if let Some(t) = last {
             let wait = Duration::from_millis(settings.interval_ms).saturating_sub(t.elapsed());
-            std::thread::sleep(wait);
+            crate::http::pause(wait);
         }
         last = Some(Instant::now());
-        match ask(&agent, settings, a) {
+        match ask(&client, settings, a) {
             Ok(hit) => {
                 failures = 0;
                 out.hits[i] = hit.clone();

@@ -52,6 +52,7 @@ struct Manifest {
 }
 
 /// Saves atomically: a temporary file next to `path`, then renamed.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn save(project: &Project, path: &Path) -> Result<(), FileError> {
     let tmp = path.with_extension(format!("{EXTENSION}.saving"));
     {
@@ -61,6 +62,15 @@ pub fn save(project: &Project, path: &Path) -> Result<(), FileError> {
         zip.finish()?.flush()?;
     }
     std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+/// Saves into the browser's session files (see [`territoria_io::files`]).
+#[cfg(target_arch = "wasm32")]
+pub fn save(project: &Project, path: &Path) -> Result<(), FileError> {
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    write_project(project, &mut zip)?;
+    territoria_io::files::write(path, zip.finish()?.get_ref())?;
     Ok(())
 }
 
@@ -106,7 +116,7 @@ pub fn write_project<W: Write + Seek>(
 }
 
 pub fn load(path: &Path) -> Result<Project, FileError> {
-    let file = std::fs::File::open(path)?;
+    let file = territoria_io::files::open(path)?;
     read_project(std::io::BufReader::new(file))
 }
 

@@ -12,8 +12,7 @@ use crate::ImportError;
 pub fn write_csv(path: &Path, table: &Table, delimiter: u8) -> Result<(), ImportError> {
     let mut w = csv::WriterBuilder::new()
         .delimiter(delimiter)
-        .from_path(path)
-        .map_err(|e| ImportError::Format(e.to_string()))?;
+        .from_writer(Vec::new());
     let err = |e: csv::Error| ImportError::Format(e.to_string());
     w.write_record(table.columns.iter().map(|c| c.name.as_str()))
         .map_err(err)?;
@@ -21,7 +20,10 @@ pub fn write_csv(path: &Path, table: &Table, delimiter: u8) -> Result<(), Import
         w.write_record(table.columns.iter().map(|c| c.display(r)))
             .map_err(err)?;
     }
-    w.flush()?;
+    let bytes = w
+        .into_inner()
+        .map_err(|e| ImportError::Format(e.to_string()))?;
+    crate::files::write(path, &bytes)?;
     Ok(())
 }
 
@@ -78,7 +80,7 @@ pub fn write_xlsx(path: &Path, sheets: &[(&str, &Table)]) -> Result<(), ImportEr
         ws.set_freeze_panes(1, 0).map_err(err)?;
         ws.autofit();
     }
-    book.save(path).map_err(err)?;
+    crate::files::write(path, &book.save_to_buffer().map_err(err)?)?;
     Ok(())
 }
 
@@ -89,7 +91,7 @@ pub fn write_geojson(
     geometries: &[Geometry<f64>],
     properties: &Table,
 ) -> Result<(), ImportError> {
-    let mut out = std::io::BufWriter::new(std::fs::File::create(path)?);
+    let mut out = Vec::new();
     write!(out, r#"{{"type":"FeatureCollection","features":["#)?;
     for (i, g) in geometries.iter().enumerate() {
         if i > 0 {
@@ -115,7 +117,7 @@ pub fn write_geojson(
             .map_err(|e| ImportError::Format(e.to_string()))?;
     }
     write!(out, "]}}")?;
-    out.flush()?;
+    crate::files::write(path, &out)?;
     Ok(())
 }
 

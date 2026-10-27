@@ -5,6 +5,7 @@
 
 mod app;
 mod charts;
+#[cfg(not(target_arch = "wasm32"))]
 mod cli;
 mod commands;
 mod contents;
@@ -17,6 +18,7 @@ mod i18n;
 mod inspector;
 mod jobs;
 mod map_view;
+#[cfg(not(target_arch = "wasm32"))]
 mod mcp;
 mod meshes;
 mod plan_table;
@@ -31,14 +33,24 @@ mod territories;
 mod theme;
 mod tiles;
 mod vector_style;
+#[cfg(target_arch = "wasm32")]
+mod web;
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs::{self, File};
+use std::path::PathBuf;
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Mutex;
 
+#[cfg(not(target_arch = "wasm32"))]
 use territoria_config::Paths;
-use tracing::{error, info, warn};
+use tracing::info;
+#[cfg(not(target_arch = "wasm32"))]
+use tracing::{error, warn};
+#[cfg(not(target_arch = "wasm32"))]
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> anyhow::Result<()> {
     // Command-line tasks run without a window.
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -57,7 +69,7 @@ fn main() -> anyhow::Result<()> {
     init_logging(paths.as_ref());
     install_panic_hook(paths.as_ref());
     info!(version = env!("CARGO_PKG_VERSION"), "starting Territoria");
-    let open = std::env::args_os().nth(1).map(std::path::PathBuf::from);
+    let open = std::env::args_os().nth(1).map(PathBuf::from);
 
     let result = run(eframe::Renderer::Wgpu, paths.clone(), open.clone()).or_else(|e| {
         warn!("wgpu renderer failed ({e}), falling back to OpenGL");
@@ -71,6 +83,60 @@ fn main() -> anyhow::Result<()> {
     result.map_err(|e| anyhow::anyhow!("{e}"))
 }
 
+/// In the browser: the app on the page's canvas, without settings folder
+/// or command line.
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    use eframe::wasm_bindgen::JsCast as _;
+    eframe::WebLogger::init(log::LevelFilter::Info).ok();
+    info!(version = env!("CARGO_PKG_VERSION"), "starting Territoria");
+    wasm_bindgen_futures::spawn_local(async {
+        let document = web_sys::window()
+            .and_then(|w| w.document())
+            .expect("a web page");
+        let canvas = document
+            .get_element_by_id("territoria")
+            .and_then(|e| e.dyn_into::<web_sys::HtmlCanvasElement>().ok())
+            .expect("a canvas with the id territoria");
+        let result = eframe::WebRunner::new()
+            .start(
+                canvas,
+                eframe::WebOptions::default(),
+                Box::new(|cc| Ok(Box::new(app::TerritoriaApp::new(cc, None, None)))),
+            )
+            .await;
+        if let Some(loading) = document.get_element_by_id("loading") {
+            match result {
+                Ok(()) => loading.remove(),
+                Err(e) => {
+                    loading.set_text_content(Some(&format!(
+                        "Territoria couldn't start in this browser: {}",
+                        e.as_string().unwrap_or_else(|| format!("{e:?}"))
+                    )));
+                }
+            }
+        }
+    });
+}
+
+/// Where scratch files go: the system's folder for them, or in the browser
+/// one among the session's files.
+pub(crate) fn temp_dir() -> PathBuf {
+    #[cfg(not(target_arch = "wasm32"))]
+    return std::env::temp_dir();
+    #[cfg(target_arch = "wasm32")]
+    PathBuf::from("/tmp")
+}
+
+/// A scratch folder for this run alone (the browser has no process ids).
+pub(crate) fn run_dir(name: &str) -> PathBuf {
+    #[cfg(not(target_arch = "wasm32"))]
+    return temp_dir().join(format!("territoria-{name}-{}", std::process::id()));
+    #[cfg(target_arch = "wasm32")]
+    temp_dir().join(format!("territoria-{name}"))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn startup_error(text: &str) {
     error!("{text}");
     eprintln!("territoria: {text}");
@@ -82,11 +148,8 @@ fn startup_error(text: &str) {
         .show();
 }
 
-fn run(
-    renderer: eframe::Renderer,
-    paths: Option<Paths>,
-    open: Option<std::path::PathBuf>,
-) -> eframe::Result {
+#[cfg(not(target_arch = "wasm32"))]
+fn run(renderer: eframe::Renderer, paths: Option<Paths>, open: Option<PathBuf>) -> eframe::Result {
     let options = eframe::NativeOptions {
         renderer,
         viewport: egui::ViewportBuilder::default()
@@ -108,6 +171,7 @@ fn run(
 }
 
 /// The window icon, drawn from the packaged SVG.
+#[cfg(not(target_arch = "wasm32"))]
 fn icon() -> egui::IconData {
     const SVG: &str = include_str!("../../../packaging/territoria.svg");
     const SIZE: u32 = 128;
@@ -142,6 +206,7 @@ fn icon() -> egui::IconData {
 }
 
 /// Logs to stderr and to `<data dir>/logs/territoria.log`. `RUST_LOG` overrides the filter.
+#[cfg(not(target_arch = "wasm32"))]
 fn init_logging(paths: Option<&Paths>) {
     let filter = || {
         EnvFilter::try_from_default_env()
@@ -169,6 +234,7 @@ fn init_logging(paths: Option<&Paths>) {
 }
 
 /// Logs panics and writes a crash report next to the log file.
+#[cfg(not(target_arch = "wasm32"))]
 fn install_panic_hook(paths: Option<&Paths>) {
     let crash_dir = paths.map(Paths::log_dir);
     let default_hook = std::panic::take_hook();

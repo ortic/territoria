@@ -20,8 +20,9 @@ territoria-optimize = { path = "crates/territoria-optimize" }
 territoria-render = { path = "crates/territoria-render" }
 territoria-ui = { path = "crates/territoria-ui" }
 
-# The UI stack is the one Pythia uses (egui on wgpu, glow as fallback).
-eframe = { version = "0.36", default-features = false, features = ["wgpu", "glow", "default_fonts", "accesskit", "wayland", "x11", "persistence"] }
+# The UI stack is the one Pythia uses. territoria-app picks the renderers:
+# wgpu with glow as fallback on the desktop, glow (WebGL) in the browser.
+eframe = { version = "0.36", default-features = false, features = ["default_fonts", "accesskit", "persistence"] }
 egui = "0.36"
 egui_extras = "0.36"
 egui_dock = { version = "0.21", features = ["serde"] }
@@ -32,7 +33,9 @@ rfd = "0.17"
 geo = "0.33"
 geo-types = "0.7"
 rstar = "0.12"
-proj4rs = "0.2"
+# Without the C geodesic routines (azimuthal equidistant), which don't build
+# for the browser; territoria-geo turns them on for native targets.
+proj4rs = { version = "0.2", default-features = false }
 crs-definitions = { version = "0.6", features = ["proj4", "wkt"] }
 earcutr = "0.5"
 
@@ -63,6 +66,8 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 # API keys of online services in the system keychain (macOS Keychain, Windows
 # Credential Manager, Secret Service on Linux through pure-Rust D-Bus).
 keyring = "4.2"
+# Instant and SystemTime that also work in the browser.
+web-time = "1"
 
 # Keep dev builds small and fast: full debug info only for our own crates.
 [profile.dev]

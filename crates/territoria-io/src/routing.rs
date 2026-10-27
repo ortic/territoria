@@ -2,12 +2,17 @@
 //! your own): time and distance from many places to the nearest of a
 //! few others, asked in blocks of the matrix the server accepts.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use web_time::Instant;
 
 use geo_types::Coord;
 use serde::{Deserialize, Serialize};
 
 use crate::ImportError;
+use crate::http::Client;
+
+const USER_AGENT: &str = concat!("territoria/", env!("CARGO_PKG_VERSION"));
 
 /// Which server, which way of travelling, and how politely.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -93,11 +98,7 @@ fn for_blocks(
     let per_dest = destinations.len().min(batch / 2).max(1);
     let per_origin = (batch - per_dest).max(1);
     let total = destinations.len().div_ceil(per_dest) * origins.len().div_ceil(per_origin);
-    let agent = ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(60)))
-        .user_agent(concat!("territoria/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .new_agent();
+    let client = Client::new(USER_AGENT, None, Duration::from_secs(60));
     let base = settings.url.trim_end_matches('/');
     let mut done = 0;
     let mut last: Option<Instant> = None;
@@ -108,7 +109,7 @@ fn for_blocks(
             }
             if let Some(t) = last {
                 let wait = Duration::from_millis(settings.interval_ms).saturating_sub(t.elapsed());
-                std::thread::sleep(wait);
+                crate::http::pause(wait);
             }
             last = Some(Instant::now());
             let coords: Vec<String> = origs
@@ -127,12 +128,8 @@ fn for_blocks(
                 sources.join(";"),
                 targets.join(";")
             );
-            let text = agent
-                .get(settings.key.apply(&url, true))
-                .call()
-                .map_err(|e| ImportError::Format(format!("routing: {e}")))?
-                .body_mut()
-                .read_to_string()
+            let text = client
+                .text(&settings.key.apply(&url, true), &[])
                 .map_err(|e| ImportError::Format(format!("routing: {e}")))?;
             let r: TableResponse = serde_json::from_str(&text)
                 .map_err(|e| ImportError::Format(format!("routing: unexpected answer ({e})")))?;
@@ -254,19 +251,9 @@ pub fn trip(settings: &RoutingSettings, stops: &[Coord<f64>]) -> Result<Trip, Im
         settings.profile,
         coords.join(";")
     );
-    let agent = ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(120)))
-        .user_agent(concat!("territoria/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .new_agent();
-    let net = |e: ureq::Error| ImportError::Format(format!("routing: {e}"));
-    let text = agent
-        .get(settings.key.apply(&url, true))
-        .call()
-        .map_err(net)?
-        .body_mut()
-        .read_to_string()
-        .map_err(net)?;
+    let text = Client::new(USER_AGENT, None, Duration::from_secs(120))
+        .text(&settings.key.apply(&url, true), &[])
+        .map_err(|e| ImportError::Format(format!("routing: {e}")))?;
     let r: TripResponse = serde_json::from_str(&text)
         .map_err(|e| ImportError::Format(format!("routing: unexpected answer ({e})")))?;
     if r.code != "Ok" {
